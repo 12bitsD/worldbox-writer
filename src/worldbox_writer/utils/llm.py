@@ -4,7 +4,12 @@ LLM 客户端工厂模块
 支持通过环境变量切换不同的 LLM 后端：
 
 配置方式（.env 或环境变量）：
-  # Kimi（推荐）
+  # MIMO（推荐）
+  LLM_PROVIDER=mimo
+  LLM_API_KEY=tp-xxxx
+  LLM_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
+
+  # Kimi
   LLM_PROVIDER=kimi
   LLM_API_KEY=sk-xxxx
   LLM_BASE_URL=https://api.moonshot.cn/v1
@@ -19,6 +24,7 @@ LLM 客户端工厂模块
   LLM_MODEL=qwen2.5:14b
 
 模型选择策略：
+  - MIMO: mimo-v2-pro（适合所有角色，需关闭 thinking 模式）
   - Kimi: kimi-k2-5（长上下文，适合叙述者和世界构建）
   - 沙盒/OpenAI: gpt-4.1-mini（快速，适合所有角色）
 """
@@ -34,7 +40,19 @@ from openai import OpenAI
 # Provider 配置
 # ---------------------------------------------------------------------------
 
+MIMO_BASE_URL = "https://token-plan-cn.xiaomimimo.com/v1"
 KIMI_BASE_URL = "https://api.moonshot.cn/v1"
+
+# MIMO 模型映射
+MIMO_MODEL_MAP = {
+    "director": "mimo-v2-pro",
+    "gate_keeper": "mimo-v2-pro",
+    "node_detector": "mimo-v2-pro",
+    "actor": "mimo-v2-pro",
+    "narrator": "mimo-v2-pro",
+    "world_builder": "mimo-v2-pro",
+    "memory": "mimo-v2-pro",
+}
 
 # Kimi 模型映射（按角色分配不同上下文长度）
 KIMI_MODEL_MAP = {
@@ -71,6 +89,31 @@ GEMINI_MODEL_MAP = {
 
 
 # ---------------------------------------------------------------------------
+# .env 文件加载（如果存在）
+# ---------------------------------------------------------------------------
+
+def _load_dotenv() -> None:
+    """简单加载 .env 文件中的环境变量（不覆盖已有变量）"""
+    import pathlib
+    env_file = pathlib.Path(__file__).parent.parent.parent.parent / ".env"
+    if not env_file.exists():
+        return
+    with open(env_file) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
+_load_dotenv()
+
+
+# ---------------------------------------------------------------------------
 # Client factory
 # ---------------------------------------------------------------------------
 
@@ -82,6 +125,8 @@ def _detect_provider() -> str:
         return explicit
 
     base_url = os.environ.get("LLM_BASE_URL", "")
+    if "xiaomimimo" in base_url or "mimo" in base_url:
+        return "mimo"
     if "moonshot" in base_url:
         return "kimi"
     if "ollama" in base_url or "localhost:11434" in base_url:
@@ -99,7 +144,12 @@ def get_llm_client() -> OpenAI:
     api_key = os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
     base_url = os.environ.get("LLM_BASE_URL")
 
-    if provider == "kimi":
+    if provider == "mimo":
+        return OpenAI(
+            api_key=api_key,
+            base_url=base_url or MIMO_BASE_URL,
+        )
+    elif provider == "kimi":
         return OpenAI(
             api_key=api_key,
             base_url=KIMI_BASE_URL,
@@ -125,12 +175,22 @@ def get_model_name(role: str) -> str:
     if override:
         return override
 
-    if provider == "kimi":
+    if provider == "mimo":
+        return MIMO_MODEL_MAP.get(role, "mimo-v2-pro")
+    elif provider == "kimi":
         return KIMI_MODEL_MAP.get(role, "kimi-k2-5")
     elif provider == "gemini":
         return GEMINI_MODEL_MAP.get(role, "gemini-2.5-flash")
     else:
         return OPENAI_MODEL_MAP.get(role, "gpt-4.1-mini")
+
+
+def _get_extra_body(provider: str) -> Optional[dict]:
+    """获取特定 provider 需要的额外请求体参数"""
+    if provider == "mimo":
+        # MIMO 需要禁用 thinking 模式以获得正常响应
+        return {"thinking": {"type": "disabled"}}
+    return None
 
 
 def chat_completion(
@@ -154,12 +214,15 @@ def chat_completion(
     """
     client = get_llm_client()
     model = get_model_name(role)
+    provider = _detect_provider()
+    extra_body = _get_extra_body(provider)
 
     response = client.chat.completions.create(
         model=model,
         messages=messages,
         temperature=temperature,
         max_tokens=max_tokens,
+        extra_body=extra_body,
     )
     return response.choices[0].message.content
 
