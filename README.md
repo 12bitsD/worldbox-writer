@@ -170,7 +170,7 @@ worldbox-writer/
     ├── product/USER_STORIES.md
     ├── development/AGILE_GUIDE.md
     ├── development/CI_SETUP.md
-    ├── sprints/              # Sprint 0-6 完整记录
+    ├── sprints/              # Sprint 0-6 记录 + Sprint 7-9 计划
 ```
 
 ---
@@ -186,8 +186,33 @@ worldbox-writer/
 | Sprint 4 | 前端可视化面板（React + 实时事件流） | ✅ 完成 |
 | Sprint 5 | 持久化存储与实时编辑 (SQLite + SSE) | ✅ 完成 |
 | Sprint 6 | 关系图谱与专业导出 | 🔄 规划中 |
+| Sprint 7 | 可视化补齐与稳定性加固 | 📋 已批准计划 |
+| Sprint 8 | 时间线分叉与多分支控制 | 📋 已批准计划 |
+| Sprint 9 | 长篇记忆、智能路由与创作工作台 | 📋 已批准计划 |
 
-**当前版本：v0.5.0** — 支持实时流与本地 SQLite 持久化，64 个单元测试 + 7 个集成测试全部通过。
+**当前版本**：v0.5.0
+
+- 当前已交付：实时事件流、本地 SQLite 持久化、等待态编辑能力。
+- 当前测试状态：64 个单元测试 + 7 个集成测试全部通过。
+- 当前迭代状态：Sprint 6 处于规划中，Sprint 7-9 已形成批准版计划。
+
+---
+
+## Roadmap
+
+接下来的路线图已经明确为“看见世界 → 掌控世界 → 创作作品”三段式推进。
+
+| 阶段 | 对应 Sprint | 目标 | 核心交付 |
+| :--- | :--- | :--- | :--- |
+| 看见世界 | Sprint 7 | 让推演过程可见且稳定 | 关系图谱、遥测日志、统一调用链、可靠性护栏 |
+| 掌控世界 | Sprint 8 | 让用户能回溯并分叉世界线 | `fork_at_node()`、多分支时间线、节奏控制、灰度回滚 |
+| 创作作品 | Sprint 9 | 让系统支持长篇创作与生产力闭环 | 智能记忆、多模型路由、Wiki、富文本、容量门禁 |
+
+**版本演进**：
+
+- v0.6.x：补齐可视化与稳定性短板。
+- v0.7.x：上线分支推演核心能力。
+- v0.8.x：补齐长篇创作工作台能力。
 
 ---
 
@@ -226,12 +251,16 @@ python -m pytest tests/ -v
 ## 文档索引
 
 - [架构设计文档](docs/architecture/DESIGN.md)
+- [产品演进规划](docs/product/PRODUCT_PLANNING.md)
+- [长期路线图](docs/product/FUTURE_ROADMAP.md)
 - [用户故事与 Product Backlog](docs/product/USER_STORIES.md)
 - [敏捷开发指南（TDD + 分支策略 + DoD）](docs/development/AGILE_GUIDE.md)
 - [CI 配置说明](docs/development/CI_SETUP.md)
 - [Sprint 0 记录](docs/sprints/SPRINT_0.md)
 - [Sprint 1 记录](docs/sprints/SPRINT_1.md)
 - [Sprint 2-4 记录](docs/sprints/SPRINT_2_4.md)
+- [Sprint 6 计划](docs/sprints/SPRINT_6.md)
+- [Sprint 7-9 批准版计划](docs/sprints/FINAL_SPRINT_7_8_9_PLAN.md)
 
 ---
 

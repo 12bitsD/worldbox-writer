@@ -72,6 +72,35 @@ export function useSimulation() {
                 nodes: [...prev.nodes, node as unknown as SimulationState["nodes"][0]],
               };
             });
+          } else if (type === "narrator_start") {
+            const node = event.node as Record<string, unknown>;
+            if (!node) return;
+            setState((prev) => {
+              if (!prev) return prev;
+              const exists = prev.nodes.some((n) => n.id === node.id);
+              if (exists) return prev;
+              return {
+                ...prev,
+                nodes: [
+                  ...prev.nodes,
+                  node as unknown as SimulationState["nodes"][0],
+                ],
+              };
+            });
+          } else if (type === "token") {
+            const content = event.content as string;
+            setState((prev) => {
+              if (!prev || prev.nodes.length === 0) return prev;
+              const nodes = [...prev.nodes];
+              const lastIdx = nodes.length - 1;
+              const lastNode = { ...nodes[lastIdx] };
+              lastNode.streaming_text =
+                (lastNode.streaming_text || "") + content;
+              nodes[lastIdx] = lastNode;
+              return { ...prev, nodes };
+            });
+          } else if (type === "narrator_end") {
+            // Streaming done; the next "node" event will carry final rendered_text
           } else if (type === "intervention") {
             setState((prev) => {
               if (!prev) return prev;

@@ -32,7 +32,7 @@ LLM 客户端工厂模块
 from __future__ import annotations
 
 import os
-from typing import Optional
+from typing import Callable, Optional
 
 from openai import OpenAI
 
@@ -92,9 +92,11 @@ GEMINI_MODEL_MAP = {
 # .env 文件加载（如果存在）
 # ---------------------------------------------------------------------------
 
+
 def _load_dotenv() -> None:
     """简单加载 .env 文件中的环境变量（不覆盖已有变量）"""
     import pathlib
+
     env_file = pathlib.Path(__file__).parent.parent.parent.parent / ".env"
     if not env_file.exists():
         return
@@ -199,6 +201,8 @@ def chat_completion(
     temperature: float = 0.7,
     max_tokens: int = 2048,
     stream: bool = False,
+    on_token: Optional[Callable[[str], None]] = None,
+    top_p: Optional[float] = None,
 ) -> str:
     """统一的 chat completion 接口
 
@@ -207,24 +211,50 @@ def chat_completion(
         role: Agent 角色名，用于选择合适的模型
         temperature: 生成温度
         max_tokens: 最大输出 token 数
-        stream: 是否使用流式输出（目前不支持，保留接口）
+        stream: 是否使用流式输出（当 on_token 传入时自动启用）
+        on_token: 流式回调，每个 content token 到达时调用
+        top_p: nucleus sampling 参数
 
     Returns:
-        模型输出的文本内容
+        模型输出的完整文本内容
     """
     client = get_llm_client()
     model = get_model_name(role)
     provider = _detect_provider()
     extra_body = _get_extra_body(provider)
 
-    response = client.chat.completions.create(
+    # 构建公共参数
+    kwargs = dict(
         model=model,
         messages=messages,
         temperature=temperature,
         max_tokens=max_tokens,
-        extra_body=extra_body,
     )
-    return response.choices[0].message.content
+    if extra_body:
+        kwargs["extra_body"] = extra_body
+    if top_p is not None:
+        kwargs["top_p"] = top_p
+
+    if on_token is not None:
+        # 流式模式
+        kwargs["stream"] = True
+        response = client.chat.completions.create(**kwargs)
+        collected = []
+        for chunk in response:
+            if not chunk.choices:
+                # 最后一个 usage chunk，choices 为空
+                continue
+            delta = chunk.choices[0].delta
+            # 跳过 reasoning_content（thinking 模式的中间推理）
+            content = delta.content if delta and delta.content else None
+            if content:
+                collected.append(content)
+                on_token(content)
+        return "".join(collected)
+    else:
+        # 非流式模式（原有行为）
+        response = client.chat.completions.create(**kwargs)
+        return response.choices[0].message.content
 
 
 def get_provider_info() -> dict:

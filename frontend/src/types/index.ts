@@ -42,6 +42,7 @@ export interface StoryNode {
   tick: number;
   requires_intervention: boolean;
   intervention_instruction?: string;
+  streaming_text?: string;
 }
 
 export interface SimulationState {

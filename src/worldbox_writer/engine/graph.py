@@ -51,6 +51,7 @@ class SimulationState(TypedDict):
     world_built: bool
     max_ticks: int
     error: str
+    streaming_callbacks: Optional[Dict]
 
 
 # ---------------------------------------------------------------------------
@@ -143,7 +144,9 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
         },
     ]
 
-    candidate = chat_completion(messages, role="actor", temperature=0.8, max_tokens=200)
+    candidate = chat_completion(
+        messages, role="actor", temperature=0.8, max_tokens=200, top_p=0.95
+    )
     return {"candidate_event": candidate.strip()}
 
 
@@ -289,7 +292,30 @@ def narrator_node(state: SimulationState) -> Dict[str, Any]:
         },
     ]
 
-    prose = chat_completion(messages, role="narrator", temperature=0.75, max_tokens=600)
+    callbacks = state.get("streaming_callbacks") or {}
+    on_start_cb = callbacks.get("on_start")
+    on_end_cb = callbacks.get("on_end")
+
+    if on_start_cb:
+        on_start_cb(
+            node_id=str(current_node.id),
+            title=current_node.title,
+            description=current_node.description,
+            tick=world.tick,
+            node_type=current_node.node_type.value,
+        )
+
+    prose = chat_completion(
+        messages,
+        role="narrator",
+        temperature=0.8,
+        max_tokens=600,
+        top_p=0.95,
+        on_token=callbacks.get("on_token"),
+    )
+
+    if on_end_cb:
+        on_end_cb()
 
     current_node.rendered_text = prose.strip()
     current_node.is_rendered = True
@@ -374,6 +400,9 @@ def run_simulation(
     max_ticks: int = 8,
     intervention_callback=None,
     on_node_rendered=None,
+    on_streaming_token=None,
+    on_streaming_start=None,
+    on_streaming_end=None,
 ) -> WorldState:
     """Run a full story simulation.
 
@@ -382,6 +411,9 @@ def run_simulation(
         max_ticks: Maximum simulation ticks.
         intervention_callback: fn(context: str) -> str for user intervention.
         on_node_rendered: fn(node: StoryNode, world: WorldState) callback.
+        on_streaming_token: fn(token: str) callback for token-level streaming.
+        on_streaming_start: fn(node_info: dict) callback when narrator starts.
+        on_streaming_end: fn() callback when narrator finishes streaming.
 
     Returns:
         Final WorldState with all story nodes.
@@ -399,6 +431,15 @@ def run_simulation(
         "world_built": False,
         "max_ticks": max_ticks,
         "error": "",
+        "streaming_callbacks": (
+            {
+                "on_token": on_streaming_token,
+                "on_start": on_streaming_start,
+                "on_end": on_streaming_end,
+            }
+            if on_streaming_token
+            else None
+        ),
     }
 
     app = build_simulation_graph()

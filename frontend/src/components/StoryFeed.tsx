@@ -98,7 +98,7 @@ export function StoryFeed({ nodes, isRunning }: StoryFeedProps) {
             </p>
 
             {/* Rendered novel text */}
-            {node.rendered_text && (
+            {(node.rendered_text || node.streaming_text) && (
               <div
                 style={{
                   padding: "12px 16px",
@@ -110,7 +110,15 @@ export function StoryFeed({ nodes, isRunning }: StoryFeedProps) {
                   whiteSpace: "pre-wrap",
                 }}
               >
-                {node.rendered_text}
+                {node.rendered_text || node.streaming_text}
+                {!node.rendered_text && node.streaming_text && (
+                  <span
+                    className="typing-cursor"
+                    style={{ marginLeft: 2 }}
+                  >
+                    |
+                  </span>
+                )}
               </div>
             )}
 

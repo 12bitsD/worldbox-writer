@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import queue
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
@@ -63,6 +64,7 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # Database init
 # ---------------------------------------------------------------------------
+
 
 @app.on_event("startup")
 async def startup():
@@ -130,6 +132,7 @@ class SimulationSession:
         self._intervention_result: Optional[str] = None
         self.error: Optional[str] = None
         self.loop: Optional[asyncio.AbstractEventLoop] = None
+        self.token_queue: queue.Queue = queue.Queue()
 
     def to_dict(self) -> Dict[str, Any]:
         world_dict = None
@@ -256,6 +259,7 @@ def _run_simulation_sync(session: SimulationSession) -> None:
             # Block until intervention is provided
             while session._intervention_result is None:
                 import time
+
                 time.sleep(0.2)
             result = session._intervention_result
             session._intervention_result = None
@@ -265,11 +269,38 @@ def _run_simulation_sync(session: SimulationSession) -> None:
             _persist_session(session)
             return result
 
+        def on_streaming_token(token: str):
+            session.token_queue.put({"type": "token", "content": token})
+
+        def on_streaming_start(
+            node_id: str, title: str, description: str, tick: int, node_type: str
+        ):
+            session.token_queue.put(
+                {
+                    "type": "narrator_start",
+                    "node": {
+                        "id": node_id,
+                        "title": title,
+                        "description": description,
+                        "node_type": node_type,
+                        "rendered_text": "",
+                        "tick": tick,
+                        "requires_intervention": False,
+                    },
+                }
+            )
+
+        def on_streaming_end():
+            session.token_queue.put({"type": "narrator_end"})
+
         final_world = run_simulation(
             premise=session.premise,
             max_ticks=session.max_ticks,
             intervention_callback=intervention_callback,
             on_node_rendered=on_node_rendered,
+            on_streaming_token=on_streaming_token,
+            on_streaming_start=on_streaming_start,
+            on_streaming_end=on_streaming_end,
         )
         session.world = final_world
         session.status = "complete"
@@ -416,7 +447,7 @@ async def export_simulation(sim_id: str):
         raise HTTPException(status_code=400, detail="推演尚未产生世界数据")
 
     novel_parts = []
-    for node_dict in (nodes_rendered or []):
+    for node_dict in nodes_rendered or []:
         if node_dict.get("rendered_text"):
             novel_parts.append(
                 f"【{node_dict['title']}】\n\n{node_dict['rendered_text']}"
@@ -477,6 +508,15 @@ async def stream_simulation(sim_id: str):
                     yield f"data: {data}\n\n"
                 last_node_count = current_count
 
+            # Drain streaming token queue
+            while True:
+                try:
+                    token_event = session.token_queue.get_nowait()
+                    data = json.dumps(token_event, ensure_ascii=False)
+                    yield f"data: {data}\n\n"
+                except queue.Empty:
+                    break
+
             if session.status == "waiting":
                 data = json.dumps(
                     {"type": "intervention", "context": session.intervention_context},
@@ -508,12 +548,14 @@ async def list_sessions():
     result = []
     for s in _sessions.values():
         seen.add(s.sim_id)
-        result.append({
-            "sim_id": s.sim_id,
-            "status": s.status,
-            "premise": s.premise[:50],
-            "nodes_count": len(s.nodes_rendered),
-        })
+        result.append(
+            {
+                "sim_id": s.sim_id,
+                "status": s.status,
+                "premise": s.premise[:50],
+                "nodes_count": len(s.nodes_rendered),
+            }
+        )
     for s in db_list_sessions():
         if s["sim_id"] not in seen:
             result.append(s)
@@ -526,7 +568,9 @@ async def list_sessions():
 
 
 @app.patch("/api/simulate/{sim_id}/characters/{character_id}")
-async def update_character(sim_id: str, character_id: str, request: UpdateCharacterRequest):
+async def update_character(
+    sim_id: str, character_id: str, request: UpdateCharacterRequest
+):
     """Update a character's fields. Only allowed when status is 'waiting'."""
     session = _sessions.get(sim_id)
     if not session:
@@ -553,10 +597,13 @@ async def update_character(sim_id: str, character_id: str, request: UpdateCharac
         char.goals = request.goals
     if request.status is not None:
         from worldbox_writer.core.models import CharacterStatus
+
         try:
             char.status = CharacterStatus(request.status)
         except ValueError:
-            raise HTTPException(status_code=400, detail=f"无效的角色状态: {request.status}")
+            raise HTTPException(
+                status_code=400, detail=f"无效的角色状态: {request.status}"
+            )
 
     # Write back to world
     session.world.characters[character_id] = char
@@ -624,11 +671,15 @@ async def add_constraint(sim_id: str, request: AddConstraintRequest):
     try:
         ct = ConstraintType(request.constraint_type)
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"无效的约束类型: {request.constraint_type}")
+        raise HTTPException(
+            status_code=400, detail=f"无效的约束类型: {request.constraint_type}"
+        )
     try:
         sev = ConstraintSeverity(request.severity)
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"无效的严重级别: {request.severity}")
+        raise HTTPException(
+            status_code=400, detail=f"无效的严重级别: {request.severity}"
+        )
 
     constraint = Constraint(
         name=request.name,
