@@ -1,6 +1,6 @@
 # WorldBox Writer 架构设计与技术选型
 
-**文档状态**：Draft (Sprint 0)
+**文档状态**：Active (Sprint 1 Updated)
 **作者**：Manus AI
 
 ## 1. 系统核心理念 (Core Architecture Principles)
@@ -64,8 +64,8 @@
 
 ### 4.1 后端与 Agent 编排 (Backend & Orchestration)
 - **语言**：Python 3.11+
-- **Agent 框架**：CrewAI 或 AutoGen。
-  - *理由*：CrewAI 提供了清晰的角色定义和任务流编排，适合"好莱坞编剧室"的协作模式；AutoGen 在多 Agent 对话与冲突解决上表现优异。将在 Sprint 1 进行 Spike 验证后最终确定。
+- **Agent 框架**：LangGraph（Sprint 1 Spike 选型确认）。
+  - *理由*：LangGraph 提供有状态的图执行模型，天然支持循环、条件分支和人机交互暂停（`interrupt_before`），完全契合本项目的"推演-校验-干预"循环。相比之下，CrewAI 偏向线性任务流，AutoGen 状态管理复杂度过高。
 - **API 框架**：FastAPI。
   - *理由*：支持异步非阻塞 I/O，适合处理长时间运行的 Agent 推演任务和 Server-Sent Events (SSE) 流式输出。
 
