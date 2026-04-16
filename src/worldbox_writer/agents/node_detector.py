@@ -1,37 +1,21 @@
 """
 Node Detector — Identifies critical story moments requiring user intervention.
 
-This module implements the mechanism by which the system recognises when a
-story has reached a point of significant narrative consequence and surfaces
-that moment to the user for potential intervention.
-
-The Node Detector answers the question: "Should the simulation pause here
-and ask the user what they want to do?"
-
 Detection criteria:
 1. Structural: The node is explicitly typed as NodeType.BRANCH.
-2. Narrative tension: The node's description contains high-stakes language
-   (character death, major betrayal, irreversible decisions, etc.).
-3. Constraint proximity: The proposed node is close to violating a HARD
-   constraint — a "near miss" that the user should be aware of.
-4. Tick-based: Every N ticks, the system surfaces a summary and asks if
-   the user wants to steer the story.
-
-The detector runs as a node in the LangGraph StateGraph, immediately after
-the Gate Keeper validation pass.
+2. Narrative tension: High-stakes keywords (death, betrayal, etc.)
+3. Tick-based: Every N ticks, surface a check-in.
+4. LLM semantic: Fallback for ambiguous cases.
 """
 
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass
 from typing import Any, List, Optional
 
-from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
-
 from worldbox_writer.core.models import NodeType, StoryNode, WorldState
+from worldbox_writer.utils.llm import chat_completion
 
 # ---------------------------------------------------------------------------
 # Result types
@@ -40,26 +24,38 @@ from worldbox_writer.core.models import NodeType, StoryNode, WorldState
 
 @dataclass
 class InterventionSignal:
-    """Signals that user intervention is recommended at this story moment."""
-
     should_intervene: bool
-    urgency: str  # "low" | "medium" | "high"
-    reason: str  # Human-readable explanation for the user
-    context_summary: str  # Brief summary of the current story state
-    suggested_options: List[str]  # Pre-built options the user can select
+    urgency: str  # "low" | "medium" | "high" | "critical"
+    reason: str
+    context: str  # context summary shown to user
+    suggested_options: List[str]
 
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-# Intervention is suggested every PERIODIC_TICK_INTERVAL ticks regardless
-# of narrative content, giving the user regular check-in opportunities.
 PERIODIC_TICK_INTERVAL = 5
 
-# High-stakes keywords that trigger automatic intervention detection
-# without requiring an LLM call (fast path).
-_HIGH_STAKES_KEYWORDS = {
+_HIGH_STAKES_KEYWORDS_ZH = {
+    "死亡",
+    "死去",
+    "牺牲",
+    "背叛",
+    "永远",
+    "最后",
+    "终结",
+    "毁灭",
+    "不可逆",
+    "决裂",
+    "诀别",
+    "覆灭",
+    "绝境",
+    "命运",
+    "抉择",
+}
+
+_HIGH_STAKES_KEYWORDS_EN = {
     "death",
     "die",
     "dies",
@@ -80,45 +76,34 @@ _HIGH_STAKES_KEYWORDS = {
     "point of no return",
 }
 
+_HIGH_STAKES_KEYWORDS = _HIGH_STAKES_KEYWORDS_ZH | _HIGH_STAKES_KEYWORDS_EN
 
 # ---------------------------------------------------------------------------
-# Prompt templates
+# Prompt template
 # ---------------------------------------------------------------------------
 
-_DETECTOR_SYSTEM_PROMPT = """You are the Node Detector Agent of WorldBox Writer.
-Your job is to evaluate whether a story node represents a critical moment that
-warrants pausing the simulation and asking the user for input.
+_DETECTOR_SYSTEM_PROMPT = """你是 WorldBox Writer 的关键节点探测器。
+你的任务是判断当前故事节点是否是需要暂停并询问用户的关键时刻。
 
-You will be given:
-1. The current story tick (how many steps have been simulated).
-2. The proposed story node (title + description).
-3. A brief summary of recent story events.
-
-You MUST respond with valid JSON only. No prose, no markdown fences.
-
-Schema:
+只输出合法 JSON：
 {
   "should_intervene": true|false,
   "urgency": "low|medium|high",
-  "reason": "string — why this is a critical moment (shown to the user)",
-  "context_summary": "string — 2-3 sentence summary of the current story state",
-  "suggested_options": ["string", "string", "string"]  // 2-4 options for the user
+  "reason": "为什么这是关键时刻（展示给用户）",
+  "context_summary": "当前故事状态的2-3句摘要",
+  "suggested_options": ["选项1", "选项2", "选项3"]
 }
 
-Intervene when:
-- A character faces death or permanent harm
-- A major relationship is about to change irreversibly
-- A faction is about to gain or lose significant power
-- The story is about to cross a point of no return
-- The current direction conflicts with what the user likely intended
+需要干预的情况：
+- 角色面临死亡或永久伤害
+- 重要关系即将发生不可逆的改变
+- 故事即将越过不可返回的节点
+- 当前方向与用户可能的意图冲突
 
-Do NOT intervene for routine story developments, minor events, or when the
-story is clearly progressing as intended.
-
-Urgency levels:
-- high: Immediate, irreversible consequences (character death, etc.)
-- medium: Significant but potentially reversible consequences
-- low: Interesting choice point, but not urgent
+不需要干预的情况：
+- 常规故事发展
+- 小事件
+- 故事明显按预期推进
 """
 
 
@@ -130,53 +115,29 @@ Urgency levels:
 class NodeDetector:
     """Identifies critical story moments and generates intervention signals.
 
-    The NodeDetector uses a two-pass approach:
-    1. Fast path: Rule-based checks (structural type, keyword matching,
-       periodic tick) that require no LLM call.
-    2. Slow path: LLM-based semantic analysis for ambiguous cases.
+    Args:
+        llm: Optional injectable LLM object (must have .invoke(messages) -> response
+             where response.content is a string). When provided, used instead of the
+             default chat_completion function. Primarily used for testing.
+        periodic_interval: Number of ticks between periodic check-ins.
     """
 
     def __init__(
-        self,
-        llm: Optional[Any] = None,
-        periodic_interval: int = PERIODIC_TICK_INTERVAL,
+        self, llm: Any = None, periodic_interval: int = PERIODIC_TICK_INTERVAL
     ) -> None:
+        self.llm = llm
         self.periodic_interval = periodic_interval
-        if llm is not None:
-            self.llm = llm
-        else:
-            self.llm = ChatOpenAI(
-                model="gpt-4.1-mini",
-                temperature=0.3,
-                api_key=os.environ.get("OPENAI_API_KEY", ""),
-                base_url=os.environ.get("OPENAI_BASE_URL", None),
-            )
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
 
     def evaluate(self, world: WorldState, node: StoryNode) -> InterventionSignal:
-        """Evaluate whether this node warrants user intervention.
-
-        Args:
-            world: The current WorldState (used for tick count and context).
-            node: The proposed StoryNode being evaluated.
-
-        Returns:
-            An InterventionSignal describing whether and why to pause.
-        """
+        """Evaluate whether this node warrants user intervention."""
         # Fast path 1: Explicit branch node
         if node.node_type == NodeType.BRANCH:
             return InterventionSignal(
                 should_intervene=True,
                 urgency="high",
-                reason="This is a designated story branch point requiring your decision.",
-                context_summary=node.description,
-                suggested_options=[
-                    "Let the story continue as planned",
-                    "Intervene with a custom instruction",
-                ],
+                reason="这是一个故事分歧点，需要你做出决定。",
+                context=node.description,
+                suggested_options=["让故事按当前方向继续", "输入自定义干预指令"],
             )
 
         # Fast path 2: Periodic check-in
@@ -184,13 +145,9 @@ class NodeDetector:
             return InterventionSignal(
                 should_intervene=True,
                 urgency="low",
-                reason=f"Periodic check-in at tick {world.tick}. The story has been running for a while.",
-                context_summary=node.description,
-                suggested_options=[
-                    "Continue — the story is going well",
-                    "Steer the story in a different direction",
-                    "Speed up the simulation",
-                ],
+                reason=f"定期检查点（第 {world.tick} 步）。故事已经推演了一段时间。",
+                context=node.description,
+                suggested_options=["继续推演", "调整故事方向", "加速推演"],
             )
 
         # Fast path 3: High-stakes keyword detection
@@ -198,20 +155,22 @@ class NodeDetector:
             return InterventionSignal(
                 should_intervene=True,
                 urgency="high",
-                reason="This node contains high-stakes narrative content that may be irreversible.",
-                context_summary=node.description,
-                suggested_options=[
-                    "Allow this to happen",
-                    "Prevent this outcome",
-                    "Modify the circumstances",
-                ],
+                reason="检测到高风险叙事内容，可能产生不可逆后果。",
+                context=node.description,
+                suggested_options=["允许这件事发生", "阻止这个结果", "修改发生的情境"],
             )
 
         # Slow path: LLM semantic analysis
         return self._evaluate_with_llm(world, node)
 
+    # Alias used by graph.py
+    def detect(
+        self, node: StoryNode, world: WorldState
+    ) -> Optional[InterventionSignal]:
+        signal = self.evaluate(world, node)
+        return signal if signal.should_intervene else None
+
     def should_pause(self, world: WorldState, node: StoryNode) -> bool:
-        """Convenience method: returns True if the simulation should pause."""
         signal = self.evaluate(world, node)
         return signal.should_intervene
 
@@ -219,41 +178,46 @@ class NodeDetector:
     # Private helpers
     # ------------------------------------------------------------------
 
+    def _invoke(self, messages: List[dict], **kwargs) -> str:
+        """Unified LLM call: uses injected llm or falls back to chat_completion."""
+        if self.llm is not None:
+            response = self.llm.invoke(messages)
+            return response.content
+        return chat_completion(messages, role="node_detector", **kwargs)
+
     def _contains_high_stakes_keywords(self, node: StoryNode) -> bool:
-        """Check if the node description contains high-stakes keywords."""
         text = (node.title + " " + node.description).lower()
         return any(keyword in text for keyword in _HIGH_STAKES_KEYWORDS)
 
     def _evaluate_with_llm(
         self, world: WorldState, node: StoryNode
     ) -> InterventionSignal:
-        """Use the LLM for semantic evaluation of ambiguous nodes."""
         recent_nodes = list(world.nodes.values())[-3:]
         recent_summary = " → ".join(n.title for n in recent_nodes)
 
         messages = [
-            SystemMessage(content=_DETECTOR_SYSTEM_PROMPT),
-            HumanMessage(
-                content=(
-                    f"Current tick: {world.tick}\n"
-                    f"Recent story: {recent_summary}\n"
-                    f"Proposed node title: {node.title}\n"
-                    f"Proposed node description: {node.description}"
-                )
-            ),
+            {"role": "system", "content": _DETECTOR_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    f"当前步数：{world.tick}\n"
+                    f"最近故事：{recent_summary}\n"
+                    f"节点标题：{node.title}\n"
+                    f"节点描述：{node.description}"
+                ),
+            },
         ]
-        response = self.llm.invoke(messages)
-        raw = self._parse_json_response(response.content)
+        response = self._invoke(messages, temperature=0.3, max_tokens=512)
+        raw = self._parse_json_response(response)
         return InterventionSignal(
             should_intervene=raw.get("should_intervene", False),
             urgency=raw.get("urgency", "low"),
             reason=raw.get("reason", ""),
-            context_summary=raw.get("context_summary", ""),
+            context=raw.get("context_summary", node.description),
             suggested_options=raw.get("suggested_options", []),
         )
 
     def _parse_json_response(self, content: str) -> dict:
-        """Parse JSON from LLM response, stripping markdown fences if present."""
         text = content.strip()
         if text.startswith("```"):
             lines = text.split("\n")
@@ -262,4 +226,13 @@ class NodeDetector:
                 if lines[-1].strip() == "```"
                 else "\n".join(lines[1:])
             )
-        return json.loads(text)
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return {
+                "should_intervene": False,
+                "urgency": "low",
+                "reason": "",
+                "context_summary": "",
+                "suggested_options": [],
+            }

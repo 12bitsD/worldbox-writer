@@ -16,11 +16,7 @@ machine-actionable structures that all downstream agents can operate on.
 from __future__ import annotations
 
 import json
-import os
 from typing import Any, Dict, List, Optional
-
-from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 
 from worldbox_writer.core.models import (
     Character,
@@ -31,73 +27,74 @@ from worldbox_writer.core.models import (
     StoryNode,
     WorldState,
 )
+from worldbox_writer.utils.llm import chat_completion
 
 # ---------------------------------------------------------------------------
 # Prompt templates
 # ---------------------------------------------------------------------------
 
-_WORLD_INIT_SYSTEM_PROMPT = """You are the Director Agent of WorldBox Writer, a multi-agent novel creation system.
-Your job is to parse a user's story premise and produce a structured world initialisation.
+_WORLD_INIT_SYSTEM_PROMPT = """你是 WorldBox Writer 多智能体小说创作系统的导演 Agent。
+你的任务是解析用户的故事前提，生成结构化的世界初始化数据。
 
-You MUST respond with valid JSON only. No prose, no markdown fences.
+你必须只输出合法的 JSON，不要有任何 markdown 代码块或额外文字。
 
-The JSON schema is:
+JSON 结构如下：
 {
-  "title": "string — a short evocative title for the world",
-  "premise": "string — one-paragraph summary of the story premise",
-  "world_rules": ["string", ...],  // 3-5 fundamental rules of this world
-  "genre_tags": ["string", ...],   // e.g. ["cyberpunk", "tragedy"]
-  "tone": "string",                // e.g. "dark and melancholic"
+  "title": "世界标题（简短有力）",
+  "premise": "故事前提的一段话摘要",
+  "world_rules": ["世界规则1", "世界规则2", ...],
+  "tone": "故事基调，如：黑暗、轻松、史诗等",
   "characters": [
     {
-      "name": "string",
-      "description": "string",
-      "personality": "string",
-      "goals": ["string", ...]
+      "name": "角色名",
+      "description": "角色描述",
+      "personality": "性格特点",
+      "goals": ["目标1", "目标2"]
     }
   ],
   "constraints": [
     {
-      "name": "string",
-      "description": "string",
+      "name": "约束名称",
+      "description": "约束描述",
       "constraint_type": "world_rule|narrative|style",
       "severity": "hard|soft",
-      "rule": "string — machine-checkable rule statement"
+      "rule": "机器可检查的规则陈述"
     }
   ],
   "opening_nodes": [
     {
-      "title": "string",
-      "description": "string",
+      "title": "节点标题",
+      "description": "节点描述（50-100字）",
       "node_type": "setup|conflict|development|climax|resolution|branch"
     }
   ]
 }
 
-Extract constraints from the user's intent:
-- If they say "tragic", add a narrative constraint that the ending must be bittersweet or tragic.
-- If they mention specific world rules, encode them as world_rule constraints.
-- If they mention tone/style preferences, encode them as style constraints.
-- Always add at least one narrative constraint about the story arc.
+提取约束的原则：
+- 如果用户说"悲剧"，添加叙事约束：结局必须是悲剧或苦涩的
+- 如果提到世界规则，编码为 world_rule 约束
+- 如果提到风格偏好，编码为 style 约束
+- 至少添加一个关于故事弧线的叙事约束
+- 生成 2-4 个角色，1-2 个开场节点
 """
 
-_INTENT_UPDATE_SYSTEM_PROMPT = """You are the Director Agent. The user has provided an intervention instruction
-during story simulation. Your job is to translate this instruction into:
-1. Any new Constraints that should be added to enforce the user's intent going forward.
-2. A brief summary of how the story should change.
+_INTENT_UPDATE_SYSTEM_PROMPT = """你是 WorldBox Writer 的导演 Agent。用户在故事推演过程中提出了干预指令。
+你的任务是将这个指令转化为：
+1. 新的约束条件（确保用户意图在后续推演中持续生效）
+2. 故事新方向的简要说明
 
-Respond with valid JSON only:
+只输出合法 JSON：
 {
   "new_constraints": [
     {
-      "name": "string",
-      "description": "string",
+      "name": "约束名称",
+      "description": "约束描述",
       "constraint_type": "world_rule|narrative|style",
       "severity": "hard|soft",
-      "rule": "string"
+      "rule": "规则陈述"
     }
   ],
-  "direction_summary": "string — one paragraph describing the new story direction"
+  "direction_summary": "一段话描述故事新方向"
 }
 """
 
@@ -110,57 +107,28 @@ Respond with valid JSON only:
 class DirectorAgent:
     """Parses user intent and initialises the story world.
 
-    This agent is designed to be LLM-agnostic. It defaults to the OpenAI
-    API but can be configured with any LangChain-compatible chat model,
-    including local Ollama models.
+    Args:
+        llm: Optional injectable LLM object (must have .invoke(messages) -> response
+             where response.content is a string). When provided, used instead of the
+             default chat_completion function. Primarily used for testing.
     """
 
-    def __init__(self, llm: Optional[Any] = None) -> None:
-        if llm is not None:
-            self.llm = llm
-        else:
-            self.llm = ChatOpenAI(
-                model="gpt-4.1-mini",
-                temperature=0.7,
-                api_key=os.environ.get("OPENAI_API_KEY", ""),
-                base_url=os.environ.get("OPENAI_BASE_URL", None),
-            )
+    def __init__(self, llm: Any = None) -> None:
+        self.llm = llm
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
-    def initialise_world(self, user_premise: str) -> WorldState:
-        """Create a fully initialised WorldState from a user's premise.
-
-        This is the primary entry point for the Director Agent. It calls
-        the LLM once to parse the premise, then populates a WorldState
-        with characters, constraints, and opening story nodes.
-
-        Args:
-            user_premise: Raw natural language description of the desired story.
-
-        Returns:
-            A populated WorldState ready for simulation.
-        """
+    def initialize_world(
+        self, user_premise: str, world: WorldState = None
+    ) -> WorldState:
+        """Create a fully initialised WorldState from a user's premise."""
         raw = self._call_llm_for_init(user_premise)
-        world = self._build_world_state(raw)
-        return world
+        return self._build_world_state(raw, world)
+
+    # Keep backward compat alias
+    def initialise_world(self, user_premise: str) -> WorldState:
+        return self.initialize_world(user_premise)
 
     def process_intervention(self, world: WorldState, instruction: str) -> WorldState:
-        """Translate a user intervention into persistent constraints.
-
-        When the user intervenes at a branch point, this method ensures
-        their intent is encoded as Constraints so it remains effective
-        throughout the rest of the simulation — not just for the next step.
-
-        Args:
-            world: The current WorldState.
-            instruction: The user's natural language intervention instruction.
-
-        Returns:
-            The updated WorldState with new constraints and resolved intervention.
-        """
+        """Translate a user intervention into persistent constraints."""
         raw = self._call_llm_for_intervention(instruction)
         for c_data in raw.get("new_constraints", []):
             constraint = self._build_constraint(c_data)
@@ -172,49 +140,55 @@ class DirectorAgent:
     # Private helpers
     # ------------------------------------------------------------------
 
+    def _invoke(self, messages: List[Dict[str, str]], **kwargs) -> str:
+        """Unified LLM call: uses injected llm or falls back to chat_completion."""
+        if self.llm is not None:
+            response = self.llm.invoke(messages)
+            return response.content
+        return chat_completion(messages, role="director", **kwargs)
+
     def _call_llm_for_init(self, premise: str) -> Dict[str, Any]:
-        """Call the LLM to parse the premise and return structured data."""
         messages = [
-            SystemMessage(content=_WORLD_INIT_SYSTEM_PROMPT),
-            HumanMessage(content=f"User premise: {premise}"),
+            {"role": "system", "content": _WORLD_INIT_SYSTEM_PROMPT},
+            {"role": "user", "content": f"用户故事前提：{premise}"},
         ]
-        response = self.llm.invoke(messages)
-        return self._parse_json_response(response.content)
+        response = self._invoke(messages, temperature=0.7, max_tokens=2048)
+        return self._parse_json_response(response)
 
     def _call_llm_for_intervention(self, instruction: str) -> Dict[str, Any]:
-        """Call the LLM to translate an intervention into constraints."""
         messages = [
-            SystemMessage(content=_INTENT_UPDATE_SYSTEM_PROMPT),
-            HumanMessage(content=f"User intervention: {instruction}"),
+            {"role": "system", "content": _INTENT_UPDATE_SYSTEM_PROMPT},
+            {"role": "user", "content": f"用户干预指令：{instruction}"},
         ]
-        response = self.llm.invoke(messages)
-        return self._parse_json_response(response.content)
+        response = self._invoke(messages, temperature=0.5, max_tokens=1024)
+        return self._parse_json_response(response)
 
     def _parse_json_response(self, content: str) -> Dict[str, Any]:
-        """Parse JSON from LLM response, stripping markdown fences if present."""
         text = content.strip()
         if text.startswith("```"):
             lines = text.split("\n")
-            # Remove opening fence (```json or ```) and closing fence
             text = (
                 "\n".join(lines[1:-1])
                 if lines[-1].strip() == "```"
                 else "\n".join(lines[1:])
             )
-        return json.loads(text)
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return {}
 
-    def _build_world_state(self, data: Dict[str, Any]) -> WorldState:
-        """Construct a WorldState from the parsed LLM response."""
-        world = WorldState(
-            title=data.get("title", "Untitled World"),
-            premise=data.get("premise", ""),
-            world_rules=data.get("world_rules", []),
-        )
+    def _build_world_state(
+        self, data: Dict[str, Any], existing_world: WorldState = None
+    ) -> WorldState:
+        world = existing_world or WorldState()
+        world.title = data.get("title", "无名世界")
+        world.premise = data.get("premise", world.premise)
+        world.world_rules = data.get("world_rules", [])
 
         # Register characters
         for c_data in data.get("characters", []):
             character = Character(
-                name=c_data.get("name", "Unknown"),
+                name=c_data.get("name", "未知"),
                 description=c_data.get("description", ""),
                 personality=c_data.get("personality", ""),
                 goals=c_data.get("goals", []),
@@ -232,7 +206,7 @@ class DirectorAgent:
             node = StoryNode(
                 title=n_data.get("title", ""),
                 description=n_data.get("description", ""),
-                node_type=NodeType(n_data.get("node_type", "development")),
+                node_type=NodeType(n_data.get("node_type", "setup")),
                 parent_ids=[prev_node_id] if prev_node_id else [],
             )
             if prev_node_id and prev_node_id in world.nodes:
@@ -240,16 +214,14 @@ class DirectorAgent:
             world.add_node(node)
             prev_node_id = str(node.id)
 
-        # Set the first node as current
         if world.nodes:
             world.current_node_id = next(iter(world.nodes))
 
         return world
 
     def _build_constraint(self, data: Dict[str, Any]) -> Constraint:
-        """Build a Constraint model from a dictionary."""
         return Constraint(
-            name=data.get("name", "Unnamed Constraint"),
+            name=data.get("name", "未命名约束"),
             description=data.get("description", ""),
             constraint_type=ConstraintType(data.get("constraint_type", "narrative")),
             severity=ConstraintSeverity(data.get("severity", "hard")),

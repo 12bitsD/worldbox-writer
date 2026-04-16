@@ -1,0 +1,73 @@
+// WorldBox Writer — API Client
+
+import type { SimulationState, ExportData } from "../types";
+
+const BASE = "/api";
+
+export async function startSimulation(
+  premise: string,
+  maxTicks = 8
+): Promise<{ sim_id: string; status: string; message: string }> {
+  const res = await fetch(`${BASE}/simulate/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ premise, max_ticks: maxTicks }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getSimulation(simId: string): Promise<SimulationState> {
+  const res = await fetch(`${BASE}/simulate/${simId}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function intervene(
+  simId: string,
+  instruction: string
+): Promise<void> {
+  const res = await fetch(`${BASE}/simulate/${simId}/intervene`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ instruction }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
+export async function exportSimulation(simId: string): Promise<ExportData> {
+  const res = await fetch(`${BASE}/simulate/${simId}/export`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function listSessions(): Promise<
+  Array<{
+    sim_id: string;
+    status: string;
+    premise: string;
+    nodes_count: number;
+  }>
+> {
+  const res = await fetch(`${BASE}/sessions`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export function createEventStream(
+  simId: string,
+  onEvent: (event: { type: string; [key: string]: unknown }) => void,
+  onError?: (err: Event) => void
+): EventSource {
+  const es = new EventSource(`${BASE}/simulate/${simId}/stream`);
+  es.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      onEvent(data);
+    } catch {
+      // ignore parse errors
+    }
+  };
+  if (onError) es.onerror = onError;
+  return es;
+}

@@ -1,31 +1,18 @@
 """
 Gate Keeper Agent — The world's guardian.
 
-The Gate Keeper is the most critical agent in the system. It is the
-mechanism by which human intent remains effective throughout the entire
-story simulation. Without it, Agent autonomy would quickly override the
-user's wishes.
-
 Responsibilities:
 1. Evaluate every proposed StoryNode against all active Constraints.
-2. Block nodes that violate HARD constraints (return a violation report).
-3. Warn about nodes that violate SOFT constraints (allow but flag).
-4. Provide a structured violation report so the Director can revise the node.
-
-Design principle: The Gate Keeper is a pure validator. It does not modify
-the WorldState directly. It returns a ValidationResult that the LangGraph
-orchestrator uses to decide whether to proceed, warn, or block.
+2. Block nodes that violate HARD constraints.
+3. Warn about nodes that violate SOFT constraints.
+4. Provide revision hints so the simulation can self-correct.
 """
 
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
-
-from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 
 from worldbox_writer.core.models import (
     Constraint,
@@ -33,6 +20,7 @@ from worldbox_writer.core.models import (
     StoryNode,
     WorldState,
 )
+from worldbox_writer.utils.llm import chat_completion
 
 # ---------------------------------------------------------------------------
 # Result types
@@ -41,23 +29,20 @@ from worldbox_writer.core.models import (
 
 @dataclass
 class ConstraintViolation:
-    """Describes a single constraint violation found in a proposed node."""
-
     constraint_name: str
     constraint_rule: str
     severity: ConstraintSeverity
     explanation: str
-    is_blocking: bool  # True for HARD violations
+    is_blocking: bool
 
 
 @dataclass
 class ValidationResult:
-    """The complete result of a Gate Keeper validation pass."""
-
-    is_valid: bool  # False if any HARD constraint is violated
-    has_warnings: bool  # True if any SOFT constraint is violated
+    is_valid: bool
+    has_warnings: bool
     violations: List[ConstraintViolation] = field(default_factory=list)
-    revision_hint: str = ""  # Guidance for the Director on how to fix the node
+    revision_hint: str = ""
+    rejection_reason: str = ""
 
     @property
     def blocking_violations(self) -> List[ConstraintViolation]:
@@ -69,37 +54,30 @@ class ValidationResult:
 
 
 # ---------------------------------------------------------------------------
-# Prompt templates
+# Prompt template
 # ---------------------------------------------------------------------------
 
-_GATE_KEEPER_SYSTEM_PROMPT = """You are the Gate Keeper Agent of WorldBox Writer.
-Your job is to evaluate whether a proposed story node violates any active constraints.
+_GATE_KEEPER_SYSTEM_PROMPT = """你是 WorldBox Writer 的边界守卫 Agent。
+你的任务是检查提议的故事节点是否违反了活跃的约束条件。
 
-You will be given:
-1. A list of active constraints (with their rules and severity).
-2. A proposed story node (title + description).
-
-You MUST respond with valid JSON only. No prose, no markdown fences.
-
-Schema:
+只输出合法 JSON，不要有任何额外文字：
 {
   "violations": [
     {
-      "constraint_name": "string",
+      "constraint_name": "约束名称",
       "severity": "hard|soft",
-      "explanation": "string — why this node violates the constraint",
-      "is_blocking": true|false  // true for hard violations
+      "explanation": "为什么违反了这个约束",
+      "is_blocking": true|false
     }
   ],
-  "revision_hint": "string — if there are violations, suggest how to revise the node to comply"
+  "revision_hint": "如果有违规，建议如何修改节点以符合约束"
 }
 
-Rules:
-- Only report genuine violations. If the node complies with a constraint, do not mention it.
-- For HARD constraints, is_blocking must be true.
-- For SOFT constraints, is_blocking must be false.
-- If there are no violations, return {"violations": [], "revision_hint": ""}.
-- Be precise and concise in explanations.
+规则：
+- 只报告真实的违规，不要无中生有
+- HARD 约束违规时 is_blocking 必须为 true
+- SOFT 约束违规时 is_blocking 必须为 false
+- 如果没有违规，返回 {"violations": [], "revision_hint": ""}
 """
 
 
@@ -111,91 +89,66 @@ Rules:
 class GateKeeperAgent:
     """Validates proposed story nodes against the world's active constraints.
 
-    The Gate Keeper runs as a conditional edge in the LangGraph StateGraph.
-    If it returns is_valid=False, the graph routes back to the Director for
-    node revision. If is_valid=True, the graph proceeds to the Narrator.
+    Args:
+        llm: Optional injectable LLM object (must have .invoke(messages) -> response
+             where response.content is a string). When provided, used instead of the
+             default chat_completion function. Primarily used for testing.
     """
 
-    def __init__(self, llm: Optional[Any] = None) -> None:
-        if llm is not None:
-            self.llm = llm
-        else:
-            self.llm = ChatOpenAI(
-                model="gpt-4.1-mini",
-                temperature=0.0,  # Deterministic for validation
-                api_key=os.environ.get("OPENAI_API_KEY", ""),
-                base_url=os.environ.get("OPENAI_BASE_URL", None),
-            )
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+    def __init__(self, llm: Any = None) -> None:
+        self.llm = llm
 
     def validate(self, world: WorldState, node: StoryNode) -> ValidationResult:
-        """Validate a proposed story node against all active constraints.
-
-        This is the primary entry point. It first runs a fast rule-based
-        pre-check (no LLM call needed for trivially compliant nodes), then
-        calls the LLM for semantic validation if there are active constraints.
-
-        Args:
-            world: The current WorldState containing active constraints.
-            node: The proposed StoryNode to validate.
-
-        Returns:
-            A ValidationResult indicating whether the node is valid.
-        """
+        """Validate a proposed story node against all active constraints."""
         active = world.active_constraints()
-
-        # Fast path: no constraints means always valid
         if not active:
             return ValidationResult(is_valid=True, has_warnings=False)
 
         raw = self._call_llm_for_validation(active, node)
         return self._build_result(raw, active)
 
+    # Alias used by graph.py
+    def validate_node(self, node: StoryNode, world: WorldState) -> ValidationResult:
+        return self.validate(world, node)
+
     def validate_batch(
         self, world: WorldState, nodes: List[StoryNode]
     ) -> List[ValidationResult]:
-        """Validate multiple nodes in sequence.
-
-        Used during fast-forward mode to validate a batch of proposed nodes
-        before committing them to the world state.
-        """
         return [self.validate(world, node) for node in nodes]
 
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
 
+    def _invoke(self, messages: List[dict], **kwargs) -> str:
+        """Unified LLM call: uses injected llm or falls back to chat_completion."""
+        if self.llm is not None:
+            response = self.llm.invoke(messages)
+            return response.content
+        return chat_completion(messages, role="gate_keeper", **kwargs)
+
     def _call_llm_for_validation(
         self, constraints: List[Constraint], node: StoryNode
     ) -> dict:
-        """Call the LLM to semantically evaluate the node against constraints."""
         constraints_text = "\n".join(
             f"- [{c.severity.value.upper()}] {c.name}: {c.rule}" for c in constraints
         )
-        node_text = f"Title: {node.title}\nDescription: {node.description}"
+        node_text = f"标题：{node.title}\n描述：{node.description}"
 
         messages = [
-            SystemMessage(content=_GATE_KEEPER_SYSTEM_PROMPT),
-            HumanMessage(
-                content=(
-                    f"Active constraints:\n{constraints_text}\n\n"
-                    f"Proposed node:\n{node_text}"
-                )
-            ),
+            {"role": "system", "content": _GATE_KEEPER_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": f"活跃约束：\n{constraints_text}\n\n提议节点：\n{node_text}",
+            },
         ]
-        response = self.llm.invoke(messages)
-        return self._parse_json_response(response.content)
+        response = self._invoke(messages, temperature=0.0, max_tokens=512)
+        return self._parse_json_response(response)
 
     def _build_result(
         self, data: dict, active_constraints: List[Constraint]
     ) -> ValidationResult:
-        """Construct a ValidationResult from the LLM's parsed response."""
         violations: List[ConstraintViolation] = []
-
-        # Build a lookup for constraint metadata
         constraint_lookup = {c.name: c for c in active_constraints}
 
         for v_data in data.get("violations", []):
@@ -220,16 +173,17 @@ class GateKeeperAgent:
 
         has_blocking = any(v.is_blocking for v in violations)
         has_warnings = any(not v.is_blocking for v in violations)
+        rejection_reason = "; ".join(v.explanation for v in violations if v.is_blocking)
 
         return ValidationResult(
             is_valid=not has_blocking,
             has_warnings=has_warnings,
             violations=violations,
             revision_hint=data.get("revision_hint", ""),
+            rejection_reason=rejection_reason,
         )
 
     def _parse_json_response(self, content: str) -> dict:
-        """Parse JSON from LLM response, stripping markdown fences if present."""
         text = content.strip()
         if text.startswith("```"):
             lines = text.split("\n")
@@ -238,4 +192,7 @@ class GateKeeperAgent:
                 if lines[-1].strip() == "```"
                 else "\n".join(lines[1:])
             )
-        return json.loads(text)
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return {"violations": [], "revision_hint": ""}
