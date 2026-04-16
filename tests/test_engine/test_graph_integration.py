@@ -14,6 +14,9 @@ from worldbox_writer.engine.graph import build_simulation_graph, run_simulation
 from worldbox_writer.memory.memory_manager import MemoryManager
 
 
+pytestmark = pytest.mark.integration
+
+
 class TestBuildGraph:
     def test_build_graph_returns_compiled_graph(self):
         """build_simulation_graph should return a compiled LangGraph app."""

@@ -24,6 +24,9 @@ def world_builder():
     return WorldBuilderAgent()
 
 
+pytestmark = pytest.mark.integration
+
+
 class TestWorldBuilderExpansion:
     def test_returns_world_state(self, world_builder, minimal_world):
         """WorldBuilder must return a WorldState object."""

@@ -57,3 +57,6 @@ testpaths = [
     "tests",
 ]
 asyncio_mode = "auto"
+markers = [
+    "integration: tests that require a real OpenAI API key (deselect with '-m \"not integration\"')",
+]

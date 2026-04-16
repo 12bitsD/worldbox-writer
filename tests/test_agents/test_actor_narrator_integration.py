@@ -40,6 +40,9 @@ def narrator():
     return NarratorAgent()
 
 
+pytestmark = pytest.mark.integration
+
+
 class TestActorAgent:
     def test_actor_proposes_action(self, actor, world):
         """Actor should produce a valid ActionProposal."""

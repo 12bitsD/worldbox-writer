@@ -24,6 +24,9 @@ def world(director):
     return director.initialise_world("一个古代侠客被门派背叛后踏上复仇之路的故事")
 
 
+pytestmark = pytest.mark.integration
+
+
 class TestDirectorInitialiseWorld:
     def test_returns_world_state(self, world):
         assert isinstance(world, WorldState)

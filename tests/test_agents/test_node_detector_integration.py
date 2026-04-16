@@ -26,6 +26,9 @@ def detector():
     return NodeDetector()
 
 
+pytestmark = pytest.mark.integration
+
+
 class TestNodeDetector:
     def test_returns_intervention_signal_or_none(self, detector, world):
         """NodeDetector.detect must return an InterventionSignal or None."""

@@ -36,6 +36,9 @@ def gate_keeper():
     return GateKeeperAgent()
 
 
+pytestmark = pytest.mark.integration
+
+
 class TestGateKeeperValidation:
     def test_returns_validation_result(self, gate_keeper, world_with_constraints):
         """GateKeeper must return a structured ValidationResult."""
