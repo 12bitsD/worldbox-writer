@@ -27,7 +27,6 @@ from worldbox_writer.core.models import (
     WorldState,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures and helpers
 # ---------------------------------------------------------------------------
@@ -125,20 +124,24 @@ class TestGateKeeperValidate:
 
     def test_hard_violation_returns_invalid(self):
         """A node violating a HARD constraint must be blocked."""
-        mock_llm = make_mock_llm({
-            "violations": [
-                {
-                    "constraint_name": "Hero Must Survive",
-                    "severity": "hard",
-                    "explanation": "The node describes the hero dying in chapter 2",
-                    "is_blocking": True,
-                }
-            ],
-            "revision_hint": "Have the hero narrowly escape instead of dying.",
-        })
+        mock_llm = make_mock_llm(
+            {
+                "violations": [
+                    {
+                        "constraint_name": "Hero Must Survive",
+                        "severity": "hard",
+                        "explanation": "The node describes the hero dying in chapter 2",
+                        "is_blocking": True,
+                    }
+                ],
+                "revision_hint": "Have the hero narrowly escape instead of dying.",
+            }
+        )
         gate_keeper = GateKeeperAgent(llm=mock_llm)
         world = make_world_with_constraints(
-            make_hard_constraint("Hero Must Survive", "The hero must not die before chapter 10")
+            make_hard_constraint(
+                "Hero Must Survive", "The hero must not die before chapter 10"
+            )
         )
         node = StoryNode(
             title="The Hero Falls",
@@ -151,20 +154,24 @@ class TestGateKeeperValidate:
 
     def test_soft_violation_returns_valid_with_warning(self):
         """A node violating a SOFT constraint should pass but trigger a warning."""
-        mock_llm = make_mock_llm({
-            "violations": [
-                {
-                    "constraint_name": "Dark Tone",
-                    "severity": "soft",
-                    "explanation": "The scene is too cheerful for the established tone",
-                    "is_blocking": False,
-                }
-            ],
-            "revision_hint": "Consider adding some shadow or tension to the scene.",
-        })
+        mock_llm = make_mock_llm(
+            {
+                "violations": [
+                    {
+                        "constraint_name": "Dark Tone",
+                        "severity": "soft",
+                        "explanation": "The scene is too cheerful for the established tone",
+                        "is_blocking": False,
+                    }
+                ],
+                "revision_hint": "Consider adding some shadow or tension to the scene.",
+            }
+        )
         gate_keeper = GateKeeperAgent(llm=mock_llm)
         world = make_world_with_constraints(
-            make_soft_constraint("Dark Tone", "All scenes must maintain a gritty atmosphere")
+            make_soft_constraint(
+                "Dark Tone", "All scenes must maintain a gritty atmosphere"
+            )
         )
         node = StoryNode(
             title="A Sunny Picnic",
@@ -177,10 +184,12 @@ class TestGateKeeperValidate:
 
     def test_no_violations_returns_clean_result(self):
         """A compliant node should return no violations."""
-        mock_llm = make_mock_llm({
-            "violations": [],
-            "revision_hint": "",
-        })
+        mock_llm = make_mock_llm(
+            {
+                "violations": [],
+                "revision_hint": "",
+            }
+        )
         gate_keeper = GateKeeperAgent(llm=mock_llm)
         world = make_world_with_constraints(
             make_hard_constraint("Hero Survives", "Hero must not die")
@@ -196,17 +205,19 @@ class TestGateKeeperValidate:
 
     def test_revision_hint_is_populated_on_violation(self):
         """When there are violations, a revision hint must be provided."""
-        mock_llm = make_mock_llm({
-            "violations": [
-                {
-                    "constraint_name": "Hero Must Survive",
-                    "severity": "hard",
-                    "explanation": "Hero dies",
-                    "is_blocking": True,
-                }
-            ],
-            "revision_hint": "Have the hero escape instead.",
-        })
+        mock_llm = make_mock_llm(
+            {
+                "violations": [
+                    {
+                        "constraint_name": "Hero Must Survive",
+                        "severity": "hard",
+                        "explanation": "Hero dies",
+                        "is_blocking": True,
+                    }
+                ],
+                "revision_hint": "Have the hero escape instead.",
+            }
+        )
         gate_keeper = GateKeeperAgent(llm=mock_llm)
         world = make_world_with_constraints(
             make_hard_constraint("Hero Must Survive", "Hero must not die")
@@ -229,23 +240,25 @@ class TestGateKeeperValidate:
 
     def test_multiple_hard_violations_all_reported(self):
         """All hard violations must be reported, not just the first one."""
-        mock_llm = make_mock_llm({
-            "violations": [
-                {
-                    "constraint_name": "Rule A",
-                    "severity": "hard",
-                    "explanation": "Violates rule A",
-                    "is_blocking": True,
-                },
-                {
-                    "constraint_name": "Rule B",
-                    "severity": "hard",
-                    "explanation": "Violates rule B",
-                    "is_blocking": True,
-                },
-            ],
-            "revision_hint": "Fix both issues.",
-        })
+        mock_llm = make_mock_llm(
+            {
+                "violations": [
+                    {
+                        "constraint_name": "Rule A",
+                        "severity": "hard",
+                        "explanation": "Violates rule A",
+                        "is_blocking": True,
+                    },
+                    {
+                        "constraint_name": "Rule B",
+                        "severity": "hard",
+                        "explanation": "Violates rule B",
+                        "is_blocking": True,
+                    },
+                ],
+                "revision_hint": "Fix both issues.",
+            }
+        )
         gate_keeper = GateKeeperAgent(llm=mock_llm)
         world = make_world_with_constraints(
             make_hard_constraint("Rule A", "Rule A"),
@@ -274,15 +287,13 @@ class TestGateKeeperValidate:
     def test_json_with_markdown_fences_is_parsed(self):
         """Gate Keeper must handle LLMs that wrap JSON in markdown fences."""
         mock_response = MagicMock()
-        mock_response.content = "```json\n" + json.dumps({
-            "violations": [], "revision_hint": ""
-        }) + "\n```"
+        mock_response.content = (
+            "```json\n" + json.dumps({"violations": [], "revision_hint": ""}) + "\n```"
+        )
         mock_llm = MagicMock()
         mock_llm.invoke.return_value = mock_response
         gate_keeper = GateKeeperAgent(llm=mock_llm)
-        world = make_world_with_constraints(
-            make_hard_constraint("Rule", "Rule")
-        )
+        world = make_world_with_constraints(make_hard_constraint("Rule", "Rule"))
         node = StoryNode(title="Node", description="Description")
         result = gate_keeper.validate(world, node)
         assert result.is_valid is True

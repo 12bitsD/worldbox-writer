@@ -32,7 +32,6 @@ from worldbox_writer.core.models import (
     WorldState,
 )
 
-
 # ---------------------------------------------------------------------------
 # Prompt templates
 # ---------------------------------------------------------------------------
@@ -148,9 +147,7 @@ class DirectorAgent:
         world = self._build_world_state(raw)
         return world
 
-    def process_intervention(
-        self, world: WorldState, instruction: str
-    ) -> WorldState:
+    def process_intervention(self, world: WorldState, instruction: str) -> WorldState:
         """Translate a user intervention into persistent constraints.
 
         When the user intervenes at a branch point, this method ensures
@@ -199,7 +196,11 @@ class DirectorAgent:
         if text.startswith("```"):
             lines = text.split("\n")
             # Remove opening fence (```json or ```) and closing fence
-            text = "\n".join(lines[1:-1]) if lines[-1].strip() == "```" else "\n".join(lines[1:])
+            text = (
+                "\n".join(lines[1:-1])
+                if lines[-1].strip() == "```"
+                else "\n".join(lines[1:])
+            )
         return json.loads(text)
 
     def _build_world_state(self, data: Dict[str, Any]) -> WorldState:
@@ -250,9 +251,7 @@ class DirectorAgent:
         return Constraint(
             name=data.get("name", "Unnamed Constraint"),
             description=data.get("description", ""),
-            constraint_type=ConstraintType(
-                data.get("constraint_type", "narrative")
-            ),
+            constraint_type=ConstraintType(data.get("constraint_type", "narrative")),
             severity=ConstraintSeverity(data.get("severity", "hard")),
             rule=data.get("rule", ""),
         )

@@ -14,7 +14,6 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
-
 # ---------------------------------------------------------------------------
 # Enumerations
 # ---------------------------------------------------------------------------
@@ -32,27 +31,27 @@ class CharacterStatus(str, Enum):
 class NodeType(str, Enum):
     """Classification of a story node by its narrative function."""
 
-    SETUP = "setup"           # World / character introduction
-    CONFLICT = "conflict"     # A new conflict or tension emerges
+    SETUP = "setup"  # World / character introduction
+    CONFLICT = "conflict"  # A new conflict or tension emerges
     DEVELOPMENT = "development"  # Plot advances, characters grow
-    CLIMAX = "climax"         # Peak tension moment
+    CLIMAX = "climax"  # Peak tension moment
     RESOLUTION = "resolution"  # Conflict resolved
-    BRANCH = "branch"         # Decision point requiring user intervention
+    BRANCH = "branch"  # Decision point requiring user intervention
 
 
 class ConstraintType(str, Enum):
     """Category of a world constraint."""
 
-    WORLD_RULE = "world_rule"      # Physical / metaphysical laws of the world
-    NARRATIVE = "narrative"        # Story-level guardrails (e.g., "hero must survive act 1")
-    STYLE = "style"                # Tone and content guidelines
+    WORLD_RULE = "world_rule"  # Physical / metaphysical laws of the world
+    NARRATIVE = "narrative"  # Story-level guardrails (e.g., "hero must survive act 1")
+    STYLE = "style"  # Tone and content guidelines
 
 
 class ConstraintSeverity(str, Enum):
     """How strictly a constraint must be enforced."""
 
-    HARD = "hard"    # Must never be violated; Gate Keeper will block the node
-    SOFT = "soft"    # Should be respected; Gate Keeper will warn but allow
+    HARD = "hard"  # Must never be violated; Gate Keeper will block the node
+    SOFT = "soft"  # Should be respected; Gate Keeper will warn but allow
 
 
 # ---------------------------------------------------------------------------

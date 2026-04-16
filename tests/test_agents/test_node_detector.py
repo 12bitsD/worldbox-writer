@@ -13,13 +13,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from worldbox_writer.agents.node_detector import (
+    _HIGH_STAKES_KEYWORDS,
     PERIODIC_TICK_INTERVAL,
     InterventionSignal,
     NodeDetector,
-    _HIGH_STAKES_KEYWORDS,
 )
 from worldbox_writer.core.models import NodeType, StoryNode, WorldState
-
 
 # ---------------------------------------------------------------------------
 # Helpers

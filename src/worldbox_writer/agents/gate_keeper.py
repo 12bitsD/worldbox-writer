@@ -34,7 +34,6 @@ from worldbox_writer.core.models import (
     WorldState,
 )
 
-
 # ---------------------------------------------------------------------------
 # Result types
 # ---------------------------------------------------------------------------
@@ -55,8 +54,8 @@ class ConstraintViolation:
 class ValidationResult:
     """The complete result of a Gate Keeper validation pass."""
 
-    is_valid: bool           # False if any HARD constraint is violated
-    has_warnings: bool       # True if any SOFT constraint is violated
+    is_valid: bool  # False if any HARD constraint is violated
+    has_warnings: bool  # True if any SOFT constraint is violated
     violations: List[ConstraintViolation] = field(default_factory=list)
     revision_hint: str = ""  # Guidance for the Director on how to fix the node
 
@@ -174,8 +173,7 @@ class GateKeeperAgent:
     ) -> dict:
         """Call the LLM to semantically evaluate the node against constraints."""
         constraints_text = "\n".join(
-            f"- [{c.severity.value.upper()}] {c.name}: {c.rule}"
-            for c in constraints
+            f"- [{c.severity.value.upper()}] {c.name}: {c.rule}" for c in constraints
         )
         node_text = f"Title: {node.title}\nDescription: {node.description}"
 
@@ -214,7 +212,9 @@ class GateKeeperAgent:
                     constraint_rule=constraint.rule if constraint else "",
                     severity=severity,
                     explanation=v_data.get("explanation", ""),
-                    is_blocking=v_data.get("is_blocking", severity == ConstraintSeverity.HARD),
+                    is_blocking=v_data.get(
+                        "is_blocking", severity == ConstraintSeverity.HARD
+                    ),
                 )
             )
 
@@ -233,5 +233,9 @@ class GateKeeperAgent:
         text = content.strip()
         if text.startswith("```"):
             lines = text.split("\n")
-            text = "\n".join(lines[1:-1]) if lines[-1].strip() == "```" else "\n".join(lines[1:])
+            text = (
+                "\n".join(lines[1:-1])
+                if lines[-1].strip() == "```"
+                else "\n".join(lines[1:])
+            )
         return json.loads(text)

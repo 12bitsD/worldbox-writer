@@ -33,7 +33,6 @@ from langchain_openai import ChatOpenAI
 
 from worldbox_writer.core.models import NodeType, StoryNode, WorldState
 
-
 # ---------------------------------------------------------------------------
 # Result types
 # ---------------------------------------------------------------------------
@@ -44,8 +43,8 @@ class InterventionSignal:
     """Signals that user intervention is recommended at this story moment."""
 
     should_intervene: bool
-    urgency: str          # "low" | "medium" | "high"
-    reason: str           # Human-readable explanation for the user
+    urgency: str  # "low" | "medium" | "high"
+    reason: str  # Human-readable explanation for the user
     context_summary: str  # Brief summary of the current story state
     suggested_options: List[str]  # Pre-built options the user can select
 
@@ -61,11 +60,24 @@ PERIODIC_TICK_INTERVAL = 5
 # High-stakes keywords that trigger automatic intervention detection
 # without requiring an LLM call (fast path).
 _HIGH_STAKES_KEYWORDS = {
-    "death", "die", "dies", "dead", "killed", "murder",
-    "betray", "betrayal", "betrayed",
-    "irreversible", "permanent", "forever",
-    "sacrifice", "destroy", "destroyed",
-    "final", "last chance", "point of no return",
+    "death",
+    "die",
+    "dies",
+    "dead",
+    "killed",
+    "murder",
+    "betray",
+    "betrayal",
+    "betrayed",
+    "irreversible",
+    "permanent",
+    "forever",
+    "sacrifice",
+    "destroy",
+    "destroyed",
+    "final",
+    "last chance",
+    "point of no return",
 }
 
 
@@ -245,5 +257,9 @@ class NodeDetector:
         text = content.strip()
         if text.startswith("```"):
             lines = text.split("\n")
-            text = "\n".join(lines[1:-1]) if lines[-1].strip() == "```" else "\n".join(lines[1:])
+            text = (
+                "\n".join(lines[1:-1])
+                if lines[-1].strip() == "```"
+                else "\n".join(lines[1:])
+            )
         return json.loads(text)

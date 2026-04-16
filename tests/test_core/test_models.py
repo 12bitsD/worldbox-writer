@@ -5,8 +5,9 @@ Tests are written following the Red-Green-Refactor cycle. Each test verifies
 one specific behaviour of the model, keeping tests small and focused.
 """
 
-import pytest
 from uuid import UUID
+
+import pytest
 
 from worldbox_writer.core.models import (
     Character,
@@ -18,7 +19,6 @@ from worldbox_writer.core.models import (
     StoryNode,
     WorldState,
 )
-
 
 # ---------------------------------------------------------------------------
 # Character tests
@@ -208,7 +208,9 @@ class TestWorldState:
         assert world.pending_intervention is False
         assert world.intervention_context is None
         # The instruction should be stored on the node
-        assert world.nodes[str(node.id)].intervention_instruction == "Send in the cavalry"
+        assert (
+            world.nodes[str(node.id)].intervention_instruction == "Send in the cavalry"
+        )
 
     def test_initial_tick_is_zero(self):
         world = WorldState()
