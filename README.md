@@ -238,3 +238,21 @@ pytest tests/ --cov=src/worldbox_writer
 ## License
 
 MIT
+
+## LLM 配置说明
+
+项目支持通过环境变量或 `.env` 文件配置不同的 LLM 后端。目前默认推荐使用 Xiaomi MiMo (Token Plan)。
+
+支持的模型提供商：
+1. **MIMO (Xiaomi MiMo)** (推荐)
+   - `LLM_PROVIDER=mimo`
+   - `LLM_API_KEY=tp-...`
+   - `LLM_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1`
+2. **Kimi** (备选，适合长上下文)
+   - `LLM_PROVIDER=kimi`
+3. **OpenAI** (备选)
+   - `LLM_PROVIDER=openai`
+4. **Ollama** (本地部署)
+   - `LLM_PROVIDER=ollama`
+
+详见 `.env.example` 文件。
