@@ -13,7 +13,6 @@ from worldbox_writer.core.models import WorldState
 from worldbox_writer.engine.graph import build_simulation_graph, run_simulation
 from worldbox_writer.memory.memory_manager import MemoryManager
 
-
 pytestmark = pytest.mark.integration
 
 

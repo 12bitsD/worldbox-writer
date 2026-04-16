@@ -186,6 +186,7 @@ class TestMemoryManagerPureLogic:
         assert "尚无记录" in arc
 
 
+@pytest.mark.integration
 class TestMemoryManagerWithRealLLM:
     """Tests that require real LLM API calls."""
 

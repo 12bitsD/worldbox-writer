@@ -50,6 +50,12 @@ include = '\.pyi?$'
 profile = "black"
 line_length = 88
 
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_return_any = true
+warn_unused_configs = true
+
 [tool.pytest.ini_options]
 minversion = "7.0"
 addopts = "-ra -q --cov=worldbox_writer"
