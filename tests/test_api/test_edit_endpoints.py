@@ -6,7 +6,7 @@ Uses FastAPI TestClient, no LLM required.
 import pytest
 from fastapi.testclient import TestClient
 
-from worldbox_writer.api.server import app, _sessions, SimulationSession
+from worldbox_writer.api.server import SimulationSession, _sessions, app
 from worldbox_writer.core.models import Character, WorldState
 from worldbox_writer.storage.db import init_db
 

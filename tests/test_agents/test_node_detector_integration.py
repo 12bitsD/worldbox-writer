@@ -9,6 +9,7 @@ InterventionSignal fields: should_intervene, urgency, reason, context, suggested
 """
 
 import pytest
+
 from worldbox_writer.agents.director import DirectorAgent
 from worldbox_writer.agents.node_detector import NodeDetector
 from worldbox_writer.core.models import NodeType, StoryNode, WorldState

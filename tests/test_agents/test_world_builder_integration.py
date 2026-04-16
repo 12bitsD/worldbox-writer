@@ -6,6 +6,7 @@ into a rich world with factions, locations, and power systems.
 """
 
 import pytest
+
 from worldbox_writer.agents.director import DirectorAgent
 from worldbox_writer.agents.world_builder import WorldBuilderAgent
 from worldbox_writer.core.models import WorldState

@@ -16,7 +16,8 @@ NarratorOutput fields: node_id, prose, chapter_title, word_count, style_notes
 """
 
 import pytest
-from worldbox_writer.agents.actor import ActorAgent, ActionProposal
+
+from worldbox_writer.agents.actor import ActionProposal, ActorAgent
 from worldbox_writer.agents.director import DirectorAgent
 from worldbox_writer.agents.narrator import NarratorAgent, NarratorOutput
 from worldbox_writer.core.models import NodeType, StoryNode

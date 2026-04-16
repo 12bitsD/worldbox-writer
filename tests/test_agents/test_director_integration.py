@@ -7,6 +7,7 @@ so assertions focus on structure and invariants, not exact values.
 """
 
 import pytest
+
 from worldbox_writer.agents.director import DirectorAgent
 from worldbox_writer.core.models import (
     ConstraintSeverity,
