@@ -6,6 +6,7 @@ Director → WorldBuilder → Actor → GateKeeper → NodeDetector → Narrator
 
 Tests verify structural correctness of the simulation output, not exact content.
 """
+
 import pytest
 from worldbox_writer.core.models import WorldState
 from worldbox_writer.engine.graph import build_simulation_graph, run_simulation

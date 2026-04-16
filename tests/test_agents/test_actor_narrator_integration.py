@@ -14,6 +14,7 @@ ActionProposal fields: character_id, character_name, action_type, description,
                        target_character_id, emotional_state, consequence_hint
 NarratorOutput fields: node_id, prose, chapter_title, word_count, style_notes
 """
+
 import pytest
 from worldbox_writer.agents.actor import ActorAgent, ActionProposal
 from worldbox_writer.agents.director import DirectorAgent

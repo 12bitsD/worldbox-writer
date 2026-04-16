@@ -159,7 +159,9 @@ class TestSessionCRUD:
 
     def test_delete_session(self, db_path, sample_world):
         """Deleted session should not be found."""
-        save_session("del1", "premise", 3, "complete", sample_world, [], db_path=db_path)
+        save_session(
+            "del1", "premise", 3, "complete", sample_world, [], db_path=db_path
+        )
         assert load_session("del1", db_path) is not None
         delete_session("del1", db_path)
         assert load_session("del1", db_path) is None

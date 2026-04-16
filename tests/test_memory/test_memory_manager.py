@@ -16,7 +16,6 @@ from worldbox_writer.memory.memory_manager import (
     SimpleVectorStore,
 )
 
-
 # ---------------------------------------------------------------------------
 # SimpleVectorStore tests — pure logic, no LLM
 # ---------------------------------------------------------------------------

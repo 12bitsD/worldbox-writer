@@ -30,6 +30,7 @@ def _get_db_path() -> str:
 # Connection helper
 # ---------------------------------------------------------------------------
 
+
 def _get_conn(db_path: Optional[str] = None) -> sqlite3.Connection:
     path = db_path or _get_db_path()
     conn = sqlite3.connect(path)
@@ -100,6 +101,7 @@ def init_db(db_path: Optional[str] = None) -> None:
 # Timestamps
 # ---------------------------------------------------------------------------
 
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -107,6 +109,7 @@ def _now() -> str:
 # ---------------------------------------------------------------------------
 # World CRUD
 # ---------------------------------------------------------------------------
+
 
 def save_world(world: WorldState, db_path: Optional[str] = None) -> None:
     """Save or update a WorldState."""
@@ -141,7 +144,9 @@ def load_world(world_id: str, db_path: Optional[str] = None) -> Optional[WorldSt
     """Load a WorldState by ID."""
     conn = _get_conn(db_path)
     try:
-        row = conn.execute("SELECT state_json FROM worlds WHERE world_id=?", (world_id,)).fetchone()
+        row = conn.execute(
+            "SELECT state_json FROM worlds WHERE world_id=?", (world_id,)
+        ).fetchone()
         if not row:
             return None
         return WorldState.model_validate_json(row["state_json"])
@@ -152,6 +157,7 @@ def load_world(world_id: str, db_path: Optional[str] = None) -> Optional[WorldSt
 # ---------------------------------------------------------------------------
 # Session CRUD
 # ---------------------------------------------------------------------------
+
 
 def save_session(
     sim_id: str,
@@ -200,11 +206,15 @@ def save_session(
         conn.close()
 
 
-def load_session(sim_id: str, db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def load_session(
+    sim_id: str, db_path: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
     """Load a session by sim_id. Returns a dict with all session fields + world."""
     conn = _get_conn(db_path)
     try:
-        row = conn.execute("SELECT * FROM sessions WHERE sim_id=?", (sim_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM sessions WHERE sim_id=?", (sim_id,)
+        ).fetchone()
         if not row:
             return None
         world = None
@@ -259,6 +269,7 @@ def delete_session(sim_id: str, db_path: Optional[str] = None) -> None:
 # Memory entries CRUD
 # ---------------------------------------------------------------------------
 
+
 def save_memory_entry(
     sim_id: str,
     entry_id: str,
@@ -298,7 +309,9 @@ def save_memory_entry(
         conn.close()
 
 
-def load_memory_entries(sim_id: str, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+def load_memory_entries(
+    sim_id: str, db_path: Optional[str] = None
+) -> List[Dict[str, Any]]:
     """Load all memory entries for a session, ordered by tick."""
     conn = _get_conn(db_path)
     try:

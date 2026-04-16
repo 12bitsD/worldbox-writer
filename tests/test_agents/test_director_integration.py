@@ -5,6 +5,7 @@ These tests verify that the DirectorAgent produces structurally correct
 WorldState objects when given real prompts. Content is non-deterministic,
 so assertions focus on structure and invariants, not exact values.
 """
+
 import pytest
 from worldbox_writer.agents.director import DirectorAgent
 from worldbox_writer.core.models import (
@@ -57,7 +58,11 @@ class TestDirectorInitialiseWorld:
 
     def test_first_node_has_valid_type(self, world):
         first_node = list(world.nodes.values())[0]
-        assert first_node.node_type in (NodeType.SETUP, NodeType.CONFLICT, NodeType.DEVELOPMENT)
+        assert first_node.node_type in (
+            NodeType.SETUP,
+            NodeType.CONFLICT,
+            NodeType.DEVELOPMENT,
+        )
 
     def test_current_node_is_set(self, world):
         assert world.current_node_id is not None

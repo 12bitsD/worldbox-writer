@@ -6,6 +6,7 @@ against active constraints using a real LLM.
 
 ValidationResult fields: is_valid, has_warnings, violations, revision_hint, rejection_reason
 """
+
 import pytest
 from worldbox_writer.agents.director import DirectorAgent
 from worldbox_writer.agents.gate_keeper import GateKeeperAgent
@@ -23,7 +24,9 @@ from worldbox_writer.core.models import (
 def world_with_constraints():
     """A real WorldState with known hard constraints for testing."""
     director = DirectorAgent()
-    world = director.initialise_world("一个赛博朋克世界，主角是反抗军的黑客，绝对不能使用魔法")
+    world = director.initialise_world(
+        "一个赛博朋克世界，主角是反抗军的黑客，绝对不能使用魔法"
+    )
     return world
 
 
@@ -46,7 +49,7 @@ class TestGateKeeperValidation:
 
     def test_valid_node_passes(self, gate_keeper, world_with_constraints):
         """A node that respects world rules should return a ValidationResult.
-        
+
         Note: The LLM may flag a single node for narrative constraints (e.g., incomplete
         story arc), which is valid behavior. We test that:
         1. The result has correct structure
@@ -63,7 +66,8 @@ class TestGateKeeperValidation:
         assert isinstance(result.violations, list)
         # No magic violations should be present for a tech-based action
         magic_violations = [
-            v for v in result.violations
+            v
+            for v in result.violations
             if "魔法" in v.constraint_name or "magic" in v.constraint_name.lower()
         ]
         assert len(magic_violations) == 0
@@ -128,8 +132,7 @@ class TestGateKeeperValidation:
         result = gate_keeper.validate(world, node)
         if not result.is_valid:
             has_explanation = (
-                len(result.rejection_reason) > 0
-                or len(result.violations) > 0
+                len(result.rejection_reason) > 0 or len(result.violations) > 0
             )
             assert has_explanation
 

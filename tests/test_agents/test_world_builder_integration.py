@@ -4,6 +4,7 @@ Integration tests for WorldBuilderAgent — uses real LLM API calls.
 Verifies that WorldBuilder correctly expands a minimal WorldState
 into a rich world with factions, locations, and power systems.
 """
+
 import pytest
 from worldbox_writer.agents.director import DirectorAgent
 from worldbox_writer.agents.world_builder import WorldBuilderAgent
@@ -58,9 +59,7 @@ class TestWorldBuilderExpansion:
 
     def test_expand_location_on_demand(self, world_builder, minimal_world):
         """expand_location_on_demand should return a dict with location info."""
-        location = world_builder.expand_location_on_demand(
-            minimal_world, "帝国皇宫"
-        )
+        location = world_builder.expand_location_on_demand(minimal_world, "帝国皇宫")
         assert isinstance(location, dict)
         assert len(location) > 0
 

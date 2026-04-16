@@ -7,6 +7,7 @@ and generates appropriate intervention signals.
 NodeDetector.detect(node, world) -> Optional[InterventionSignal]
 InterventionSignal fields: should_intervene, urgency, reason, context, suggested_options
 """
+
 import pytest
 from worldbox_writer.agents.director import DirectorAgent
 from worldbox_writer.agents.node_detector import NodeDetector
