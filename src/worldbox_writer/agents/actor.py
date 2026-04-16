@@ -221,7 +221,7 @@ class ActorAgent:
 
     def _build_proposal(self, data: dict, character: Character) -> ActionProposal:
         return ActionProposal(
-            character_id=str(character.id),
+            character_id=character.id,
             character_name=character.name,
             action_type=data.get("action_type", "action"),
             description=data.get("description", ""),
@@ -242,6 +242,20 @@ class ActorAgent:
         try:
             return json.loads(text)
         except json.JSONDecodeError:
+            # Try to extract JSON object from anywhere in the response
+            start = text.find("{")
+            if start != -1:
+                depth = 0
+                for i in range(start, len(text)):
+                    if text[i] == "{":
+                        depth += 1
+                    elif text[i] == "}":
+                        depth -= 1
+                        if depth == 0:
+                            try:
+                                return json.loads(text[start : i + 1])
+                            except json.JSONDecodeError:
+                                break
             return {
                 "action_type": "action",
                 "description": "角色陷入了沉默。",

@@ -175,6 +175,22 @@ class DirectorAgent:
         try:
             return json.loads(text)
         except json.JSONDecodeError:
+            # Try to extract JSON object from anywhere in the response
+            start = text.find("{")
+            if start == -1:
+                return {}
+            # Find matching closing brace by counting depth
+            depth = 0
+            for i in range(start, len(text)):
+                if text[i] == "{":
+                    depth += 1
+                elif text[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            return json.loads(text[start : i + 1])
+                        except json.JSONDecodeError:
+                            break
             return {}
 
     def _build_world_state(

@@ -211,4 +211,17 @@ class WorldBuilderAgent:
         try:
             return json.loads(text)
         except json.JSONDecodeError:
+            start = text.find("{")
+            if start != -1:
+                depth = 0
+                for i in range(start, len(text)):
+                    if text[i] == "{":
+                        depth += 1
+                    elif text[i] == "}":
+                        depth -= 1
+                        if depth == 0:
+                            try:
+                                return json.loads(text[start : i + 1])
+                            except json.JSONDecodeError:
+                                break
             return {}

@@ -129,7 +129,7 @@ class TestNarratorAgent:
         prose = output.prose
         assert not prose.strip().startswith("{")
         assert not prose.strip().startswith("[")
-        assert len(prose.split()) > 15
+        assert len(prose) > 50
 
     def test_narrator_chapter_start_has_title(self, narrator, world):
         """When is_chapter_start=True, output should have a chapter_title."""
