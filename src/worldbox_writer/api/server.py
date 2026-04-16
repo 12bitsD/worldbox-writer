@@ -35,9 +35,7 @@ from worldbox_writer.core.models import (
 )
 from worldbox_writer.engine.graph import run_simulation
 from worldbox_writer.storage.db import delete_session as db_delete_session
-from worldbox_writer.storage.db import (
-    init_db,
-)
+from worldbox_writer.storage.db import init_db
 from worldbox_writer.storage.db import list_sessions as db_list_sessions
 from worldbox_writer.storage.db import load_session as db_load_session
 from worldbox_writer.storage.db import save_session as db_save_session
