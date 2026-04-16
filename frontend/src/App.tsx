@@ -6,6 +6,7 @@ import { WorldPanel } from "./components/WorldPanel";
 import { StoryFeed } from "./components/StoryFeed";
 import { InterventionPanel } from "./components/InterventionPanel";
 import { ExportPanel } from "./components/ExportPanel";
+import { EditPanel } from "./components/EditPanel";
 
 export default function App() {
   const { simId, state, loading, error, start, sendIntervention, doExport, reset } =
@@ -154,6 +155,16 @@ export default function App() {
               context={state.intervention_context}
               onSubmit={sendIntervention}
               onSkip={handleSkip}
+            />
+          )}
+
+          {isWaiting && simId && state?.world && (
+            <EditPanel
+              simId={simId}
+              world={state.world}
+              onUpdated={() => {
+                /* state will be refreshed via SSE or next poll */
+              }}
             />
           )}
         </main>

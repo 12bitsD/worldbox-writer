@@ -7,6 +7,7 @@ import {
   getSimulation,
   intervene,
   exportSimulation,
+  createEventStream,
 } from "../utils/api";
 
 export function useSimulation() {
@@ -17,7 +18,7 @@ export function useSimulation() {
   const esRef = useRef<EventSource | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const stopPolling = useCallback(() => {
+  const stopAll = useCallback(() => {
     if (pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
@@ -28,23 +29,83 @@ export function useSimulation() {
     }
   }, []);
 
-  const startPolling = useCallback(
+  /** Fallback polling when SSE fails */
+  const startFallbackPolling = useCallback(
     (id: string) => {
-      stopPolling();
-      // Poll every 1.5s for state updates
+      if (pollRef.current) return; // already polling
       pollRef.current = setInterval(async () => {
         try {
           const s = await getSimulation(id);
           setState(s);
           if (s.status === "complete" || s.status === "error") {
-            stopPolling();
+            stopAll();
           }
         } catch (e) {
           console.error("Poll error:", e);
         }
       }, 1500);
     },
-    [stopPolling]
+    [stopAll]
+  );
+
+  /** Primary: SSE real-time stream */
+  const startSSE = useCallback(
+    (id: string) => {
+      if (esRef.current) {
+        esRef.current.close();
+      }
+
+      esRef.current = createEventStream(
+        id,
+        (event) => {
+          const type = event.type as string;
+
+          if (type === "node") {
+            const node = event.data as Record<string, unknown>;
+            setState((prev) => {
+              if (!prev) return prev;
+              // Avoid duplicate nodes
+              const exists = prev.nodes.some((n) => n.id === node.id);
+              if (exists) return prev;
+              return {
+                ...prev,
+                nodes: [...prev.nodes, node as unknown as SimulationState["nodes"][0]],
+              };
+            });
+          } else if (type === "intervention") {
+            setState((prev) => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                status: "waiting",
+                intervention_context: event.context as string,
+              };
+            });
+          } else if (type === "status") {
+            const status = event.status as string;
+            setState((prev) => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                status: status as SimulationState["status"],
+                error: (event.error as string) ?? prev.error,
+              };
+            });
+            if (status === "complete" || status === "error") {
+              stopAll();
+            }
+          }
+        },
+        (_err) => {
+          // SSE error — fallback to polling
+          console.warn("SSE connection lost, falling back to polling");
+          esRef.current?.close();
+          esRef.current = null;
+          startFallbackPolling(id);
+        }
+      );
+    },
+    [stopAll, startFallbackPolling]
   );
 
   const start = useCallback(
@@ -53,20 +114,22 @@ export function useSimulation() {
       setError(null);
       setState(null);
       setSimId(null);
+      stopAll();
       try {
         const res = await startSimulation(premise, maxTicks);
         setSimId(res.sim_id);
-        startPolling(res.sim_id);
-        // Initial fetch
+        // Initial fetch for immediate state
         const s = await getSimulation(res.sim_id);
         setState(s);
+        // Start SSE for real-time updates
+        startSSE(res.sim_id);
       } catch (e) {
         setError(String(e));
       } finally {
         setLoading(false);
       }
     },
-    [startPolling]
+    [stopAll, startSSE]
   );
 
   const sendIntervention = useCallback(
@@ -92,16 +155,16 @@ export function useSimulation() {
   }, [simId]);
 
   const reset = useCallback(() => {
-    stopPolling();
+    stopAll();
     setSimId(null);
     setState(null);
     setError(null);
     setLoading(false);
-  }, [stopPolling]);
+  }, [stopAll]);
 
   useEffect(() => {
-    return () => stopPolling();
-  }, [stopPolling]);
+    return () => stopAll();
+  }, [stopAll]);
 
   return {
     simId,
