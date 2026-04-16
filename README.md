@@ -164,13 +164,13 @@ worldbox-writer/
 │   └── utils/
 │       └── llm.py            # 可插拔 LLM 客户端工厂
 ├── frontend/                 # React + TypeScript + TailwindCSS 前端
-├── tests/                    # TDD 测试套件（157 个测试，全部通过）
+├── tests/                    # TDD 测试套件（64 单元 + 7 集成，全部通过）
 └── docs/
     ├── architecture/DESIGN.md
     ├── product/USER_STORIES.md
     ├── development/AGILE_GUIDE.md
     ├── development/CI_SETUP.md
-    └── sprints/              # Sprint 0-4 完整记录
+    ├── sprints/              # Sprint 0-6 完整记录
 ```
 
 ---
@@ -184,8 +184,10 @@ worldbox-writer/
 | Sprint 2 | LangGraph 编排图 + Actor + Narrator，端到端 Demo | ✅ 完成 |
 | Sprint 3 | 分层记忆系统 + WorldBuilder Agent | ✅ 完成 |
 | Sprint 4 | 前端可视化面板（React + 实时事件流） | ✅ 完成 |
+| Sprint 5 | 持久化存储与实时编辑 (SQLite + SSE) | ✅ 完成 |
+| Sprint 6 | 关系图谱与专业导出 | 🔄 规划中 |
 
-**当前版本：v0.4.0** — 完整可运行的端到端系统，157 个测试全部通过。
+**当前版本：v0.5.0** — 支持实时流与本地 SQLite 持久化，64 个单元测试 + 7 个集成测试全部通过。
 
 ---
 
@@ -200,20 +202,24 @@ worldbox-writer/
 | `POST` | `/api/simulate/{id}/intervene` | 提交用户干预指令 |
 | `GET` | `/api/simulate/{id}/export` | 导出故事内容 |
 | `GET` | `/api/health` | 健康检查 + LLM 配置信息 |
+| `GET` | `/api/simulate/{id}/stream` | 获取实时推演事件流 (SSE) |
+| `PATCH` | `/api/simulate/{id}/characters/{char_id}` | 编辑角色属性（仅 waiting 状态） |
+| `PATCH` | `/api/simulate/{id}/world` | 编辑世界设定（仅 waiting 状态） |
+| `POST` | `/api/simulate/{id}/constraints` | 添加新约束（仅 waiting 状态） |
 
 ---
 
 ## 运行测试
 
 ```bash
-# 运行全套测试（157 个，无需 LLM API）
-pytest tests/
+# 运行纯逻辑测试（无需 LLM API）
+python -m pytest tests/ -v -m "not integration"
 
-# 带覆盖率报告
-pytest tests/ --cov=src/worldbox_writer
+# 运行全套集成测试（需要配置真实 LLM API）
+python -m pytest tests/ -v
 ```
 
-所有测试使用 MockLLM，无需真实 API 密钥，CI 环境下完整可运行。
+系统使用真实的 LLM API 进行集成测试，确保 Agent 逻辑的真实可靠性。
 
 ---
 
