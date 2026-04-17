@@ -242,3 +242,39 @@ class TestTelemetryPipeline:
         while not session.token_queue.empty():
             queued.append(session.token_queue.get_nowait())
         assert any(item["type"] == "telemetry" for item in queued)
+
+
+class TestSessionRecovery:
+    def test_recover_sessions_preserves_telemetry_history(self):
+        """Interrupted sessions should keep existing telemetry when marked as error."""
+        world = WorldState(title="测试世界", premise="测试前提")
+        server_module.db_save_session(
+            sim_id="recover-1",
+            premise="测试前提",
+            max_ticks=3,
+            status="running",
+            world=world,
+            nodes_json=[],
+            telemetry_events=[
+                {
+                    "event_id": "evt-1",
+                    "sim_id": "recover-1",
+                    "tick": 1,
+                    "agent": "actor",
+                    "stage": "proposal_generated",
+                    "level": "info",
+                    "message": "生成了新的候选事件",
+                    "payload": {"preview": "事件预览"},
+                    "ts": "2026-01-01T00:00:00+00:00",
+                }
+            ],
+        )
+
+        server_module._recover_sessions()
+
+        recovered = server_module.db_load_session("recover-1")
+        assert recovered is not None
+        assert recovered["status"] == "error"
+        assert recovered["error"] == "Server restarted during simulation"
+        assert len(recovered["telemetry_events"]) == 1
+        assert recovered["telemetry_events"][0]["event_id"] == "evt-1"

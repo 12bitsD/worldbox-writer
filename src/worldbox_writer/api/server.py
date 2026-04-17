@@ -154,6 +154,8 @@ def _recover_sessions() -> None:
                     status="error",
                     world=data["world"],
                     nodes_json=data["nodes_rendered"],
+                    telemetry_events=data["telemetry_events"],
+                    intervention_context=data["intervention_context"],
                     error="Server restarted during simulation",
                 )
 

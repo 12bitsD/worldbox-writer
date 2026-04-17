@@ -21,7 +21,6 @@ WorldBox Writer — Simulation Engine (LangGraph StateGraph).
 
 from __future__ import annotations
 
-from itertools import combinations
 from typing import Any, Dict, Literal, Optional
 
 from langgraph.graph import END, START, StateGraph
@@ -110,7 +109,11 @@ def _emit_telemetry(
 
 
 def _select_character_ids_for_event(
-    world: WorldState, event_description: str, max_chars: int = 3
+    world: WorldState,
+    event_description: str,
+    max_chars: int = 3,
+    *,
+    allow_alive_fallback: bool = True,
 ) -> list[str]:
     """Infer the most likely involved characters from the final event text."""
     matched: list[tuple[int, str]] = []
@@ -122,6 +125,9 @@ def _select_character_ids_for_event(
     if matched:
         matched.sort(key=lambda item: item[0])
         return [char_id for _, char_id in matched[:max_chars]]
+
+    if not allow_alive_fallback:
+        return []
 
     alive_ids = [
         char_id
@@ -159,7 +165,8 @@ def _apply_relationship_updates(
     tick: int,
 ) -> bool:
     """Apply simple pairwise relationship updates based on the committed node text."""
-    if len(character_ids) < 2:
+    pair_ids = list(dict.fromkeys(character_ids))
+    if len(pair_ids) != 2:
         return False
 
     label, delta = _relationship_signal(event_description)
@@ -169,34 +176,34 @@ def _apply_relationship_updates(
     changed = False
     note = event_description[:80]
 
-    for left_id, right_id in combinations(character_ids[:3], 2):
-        left = world.get_character(left_id)
-        right = world.get_character(right_id)
-        if not left or not right:
-            continue
+    left_id, right_id = pair_ids
+    left = world.get_character(left_id)
+    right = world.get_character(right_id)
+    if not left or not right:
+        return False
 
-        left_existing = left.relationships.get(right_id)
-        right_existing = right.relationships.get(left_id)
-        left_affinity = _clamp_affinity((left_existing.affinity if left_existing else 0) + delta)
-        right_affinity = _clamp_affinity((right_existing.affinity if right_existing else 0) + delta)
+    left_existing = left.relationships.get(right_id)
+    right_existing = right.relationships.get(left_id)
+    left_affinity = _clamp_affinity((left_existing.affinity if left_existing else 0) + delta)
+    right_affinity = _clamp_affinity((right_existing.affinity if right_existing else 0) + delta)
 
-        left.update_relationship(
-            right_id,
-            label.value,
-            affinity=left_affinity,
-            label=label,
-            note=note,
-            updated_at_tick=tick,
-        )
-        right.update_relationship(
-            left_id,
-            label.value,
-            affinity=right_affinity,
-            label=label,
-            note=note,
-            updated_at_tick=tick,
-        )
-        changed = True
+    left.update_relationship(
+        right_id,
+        label.value,
+        affinity=left_affinity,
+        label=label,
+        note=note,
+        updated_at_tick=tick,
+    )
+    right.update_relationship(
+        left_id,
+        label.value,
+        affinity=right_affinity,
+        label=label,
+        note=note,
+        updated_at_tick=tick,
+    )
+    changed = True
 
     return changed
 
@@ -407,6 +414,11 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
 
     parent_ids = [world.current_node_id] if world.current_node_id else []
     involved_character_ids = _select_character_ids_for_event(world, candidate)
+    relationship_character_ids = _select_character_ids_for_event(
+        world,
+        candidate,
+        allow_alive_fallback=False,
+    )
 
     new_node = StoryNode(
         title=f"第{world.tick + 1}幕",
@@ -426,7 +438,7 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
     world.advance_tick()
     relationships_changed = _apply_relationship_updates(
         world,
-        involved_character_ids,
+        relationship_character_ids,
         candidate,
         tick=world.tick,
     )
