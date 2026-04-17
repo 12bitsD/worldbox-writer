@@ -1,0 +1,42 @@
+name: Model Evaluation
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: "LLM provider to evaluate"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - mimo
+          - openai
+          - ollama
+
+jobs:
+  # ── Sprint 9+ : Multi-model evaluation (manual trigger only) ──
+  model-eval:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        provider: [mimo, openai, ollama]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install --no-cache-dir .[dev]
+
+      - name: Run model evaluation
+        env:
+          LLM_PROVIDER: ${{ matrix.provider }}
+        run: |
+          echo "TODO: implement model-eval harness for provider=$LLM_PROVIDER"
+          echo "This job is a placeholder for Sprint 9 multi-model testing."
