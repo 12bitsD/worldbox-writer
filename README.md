@@ -193,7 +193,7 @@ worldbox-writer/
 | Sprint 3 | 分层记忆系统 + WorldBuilder Agent | ✅ 完成 |
 | Sprint 4 | 前端可视化面板（React + 实时事件流） | ✅ 完成 |
 | Sprint 5 | 持久化存储与实时编辑 (SQLite + SSE) | ✅ 完成 |
-| Sprint 6 | 看见世界（首个交付）：关系图谱 + 遥测基础 | 🟡 进行中（基础闭环已落地） |
+| Sprint 6 | 看见世界（首个交付）：关系图谱 + 遥测基础 | ✅ 完成（P0 闭环已交付） |
 | Sprint 7 | 可视化补齐与稳定性加固 | 📋 已批准计划 |
 | Sprint 8 | 时间线分叉与多分支控制 | 📋 已批准计划 |
 | Sprint 9 | 长篇记忆、智能路由与创作工作台 | 📋 已批准计划 |
@@ -201,10 +201,9 @@ worldbox-writer/
 **当前版本**：v0.5.0
 
 - 已发布能力（v0.5.0）：实时事件流、本地 SQLite 持久化、等待态编辑能力。
-- 主干已落地的 Sprint 6 基础能力：结构化关系 schema、Telemetry v1、关系图谱面板、Telemetry 面板、历史会话恢复与最近会话入口。
-- 当前测试状态：本地已验证 `pytest -m "not integration"` 为 `74 passed, 57 deselected`；`integration` 用例依赖真实 LLM API Key。
-- 当前迭代状态：主干正在推进 Sprint 6，最小可见性闭环已可演示；图谱交互补齐、日志筛选分组、统一调用链与稳定性护栏仍留在 Sprint 7。
-- Sprint 7 前必须先解决的 TODO：修复中断会话恢复时的 telemetry 保留问题，以及关系推断在匿名事件和多角色混合场景下的数据正确性问题。
+- 已完成的 Sprint 6 交付：结构化关系 schema、Telemetry v1、关系图谱面板、Telemetry 面板、历史会话恢复、最近会话入口、前端 fixtures 自动化验证，以及 telemetry 恢复和关系推断的数据正确性修复。
+- 当前测试状态：后端 `pytest -m "not integration"` 已验证 `74 passed, 57 deselected`；Sprint 6 相关目标测试已验证 `60 passed`；前端 `pnpm test` 已验证 `5 passed`，`pnpm build` 通过。
+- 当前迭代状态：Sprint 6 已按 P0 / 主目标完成，后续进入 Sprint 7；图谱交互补齐、日志筛选分组、统一调用链与稳定性护栏继续留在 Sprint 7。
 
 ---
 
