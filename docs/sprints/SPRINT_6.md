@@ -1,83 +1,391 @@
-# Sprint 6 Planning: 深度世界构建与资产管理 (Deep Worldbuilding)
+# Sprint 6 Plan: 看见世界的最小闭环 (Visibility MVP)
 
-**文档状态**：Active (Planning)
-**版本目标**：v0.6.0
-**作者**：Manus AI
-
----
-
-## 1. 回顾与现状 (Context)
-
-在 Sprint 5 (v0.5.0) 中，我们成功实现了底层基建的飞跃：
-- **实时性**：从轮询升级为 SSE 实时推流。
-- **持久化**：引入 SQLite 实现零依赖的数据库存储，支持会话恢复。
-- **可干预性**：在干预暂停期间，允许用户通过 `EditPanel` 修改角色属性、世界设定和新增约束。
-
-**当前痛点**：
-尽管用户可以修改设定，但**设定的可视化展示**仍然非常简陋。随着推演的进行，人物关系会发生变化，势力范围会变动，但用户无法直观地看到这些变化。这正是我们在 `USER_STORIES.md` 中积压的 `US-05.02`（动态人物关系图谱）。
-
-此外，当前的世界初始化完全依赖 AI 黑盒生成，不支持用户导入已有的大纲或设定（Roadmap 中的 2.2 节）。
+**文档状态**：Active (Execution In Progress)  
+**版本目标**：v0.6.0  
+**Sprint 周期**：2 周  
+**定位**：Release 2 的首个交付 Sprint  
+**作者**：Codex
 
 ---
 
-## 2. Sprint 6 目标 (Sprint Goal)
+## 1. Sprint 6 要解决什么问题
 
-**"让世界观可见且可控"**
+Sprint 5 已经让系统具备了可用的主链路：
+- 后端可进行多 Agent 推演。
+- 前端可实时查看故事节点与流式文本。
+- 会话可落 SQLite 并在等待态编辑角色、世界和约束。
 
-本轮 Sprint 的核心是将 WorldBox Writer 从一个纯文本流工具，升级为一个**带有可视化资产管理能力的世界引擎**。我们将补齐遗留的关系图谱功能，并增加对专业小说导出的支持（PDF/Word），以满足真实作家的交付需求。
+但当前系统仍然有一个明显短板：**用户能看到结果，却看不见过程。**
 
-### 核心交付物 (Deliverables)
-1. **动态人物关系图谱 (Social Graph)**：前端集成 ECharts/React Flow，实时渲染角色间的关系网络。
-2. **关系推演逻辑 (Relationship Evolution)**：后端 Actor Agent 在生成事件时，必须动态更新角色间的关系（好感度/敌对状态），并在状态中持久化。
-3. **专业导出能力 (Professional Export)**：将渲染完成的小说导出为排版精美的 PDF 和 Word (Docx) 格式。
+这会具体表现为：
+- 看不清角色关系如何变化。
+- 看不清 Actor、GateKeeper、NodeDetector 为什么做出某个决定。
+- 刷新页面后能恢复故事节点，但看不到关键运行脉络。
+- 前后端对关系字段的理解尚未统一，继续直接做图谱会产生返工。
 
----
+因此 Sprint 6 不应该继续扩创作工作流，而应该先建立一个最小可用的**观测层**，把系统从“能跑”推进到“能看懂”。
 
-## 3. 用户故事拆解 (User Stories & Tasks)
+### 当前实现状态（2026-04-17）
 
-### Epic 05: 可视化沙盒面板 (Visual Sandbox Dashboard)
+目前主干已经完成 Sprint 6 的大部分 P0 主链路：
+- 已落地：关系 schema v1、Telemetry schema v1、关系数据生产 v1、Telemetry 持久化与回放、关系图谱面板 v1、Telemetry 面板 v1、最近会话恢复、Demo Script。
+- 部分完成：契约测试与 fixtures。后端契约测试已补齐，前端自动化 UI 验证基础设施仍未建立。
+- 明确保留到 Sprint 7：图谱交互补齐、Telemetry 筛选与分组、统一调用链、稳定性护栏。
 
-#### US-05.02: 动态人物关系图谱 (Priority: P0)
-*作为创世神，我希望能查看动态更新的人物关系图谱，以便掌握全局势力变化。*
-
-- **Task 1 (Backend)**: 扩展 `Character.relationships` 字典，明确存储格式（如 `{ target_id: {"affinity": 80, "type": "ally"} }`）。
-- **Task 2 (Backend)**: 修改 `ActorAgent`，在每次事件发生后，根据事件性质自动更新相关角色的 relationships 数据。
-- **Task 3 (API)**: 在 SSE 流中，确保每次 `node` 事件都携带最新的 relationships 状态。
-- **Task 4 (Frontend)**: 引入图表库（推荐 `react-force-graph` 或 `echarts`），新增 `NetworkPanel` 组件。
-- **Task 5 (Frontend)**: 根据 SSE 数据实时重绘图谱，节点大小反映重要性，连线颜色/粗细反映好感度。
-
-### Epic 06: 专业交付与资产管理 (Professional Export) *(New Epic)*
-
-#### US-06.01: 多格式专业导出 (Priority: P1)
-*作为创作者，我希望能将推演完成的小说导出为 PDF 和 Word 格式，以便直接交付或在其他软件中继续排版。*
-
-- **Task 1 (Backend)**: 引入 `fpdf2` (PDF) 和 `python-docx` (Word) 库。
-- **Task 2 (Backend)**: 新增 `/api/simulate/{sim_id}/export/pdf` 端点，生成包含封面、目录、正文的排版 PDF。
-- **Task 3 (Backend)**: 新增 `/api/simulate/{sim_id}/export/docx` 端点，生成结构化的 Word 文档。
-- **Task 4 (Frontend)**: 在 `ExportPanel` 中增加 "导出为 PDF" 和 "导出为 Word" 的下载按钮。
-
-#### US-06.02: 大纲与设定导入 (Priority: P2)
-*作为世界构建师，我希望能上传预先写好的世界观设定，而不是让系统从零生成，以便延续我现有的创作。*
-
-- **Task 1 (API)**: 扩展 `/api/simulate/start` 的 Payload，允许传入可选的 `initial_world_state` (JSON 格式)。
-- **Task 2 (Backend)**: 修改 `graph.py` 中的 `director_node` 和 `world_builder_node`，如果检测到传入了预设数据，则跳过生成或仅做增量补全。
-- **Task 3 (Frontend)**: 在 `StartPanel` 增加 "导入设定 (JSON)" 的高级选项。
+这意味着 Sprint 6 现在不是“未开始”，而是已经形成了**可演示的最小闭环**；当前文档的职责是记录范围、状态和剩余缺口。
 
 ---
 
-## 4. 技术决策与依赖 (Technical Decisions)
+## 2. Sprint Goal
 
-1. **图表库选择**：前端采用 `react-force-graph-2d`（基于 D3.js），因为它对动态力导向图（Force-directed graph）支持极好，且轻量级，非常适合表现人物关系。
-2. **导出库选择**：
-   - PDF: `fpdf2`（沙盒已预装 `fpdf2` 和 `weasyprint`，推荐 `fpdf2` 因其纯 Python 实现且易于控制分页）。
-   - Word: 需要在后端 `pip install python-docx`。
-3. **关系演化逻辑**：为了不增加过多的 LLM 成本，关系更新可以通过简单的规则引擎实现，或者在 Actor 生成提议时，让 LLM 顺便输出一个 JSON Patch 来描述关系变化。
+**让用户第一次真正看见世界是如何运转的。**
+
+Sprint 6 结束时，用户应该可以：
+- 在一次真实推演中看到角色关系如何变化。
+- 看到关键 Agent 在每个阶段做了什么决定。
+- 刷新页面或重新打开历史会话后，仍能查看关键关系与关键日志。
 
 ---
 
-## 5. 验收标准 (Definition of Done)
+## 3. 承诺交付与非目标
 
-- [ ] 所有新端点和功能必须有对应的 `pytest` 单元测试。
-- [ ] 前端图谱必须能随 SSE 事件流实时跳动更新，无明显卡顿。
-- [ ] 导出的 PDF 和 Word 必须包含：书名（Title）、前提（Premise）、角色表（Characters）和分章节的正文（Narrative）。
-- [ ] README.md 和 API 文档必须同步更新到 v0.6.0。
+### 3.1 承诺交付
+
+Sprint 6 只承诺 4 类能力：
+
+1. **关系数据结构 v1**
+   - 统一后端模型、API 返回、SSE 事件与前端类型。
+   - 让关系图谱有稳定的数据来源。
+
+2. **关系变化生产链路**
+   - 推演过程中能稳定生成和更新角色关系。
+   - 数据可持久化、可查询、可回放。
+
+3. **业务可读的 Telemetry v1**
+   - 输出关键 Agent 阶段事件。
+   - 支持实时查看和历史回放。
+
+4. **前端最小可视化闭环**
+   - 图谱面板可展示关系。
+   - 遥测面板可展示关键日志。
+
+### 3.2 非目标
+
+以下内容不进入 Sprint 6 承诺范围：
+- 不做完整统一调用链重构。
+- 不做 GateKeeper 自愈循环。
+- 不做大规模流式性能重构。
+- 不做多分支时间线。
+- 不做 PDF / Word 专业导出。
+- 不做独立的遥测产品化系统。
+- 不暴露完整 prompt 或 chain-of-thought。
+
+这些能力分别留给 Sprint 7 及之后的 Sprint，避免 Scope 膨胀。
+
+---
+
+## 4. 成功标准
+
+Sprint 6 的退出标准不是“功能代码已提交”，而是以下 6 条全部满足：
+
+- 一次完整推演中，关系图谱能跟随世界状态变化刷新。
+- Telemetry 至少覆盖 Director、Actor、GateKeeper、NodeDetector、Narrator 五类关键阶段。
+- 刷新页面后，历史会话仍能查看关系与关键 Telemetry。
+- 后端模型、API 响应、SSE 事件、前端类型不再出现关系字段不一致。
+- 所有新增数据结构和接口都有自动化测试覆盖。
+- 有一条稳定可演示的 Demo 主链路，不依赖“现场碰巧生成得好”。
+
+建议用以下量化指标判断是否达到目标：
+- 单次完整推演至少产生 `8-15` 条关键 Telemetry。
+- 关系图谱至少展示主要角色之间的有效边。
+- 历史会话重开后，图谱和日志首屏加载时间不出现明显阻塞。
+
+---
+
+## 5. 关键设计决策
+
+### 5.1 关系结构必须先冻结
+
+Sprint 6 的首个里程碑不是 UI，而是 Schema Freeze。
+
+建议关系结构采用结构化对象，而不是自然语言字符串：
+
+```json
+{
+  "target_id": "char_b",
+  "affinity": 42,
+  "label": "ally",
+  "note": "一起击退了追兵",
+  "updated_at_tick": 3
+}
+```
+
+字段要求：
+- `affinity`：数值强度，便于图谱可视化。
+- `label`：有限集合，便于颜色和边样式映射。
+- `note`：给用户看的短解释，不追求长文本。
+- `updated_at_tick`：支持回放与调试。
+
+### 5.2 Telemetry 只做“业务可读事件”
+
+Sprint 6 不做全链路 tracing，只做业务可读、前端可展示的关键事件。
+
+建议事件字段最少包含：
+- `event_id`
+- `sim_id`
+- `tick`
+- `agent`
+- `stage`
+- `level`
+- `message`
+- `payload`
+- `ts`
+
+建议事件类型至少包含：
+- `world_initialized`
+- `world_enriched`
+- `actor_proposal_generated`
+- `actor_proposal_synthesized`
+- `gatekeeper_passed`
+- `gatekeeper_rejected`
+- `node_committed`
+- `intervention_requested`
+- `narration_started`
+- `narration_completed`
+- `simulation_completed`
+- `simulation_failed`
+
+### 5.3 关系演化优先用规则驱动
+
+Sprint 6 不建议依赖 LLM 直接输出复杂关系 patch。
+
+更稳妥的做法是：
+- 根据节点类型、涉及角色、冲突/合作特征、用户干预结果来更新关系。
+- 先让关系变化可解释、可回归测试、可持久化。
+- 将更复杂的关系演化智能化留到 Sprint 7 之后。
+
+### 5.4 Telemetry 必须可回放
+
+如果日志只走 SSE，不落存储，那 Sprint 6 的“可见性”是不完整的。
+
+因此 Sprint 6 必须保证：
+- 运行中可以实时查看。
+- 完成后可以历史查看。
+- 前端刷新后可以恢复关键日志。
+
+---
+
+## 6. Sprint Backlog
+
+| ID | 条目 | 优先级 | Owner | 依赖 | 说明 | 当前状态 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| S6-01 | 关系 Schema Freeze | P0 | AI 系统团队 | 无 | 冻结关系结构，统一后端模型、API、SSE、TS 类型 | ✅ 已落地 |
+| S6-02 | Telemetry Schema Freeze | P0 | 服务端架构团队 | 无 | 冻结事件字段、事件类型与载荷结构 | ✅ 已落地 |
+| S6-03 | 关系数据生产 v1 | P0 | AI 系统团队 | S6-01 | 在推演过程中生成和更新结构化关系 | ✅ 已落地（规则驱动 v1） |
+| S6-04 | 关系数据持久化与查询 | P0 | 服务端架构团队 | S6-01, S6-03 | 会话恢复后仍可读取关系状态 | ✅ 已落地 |
+| S6-05 | Telemetry 发射链路 | P0 | 服务端架构团队 | S6-02 | 关键 Agent 阶段输出业务可读事件 | ✅ 已落地 |
+| S6-06 | Telemetry 持久化与回放 | P0 | 服务端架构团队 | S6-02, S6-05 | 历史会话可重放关键日志 | ✅ 已落地 |
+| S6-07 | 关系图谱面板 v1 | P0 | 前端团队 | S6-01, S6-04 | 在现有界面中渲染角色关系图谱 | ✅ 已落地 |
+| S6-08 | Telemetry 面板 v1 | P0 | 前端团队 | S6-02, S6-06 | 展示关键运行事件，支持按时间阅读 | ✅ 已落地 |
+| S6-09 | 契约测试与 Fixtures | P0 | QA / 全员 | S6-01, S6-02 | 为关系和遥测提供固定 fixtures 与接口契约测试 | 🟡 部分完成（后端为主） |
+| S6-10 | Sprint 6 Demo Script | P0 | 产品 / 全员 | S6-04, S6-06, S6-07, S6-08 | 固化可演示主链路与验收脚本 | ✅ 已落地 |
+| S6-11 | 图谱交互补齐 | P1 | 前端团队 | S6-07 | 节点高亮、边信息展示、角色聚焦 | ⏭ 留给 Sprint 7 |
+| S6-12 | Telemetry 筛选与分组 | P1 | 前端团队 | S6-08 | 支持按 Agent 或事件类型筛选 | ⏭ 留给 Sprint 7 |
+
+---
+
+## 7. 工作流拆分
+
+### Workstream A：共享契约
+
+目标：
+- 先冻结 Schema，消除 Sprint 6 最大返工源。
+
+包含条目：
+- S6-01
+- S6-02
+
+产物：
+- relationship schema 文档
+- telemetry schema 文档
+- fixtures JSON
+- TypeScript 类型更新
+
+### Workstream B：后端数据生产与回放
+
+目标：
+- 让关系和日志都变成“真实状态”，不是 UI 假数据。
+
+包含条目：
+- S6-03
+- S6-04
+- S6-05
+- S6-06
+
+产物：
+- 关系更新规则
+- Telemetry 事件发射器
+- 持久化存储与读取逻辑
+
+### Workstream C：前端最小闭环
+
+目标：
+- 在当前三栏布局内提供可用可读的图谱和日志面板。
+
+包含条目：
+- S6-07
+- S6-08
+
+建议组织方式：
+- 右栏使用 `Graph | Telemetry` 切换，或上图下日志的双区布局。
+- 不引入过重的编辑型图谱交互。
+
+### Workstream D：测试与演示
+
+目标：
+- 让 Sprint 6 可稳定验收，而不是靠手工碰运气。
+
+包含条目：
+- S6-09
+- S6-10
+
+---
+
+## 8. 执行节奏
+
+### Week 1：先冻结契约，再打通后端
+
+第 1 周必须完成：
+- 冻结关系 schema 与 telemetry schema。
+- 修复前后端类型不一致。
+- 完成关系更新规则 v1。
+- 完成 telemetry 发射链路 v1。
+- 准备 fixtures 与 contract tests。
+
+第 1 周结束时的里程碑：
+- 前端可以不依赖真实 LLM，通过 fixtures 开始做 UI。
+- 后端可以产出稳定的关系与关键日志。
+
+### Week 2：做前端闭环、回放、验收和 Demo
+
+第 2 周重点完成：
+- 图谱面板接真实数据。
+- telemetry 面板接实时 + 历史回放。
+- 联调与体验打磨。
+- 验收用例、README、Sprint 文档更新。
+- 缓冲区留给边界 Bug 和契约修正。
+
+第 2 周结束时的里程碑：
+- 完成一条稳定的 Demo 主链路。
+- 关系和日志在实时与历史场景都可见。
+
+---
+
+## 9. 测试策略
+
+Sprint 6 新增能力必须补齐以下测试层级：
+
+### 9.1 后端
+
+- 模型测试：
+  - 关系结构合法性
+  - 关系升级后的默认值与序列化行为
+
+- 存储测试：
+  - 关系 round-trip
+  - telemetry round-trip
+
+- API 测试：
+  - `GET /api/simulate/{id}` 返回关系与 telemetry
+  - 会话恢复后的返回数据保持一致
+
+- SSE 契约测试：
+  - 事件类型正确
+  - 必填字段齐全
+  - 关键事件顺序合理
+
+### 9.2 前端
+
+- fixtures 驱动的渲染验证
+- 图谱空状态与有数据状态
+- telemetry 空状态、运行中状态、历史回放状态
+- 基本交互验证：切换、聚焦、高亮
+
+### 9.3 验收
+
+至少准备 2 条固定验收场景：
+- 冲突升级型剧情
+- 合作发展型剧情
+
+这样可以同时覆盖敌对关系增长和友好关系增长。
+
+---
+
+## 10. Demo 方案
+
+Sprint Review 演示建议固定以下流程：
+
+1. 启动一次新推演。
+2. 观察故事流产生第 1-3 个节点。
+3. 同时展示：
+   - 图谱边变化
+   - telemetry 日志滚动
+4. 在等待态执行一次干预。
+5. 继续推演并观察：
+   - 某条关系被更新
+   - 关键日志记录干预与后续阶段
+6. 刷新页面或重新打开该会话。
+7. 验证图谱与 telemetry 仍能查看。
+
+如果这个流程无法稳定完成，Sprint 6 视为未真正完成。
+
+---
+
+## 11. 风险与应对
+
+| 风险 | 影响 | 应对 |
+| :--- | :--- | :--- |
+| 关系 schema 迟迟不冻结 | 前后端反复返工 | 将 Schema Freeze 设为 Sprint 第一个里程碑 |
+| telemetry 只走 SSE 不落库 | 刷新后日志丢失，无法历史回放 | Sprint 6 强制纳入持久化 |
+| 关系演化完全依赖 LLM 输出 | 难测、难复现、成本高 | Sprint 6 优先规则驱动 |
+| 图谱和日志同时塞进右栏过于拥挤 | UI 不可读 | 使用分区或 Tab 方案 |
+| 演示依赖实时 LLM 随机输出 | Sprint Review 不稳定 | 提前准备 fixtures 与固定 demo 脚本 |
+| Scope 膨胀到稳定性平台工程 | 拖慢主线，侵蚀 Sprint 7 | 明确非目标，超出内容不纳入承诺 |
+
+---
+
+## 12. 三轮自检结论
+
+### Round 1：完整性检查
+
+检查问题：
+- 是否覆盖了“实时可见 + 历史可见 + 可演示”闭环？
+
+结论：
+- 已补入 telemetry 持久化、历史回放、demo 脚本与测试计划，闭环完整。
+
+### Round 2：依赖顺序检查
+
+检查问题：
+- 是否存在“前端等后端、后端等产品定义”的互锁？
+
+结论：
+- 通过将 Schema Freeze 前置，并用 fixtures 解耦前端开发，依赖顺序合理。
+
+### Round 3：范围合理性检查
+
+检查问题：
+- 是否把 Sprint 7 的稳定性工程提前吞进来？
+
+结论：
+- 已明确排除统一调用链、GateKeeper 自愈、全量可靠性护栏等内容，范围收敛合理。
+
+---
+
+## 13. Sprint 6 最终定义
+
+Sprint 6 的本质不是“做一个图谱组件”，而是：
+
+**用最小的可执行成本，建立 WorldBox Writer 的第一层可观测能力。**
+
+只有把这层能力站稳，Sprint 7 才有资格继续做稳定性补齐，Sprint 8 才有资格做时间线分叉。

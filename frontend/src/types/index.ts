@@ -4,6 +4,42 @@ export type SimStatus = "initializing" | "running" | "waiting" | "complete" | "e
 
 export type NodeType = "setup" | "development" | "branch" | "climax" | "resolution";
 
+export interface WorldEntity {
+  name: string;
+  description?: string;
+  [key: string]: unknown;
+}
+
+export type RelationshipLabel =
+  | "ally"
+  | "neutral"
+  | "rival"
+  | "fear"
+  | "trust"
+  | "unknown";
+
+export interface Relationship {
+  target_id: string;
+  affinity: number;
+  label: RelationshipLabel;
+  note: string;
+  updated_at_tick: number | null;
+}
+
+export type TelemetryLevel = "info" | "warning" | "error";
+
+export interface TelemetryEvent {
+  event_id: string;
+  sim_id: string;
+  tick: number;
+  agent: string;
+  stage: string;
+  level: TelemetryLevel;
+  message: string;
+  payload: Record<string, unknown>;
+  ts: string;
+}
+
 export interface Character {
   id: string;
   name: string;
@@ -11,7 +47,7 @@ export interface Character {
   goals: string[];
   status: string;
   memory: string[];
-  relationships: Record<string, number>;
+  relationships: Record<string, Relationship>;
 }
 
 export interface Constraint {
@@ -27,8 +63,8 @@ export interface WorldData {
   tick: number;
   is_complete: boolean;
   characters: Character[];
-  factions: Record<string, string[]>;
-  locations: Record<string, string>;
+  factions: WorldEntity[];
+  locations: WorldEntity[];
   world_rules: string[];
   constraints: Constraint[];
 }
@@ -38,7 +74,7 @@ export interface StoryNode {
   title: string;
   description: string;
   node_type: NodeType;
-  rendered_text: string;
+  rendered_text: string | null;
   tick: number;
   requires_intervention: boolean;
   intervention_instruction?: string;
@@ -51,6 +87,7 @@ export interface SimulationState {
   premise: string;
   world: WorldData | null;
   nodes: StoryNode[];
+  telemetry: TelemetryEvent[];
   intervention_context: string | null;
   error: string | null;
 }
@@ -61,8 +98,8 @@ export interface ExportData {
     title: string;
     premise: string;
     world_rules: string[];
-    factions: Record<string, string[]>;
-    locations: Record<string, string>;
+    factions: WorldEntity[];
+    locations: WorldEntity[];
     characters: Array<{
       name: string;
       personality: string;

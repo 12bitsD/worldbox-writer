@@ -2,6 +2,13 @@ import { useState } from "react";
 
 interface StartPanelProps {
   onStart: (premise: string, maxTicks: number) => void;
+  onOpenSession: (simId: string) => void;
+  recentSessions: Array<{
+    sim_id: string;
+    status: string;
+    premise: string;
+    nodes_count: number;
+  }>;
   loading: boolean;
 }
 
@@ -12,7 +19,12 @@ const EXAMPLES = [
   "星际殖民地上，AI 觉醒后与人类签订了一份奇怪的协议",
 ];
 
-export function StartPanel({ onStart, loading }: StartPanelProps) {
+export function StartPanel({
+  onStart,
+  onOpenSession,
+  recentSessions,
+  loading,
+}: StartPanelProps) {
   const [premise, setPremise] = useState("");
   const [maxTicks, setMaxTicks] = useState(8);
 
@@ -133,6 +145,49 @@ export function StartPanel({ onStart, loading }: StartPanelProps) {
             {loading ? "初始化世界中..." : "开始推演 →"}
           </button>
         </form>
+
+        {recentSessions.length > 0 && (
+          <div style={{ marginTop: 24 }}>
+            <div className="label" style={{ marginBottom: 10 }}>
+              最近会话
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {recentSessions.slice(0, 4).map((session) => (
+                <button
+                  key={session.sim_id}
+                  type="button"
+                  className="btn"
+                  style={{
+                    justifyContent: "space-between",
+                    padding: "10px 12px",
+                    fontSize: 12,
+                    background: "var(--color-bg-card)",
+                  }}
+                  onClick={() => onOpenSession(session.sim_id)}
+                  disabled={loading}
+                >
+                  <span
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "flex-start",
+                      gap: 2,
+                      minWidth: 0,
+                    }}
+                  >
+                    <span style={{ fontWeight: 700 }}>{session.premise}</span>
+                    <span style={{ color: "var(--color-text-muted)", fontSize: 11 }}>
+                      {session.sim_id} · {session.status} · {session.nodes_count} 节点
+                    </span>
+                  </span>
+                  <span style={{ color: "var(--color-text-muted)", fontSize: 11 }}>
+                    打开
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

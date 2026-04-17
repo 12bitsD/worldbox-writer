@@ -22,19 +22,19 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from worldbox_writer.core.models import (
-    Character,
     Constraint,
     ConstraintSeverity,
     ConstraintType,
+    TelemetryEvent,
+    TelemetryLevel,
     WorldState,
 )
 from worldbox_writer.engine.graph import run_simulation
-from worldbox_writer.storage.db import delete_session as db_delete_session
 from worldbox_writer.storage.db import init_db
 from worldbox_writer.storage.db import list_sessions as db_list_sessions
 from worldbox_writer.storage.db import load_session as db_load_session
@@ -80,6 +80,48 @@ _executor = ThreadPoolExecutor(max_workers=4)
 _sessions: Dict[str, "SimulationSession"] = {}
 
 
+def _serialize_world(world: WorldState) -> Dict[str, Any]:
+    return {
+        "title": world.title,
+        "premise": world.premise,
+        "tick": world.tick,
+        "is_complete": world.is_complete,
+        "characters": [
+            {
+                "id": str(c.id),
+                "name": c.name,
+                "description": c.description,
+                "personality": c.personality,
+                "goals": c.goals,
+                "status": c.status.value,
+                "memory": c.memory[-3:],
+                "relationships": {
+                    other_id: rel.model_dump(mode="json")
+                    for other_id, rel in c.relationships.items()
+                },
+            }
+            for c in world.characters.values()
+        ],
+        "factions": world.factions,
+        "locations": world.locations,
+        "world_rules": world.world_rules[:5],
+        "constraints": [
+            {
+                "id": str(c.id),
+                "name": c.name,
+                "rule": c.rule,
+                "severity": c.severity.value,
+                "type": c.constraint_type.value,
+            }
+            for c in world.constraints
+        ],
+    }
+
+
+def _serialize_telemetry(events: List[TelemetryEvent]) -> List[Dict[str, Any]]:
+    return [event.model_dump(mode="json") for event in events]
+
+
 def _persist_session(session: "SimulationSession") -> None:
     """Persist session state to DB."""
     try:
@@ -90,6 +132,7 @@ def _persist_session(session: "SimulationSession") -> None:
             status=session.status,
             world=session.world,
             nodes_json=session.nodes_rendered,
+            telemetry_events=_serialize_telemetry(session.telemetry_events),
             intervention_context=session.intervention_context,
             error=session.error,
         )
@@ -131,49 +174,16 @@ class SimulationSession:
         self.error: Optional[str] = None
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self.token_queue: queue.Queue = queue.Queue()
+        self.telemetry_events: List[TelemetryEvent] = []
 
     def to_dict(self) -> Dict[str, Any]:
-        world_dict = None
-        if self.world:
-            world_dict = {
-                "title": self.world.title,
-                "premise": self.world.premise,
-                "tick": self.world.tick,
-                "is_complete": self.world.is_complete,
-                "characters": [
-                    {
-                        "id": str(c.id),
-                        "name": c.name,
-                        "description": c.description,
-                        "personality": c.personality,
-                        "goals": c.goals,
-                        "status": c.status.value,
-                        "memory": c.memory[-3:],
-                        "relationships": c.relationships,
-                    }
-                    for c in self.world.characters.values()
-                ],
-                "factions": self.world.factions,
-                "locations": self.world.locations,
-                "world_rules": self.world.world_rules[:5],
-                "constraints": [
-                    {
-                        "id": str(c.id),
-                        "name": c.name,
-                        "rule": c.rule,
-                        "severity": c.severity.value,
-                        "type": c.constraint_type.value,
-                    }
-                    for c in self.world.constraints
-                ],
-            }
-
         return {
             "sim_id": self.sim_id,
             "status": self.status,
             "premise": self.premise,
-            "world": world_dict,
+            "world": _serialize_world(self.world) if self.world else None,
             "nodes": self.nodes_rendered,
+            "telemetry": _serialize_telemetry(self.telemetry_events),
             "intervention_context": self.intervention_context,
             "error": self.error,
         }
@@ -291,6 +301,28 @@ def _run_simulation_sync(session: SimulationSession) -> None:
         def on_streaming_end():
             session.token_queue.put({"type": "narrator_end"})
 
+        def on_telemetry(event: Dict[str, Any]) -> None:
+            telemetry = TelemetryEvent(
+                event_id=str(uuid.uuid4()),
+                sim_id=session.sim_id,
+                tick=event.get("tick", 0),
+                agent=event["agent"],
+                stage=event["stage"],
+                level=TelemetryLevel(event.get("level", "info")),
+                message=event["message"],
+                payload=event.get("payload", {}),
+                ts=event.get("ts") or os.environ.get("FAKE_TELEMETRY_TS", ""),
+            )
+            if not telemetry.ts:
+                from datetime import datetime, timezone
+
+                telemetry.ts = datetime.now(timezone.utc).isoformat()
+            session.telemetry_events.append(telemetry)
+            session.token_queue.put(
+                {"type": "telemetry", "data": telemetry.model_dump(mode="json")}
+            )
+            _persist_session(session)
+
         final_world = run_simulation(
             premise=session.premise,
             max_ticks=session.max_ticks,
@@ -299,14 +331,42 @@ def _run_simulation_sync(session: SimulationSession) -> None:
             on_streaming_token=on_streaming_token,
             on_streaming_start=on_streaming_start,
             on_streaming_end=on_streaming_end,
+            on_telemetry=on_telemetry,
         )
         session.world = final_world
         session.status = "complete"
+        on_telemetry(
+            {
+                "tick": final_world.tick,
+                "agent": "simulation",
+                "stage": "completed",
+                "level": "info",
+                "message": "推演已完成",
+                "payload": {"nodes_count": len(final_world.nodes)},
+            }
+        )
         _persist_session(session)
 
     except Exception as e:
         session.error = str(e)
         session.status = "error"
+        session.telemetry_events.append(
+            TelemetryEvent(
+                event_id=str(uuid.uuid4()),
+                sim_id=session.sim_id,
+                tick=session.world.tick if session.world else 0,
+                agent="simulation",
+                stage="failed",
+                level=TelemetryLevel.ERROR,
+                message="推演执行失败",
+                payload={"error": str(e)},
+                ts="",
+            )
+        )
+        if session.telemetry_events[-1].ts == "":
+            from datetime import datetime, timezone
+
+            session.telemetry_events[-1].ts = datetime.now(timezone.utc).isoformat()
         _persist_session(session)
 
 
@@ -325,24 +385,21 @@ async def health():
 
 
 @app.post("/api/simulate/start", response_model=SimulationResponse)
-async def start_simulation(
-    request: StartSimulationRequest,
-    background_tasks: BackgroundTasks,
-):
+async def start_simulation(request: StartSimulationRequest):
     sim_id = str(uuid.uuid4())[:8]
     session = SimulationSession(
         sim_id=sim_id,
         premise=request.premise,
         max_ticks=request.max_ticks,
     )
-    session.loop = asyncio.get_event_loop()
+    session.loop = asyncio.get_running_loop()
     _sessions[sim_id] = session
 
     # Persist initial session
     _persist_session(session)
 
     # Run simulation in thread pool
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     loop.run_in_executor(_executor, _run_simulation_sync, session)
 
     return SimulationResponse(
@@ -364,49 +421,15 @@ async def get_simulation(sim_id: str):
     if not data:
         raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
 
-    # Build a dict similar to session.to_dict()
     world = data["world"]
-    world_dict = None
-    if world:
-        world_dict = {
-            "title": world.title,
-            "premise": world.premise,
-            "tick": world.tick,
-            "is_complete": world.is_complete,
-            "characters": [
-                {
-                    "id": str(c.id),
-                    "name": c.name,
-                    "description": c.description,
-                    "personality": c.personality,
-                    "goals": c.goals,
-                    "status": c.status.value,
-                    "memory": c.memory[-3:],
-                    "relationships": c.relationships,
-                }
-                for c in world.characters.values()
-            ],
-            "factions": world.factions,
-            "locations": world.locations,
-            "world_rules": world.world_rules[:5],
-            "constraints": [
-                {
-                    "id": str(c.id),
-                    "name": c.name,
-                    "rule": c.rule,
-                    "severity": c.severity.value,
-                    "type": c.constraint_type.value,
-                }
-                for c in world.constraints
-            ],
-        }
 
     return {
         "sim_id": data["sim_id"],
         "status": data["status"],
         "premise": data["premise"],
-        "world": world_dict,
+        "world": _serialize_world(world) if world else None,
         "nodes": data["nodes_rendered"],
+        "telemetry": data["telemetry_events"],
         "intervention_context": data["intervention_context"],
         "error": data["error"],
     }
@@ -424,6 +447,30 @@ async def intervene(sim_id: str, request: InterveneRequest):
         )
 
     session._intervention_result = request.instruction
+    session.telemetry_events.append(
+        TelemetryEvent(
+            event_id=str(uuid.uuid4()),
+            sim_id=session.sim_id,
+            tick=session.world.tick if session.world else 0,
+            agent="user",
+            stage="intervention_submitted",
+            level=TelemetryLevel.INFO,
+            message="用户已提交干预指令",
+            payload={"instruction": request.instruction},
+            ts="",
+        )
+    )
+    if session.telemetry_events[-1].ts == "":
+        from datetime import datetime, timezone
+
+        session.telemetry_events[-1].ts = datetime.now(timezone.utc).isoformat()
+    session.token_queue.put(
+        {
+            "type": "telemetry",
+            "data": session.telemetry_events[-1].model_dump(mode="json"),
+        }
+    )
+    _persist_session(session)
     return {"message": "干预指令已提交", "instruction": request.instruction}
 
 

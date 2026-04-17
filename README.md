@@ -107,25 +107,31 @@ cd frontend && pnpm install
 在项目根目录创建 `.env` 文件：
 
 ```env
-# 使用 Kimi（推荐，长上下文）
-LLM_PROVIDER=kimi
-LLM_API_KEY=your-kimi-api-key
+# 使用 MIMO（推荐）
+LLM_PROVIDER=mimo
+LLM_API_KEY=tp-your-token-plan-key-here
+LLM_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
+
+# 或使用 Kimi（长上下文）
+# LLM_PROVIDER=kimi
+# LLM_API_KEY=sk-your-kimi-api-key
+# LLM_BASE_URL=https://api.moonshot.cn/v1
 
 # 或使用 OpenAI
-LLM_PROVIDER=openai
-LLM_API_KEY=your-openai-api-key
+# LLM_PROVIDER=openai
+# LLM_API_KEY=sk-your-openai-api-key
 
 # 或使用本地 Ollama（完全私有）
-LLM_PROVIDER=ollama
-LLM_BASE_URL=http://localhost:11434/v1
-LLM_MODEL=qwen2.5:14b
+# LLM_PROVIDER=ollama
+# LLM_BASE_URL=http://localhost:11434/v1
+# LLM_MODEL=qwen2.5:14b
 ```
 
 ### 启动
 
 ```bash
 # 启动后端（项目根目录）
-python -m uvicorn src.worldbox_writer.api.server:app --host 0.0.0.0 --port 8000
+python -m uvicorn worldbox_writer.api.server:app --host 0.0.0.0 --port 8000
 
 # 启动前端（新终端）
 cd frontend && pnpm dev
@@ -164,13 +170,15 @@ worldbox-writer/
 │   └── utils/
 │       └── llm.py            # 可插拔 LLM 客户端工厂
 ├── frontend/                 # React + TypeScript + TailwindCSS 前端
-├── tests/                    # TDD 测试套件（64 单元 + 7 集成，全部通过）
+├── tests/                    # TDD 测试套件（模型 / 存储 / API / 集成）
 └── docs/
     ├── architecture/DESIGN.md
+    ├── architecture/RELATIONSHIP_SCHEMA_V1.md
+    ├── architecture/TELEMETRY_SCHEMA_V1.md
     ├── product/USER_STORIES.md
     ├── development/AGILE_GUIDE.md
     ├── development/CI_SETUP.md
-    ├── sprints/              # Sprint 0-6 记录 + Sprint 7-9 计划
+    ├── sprints/              # 历史 Sprint 文档与后续计划
 ```
 
 ---
@@ -185,16 +193,18 @@ worldbox-writer/
 | Sprint 3 | 分层记忆系统 + WorldBuilder Agent | ✅ 完成 |
 | Sprint 4 | 前端可视化面板（React + 实时事件流） | ✅ 完成 |
 | Sprint 5 | 持久化存储与实时编辑 (SQLite + SSE) | ✅ 完成 |
-| Sprint 6 | 关系图谱与专业导出 | 🔄 规划中 |
+| Sprint 6 | 看见世界（首个交付）：关系图谱 + 遥测基础 | 🟡 进行中（基础闭环已落地） |
 | Sprint 7 | 可视化补齐与稳定性加固 | 📋 已批准计划 |
 | Sprint 8 | 时间线分叉与多分支控制 | 📋 已批准计划 |
 | Sprint 9 | 长篇记忆、智能路由与创作工作台 | 📋 已批准计划 |
 
 **当前版本**：v0.5.0
 
-- 当前已交付：实时事件流、本地 SQLite 持久化、等待态编辑能力。
-- 当前测试状态：64 个单元测试 + 7 个集成测试全部通过。
-- 当前迭代状态：Sprint 6 处于规划中，Sprint 7-9 已形成批准版计划。
+- 已发布能力（v0.5.0）：实时事件流、本地 SQLite 持久化、等待态编辑能力。
+- 主干已落地的 Sprint 6 基础能力：结构化关系 schema、Telemetry v1、关系图谱面板、Telemetry 面板、历史会话恢复与最近会话入口。
+- 当前测试状态：本地已验证 `pytest -m "not integration"` 为 `74 passed, 57 deselected`；`integration` 用例依赖真实 LLM API Key。
+- 当前迭代状态：主干正在推进 Sprint 6，最小可见性闭环已可演示；图谱交互补齐、日志筛选分组、统一调用链与稳定性护栏仍留在 Sprint 7。
+- Sprint 7 前必须先解决的 TODO：修复中断会话恢复时的 telemetry 保留问题，以及关系推断在匿名事件和多角色混合场景下的数据正确性问题。
 
 ---
 
@@ -204,7 +214,7 @@ worldbox-writer/
 
 | 阶段 | 对应 Sprint | 目标 | 核心交付 |
 | :--- | :--- | :--- | :--- |
-| 看见世界 | Sprint 7 | 让推演过程可见且稳定 | 关系图谱、遥测日志、统一调用链、可靠性护栏 |
+| 看见世界 | Sprint 6-7 | 让推演过程可见且稳定 | 关系图谱、遥测日志、统一调用链、可靠性护栏 |
 | 掌控世界 | Sprint 8 | 让用户能回溯并分叉世界线 | `fork_at_node()`、多分支时间线、节奏控制、灰度回滚 |
 | 创作作品 | Sprint 9 | 让系统支持长篇创作与生产力闭环 | 智能记忆、多模型路由、Wiki、富文本、容量门禁 |
 
@@ -237,20 +247,22 @@ worldbox-writer/
 ## 运行测试
 
 ```bash
-# 运行纯逻辑测试（无需 LLM API）
-python -m pytest tests/ -v -m "not integration"
+# 运行本地可重复的非集成测试（无需 LLM API）
+python -m pytest -m "not integration"
 
-# 运行全套集成测试（需要配置真实 LLM API）
-python -m pytest tests/ -v
+# 运行依赖真实 LLM 的集成测试
+python -m pytest -m integration
 ```
 
-系统使用真实的 LLM API 进行集成测试，确保 Agent 逻辑的真实可靠性。
+当前仓库在本地已验证 `pytest -m "not integration"` 为 `74 passed, 57 deselected`；集成测试依赖真实 LLM API Key，适合在配置好凭证后单独运行。
 
 ---
 
 ## 文档索引
 
 - [架构设计文档](docs/architecture/DESIGN.md)
+- [关系结构协议 v1](docs/architecture/RELATIONSHIP_SCHEMA_V1.md)
+- [Telemetry 协议 v1](docs/architecture/TELEMETRY_SCHEMA_V1.md)
 - [产品演进规划](docs/product/PRODUCT_PLANNING.md)
 - [长期路线图](docs/product/FUTURE_ROADMAP.md)
 - [用户故事与 Product Backlog](docs/product/USER_STORIES.md)
@@ -260,6 +272,7 @@ python -m pytest tests/ -v
 - [Sprint 1 记录](docs/sprints/SPRINT_1.md)
 - [Sprint 2-4 记录](docs/sprints/SPRINT_2_4.md)
 - [Sprint 6 计划](docs/sprints/SPRINT_6.md)
+- [Sprint 6 Demo Script](docs/sprints/SPRINT_6_DEMO_SCRIPT.md)
 - [Sprint 7-9 批准版计划](docs/sprints/FINAL_SPRINT_7_8_9_PLAN.md)
 
 ---

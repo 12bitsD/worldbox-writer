@@ -6,7 +6,8 @@ Uses FastAPI TestClient, no LLM required.
 import pytest
 from fastapi.testclient import TestClient
 
-from worldbox_writer.api.server import SimulationSession, _sessions, app
+import worldbox_writer.api.server as server_module
+from worldbox_writer.api.server import SimulationSession, _run_simulation_sync, _sessions, app
 from worldbox_writer.core.models import Character, WorldState
 from worldbox_writer.storage.db import init_db
 
@@ -158,3 +159,86 @@ class TestHealthCheck:
         assert res.status_code == 200
         assert res.json()["status"] == "ok"
         assert res.json()["version"] == "0.5.0"
+
+
+class TestGetSimulation:
+    def test_get_simulation_serializes_structured_relationships(
+        self, client, waiting_session
+    ):
+        """Structured relationships should be exposed via the simulation API."""
+        sim_id, char_id = waiting_session
+        session = _sessions[sim_id]
+        char = session.world.get_character(char_id)
+        char.update_relationship(
+            "other-char",
+            "ally",
+            affinity=40,
+            note="并肩作战",
+            updated_at_tick=2,
+        )
+
+        res = client.get(f"/api/simulate/{sim_id}")
+        assert res.status_code == 200
+
+        body = res.json()
+        relationships = body["world"]["characters"][0]["relationships"]
+        assert relationships["other-char"]["target_id"] == "other-char"
+        assert relationships["other-char"]["label"] == "ally"
+        assert relationships["other-char"]["affinity"] == 40
+
+    def test_get_simulation_includes_telemetry(self, client, waiting_session):
+        """Telemetry history should be included in the simulation payload."""
+        sim_id, _ = waiting_session
+        session = _sessions[sim_id]
+        session.telemetry_events.append(
+            server_module.TelemetryEvent(
+                event_id="evt-1",
+                sim_id=sim_id,
+                tick=1,
+                agent="actor",
+                stage="proposal_generated",
+                level=server_module.TelemetryLevel.INFO,
+                message="生成了新的候选事件",
+                payload={"preview": "预览"},
+                ts="2026-01-01T00:00:00+00:00",
+            )
+        )
+
+        res = client.get(f"/api/simulate/{sim_id}")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["telemetry"][0]["event_id"] == "evt-1"
+        assert body["telemetry"][0]["agent"] == "actor"
+
+
+class TestTelemetryPipeline:
+    def test_run_simulation_sync_records_telemetry_events(self, monkeypatch):
+        """Runner should convert emitted telemetry into persisted session events."""
+
+        def fake_run_simulation(**kwargs):
+            kwargs["on_telemetry"](
+                {
+                    "tick": 0,
+                    "agent": "director",
+                    "stage": "world_initialized",
+                    "level": "info",
+                    "message": "世界骨架初始化完成",
+                    "payload": {"characters": 2},
+                }
+            )
+            world = WorldState(title="测试世界", premise="测试前提")
+            return world
+
+        monkeypatch.setattr(server_module, "run_simulation", fake_run_simulation)
+
+        session = SimulationSession(sim_id="telemetry", premise="测试前提", max_ticks=1)
+        _run_simulation_sync(session)
+
+        assert session.status == "complete"
+        assert len(session.telemetry_events) >= 2
+        assert session.telemetry_events[0].agent == "director"
+        assert session.telemetry_events[0].stage == "world_initialized"
+        queued = []
+        while not session.token_queue.empty():
+            queued.append(session.token_queue.get_nowait())
+        assert any(item["type"] == "telemetry" for item in queued)

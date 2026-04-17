@@ -186,10 +186,13 @@ class ActorAgent:
         relationships_text = ""
         if character.relationships:
             rel_parts = []
-            for other_id, rel_desc in list(character.relationships.items())[:3]:
+            for other_id, rel in list(character.relationships.items())[:3]:
                 other = world.get_character(other_id)
                 if other:
-                    rel_parts.append(f"{other.name}：{rel_desc}")
+                    summary = rel.label.value
+                    if rel.note:
+                        summary += f"（{rel.note}）"
+                    rel_parts.append(f"{other.name}：{summary}")
             relationships_text = "；".join(rel_parts)
 
         recent_memory = character.memory[-3:] if character.memory else ["无记忆"]

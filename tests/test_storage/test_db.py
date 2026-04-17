@@ -4,6 +4,7 @@ Tests for SQLite persistence layer — no LLM required.
 
 import json
 import os
+import sqlite3
 import tempfile
 import uuid
 
@@ -16,6 +17,7 @@ from worldbox_writer.core.models import (
     ConstraintSeverity,
     ConstraintType,
     NodeType,
+    RelationshipLabel,
     StoryNode,
     WorldState,
 )
@@ -122,6 +124,59 @@ class TestWorldCRUD:
         assert c.severity == ConstraintSeverity.HARD
         assert c.constraint_type == ConstraintType.NARRATIVE
 
+    def test_structured_relationships_survive_roundtrip(self, db_path, sample_world):
+        """Structured relationship edges should persist through JSON storage."""
+        char = list(sample_world.characters.values())[0]
+        char.update_relationship(
+            "mentor-id",
+            "trust",
+            affinity=55,
+            note="在废墟中结盟",
+            updated_at_tick=2,
+        )
+
+        save_world(sample_world, db_path)
+        loaded = load_world(str(sample_world.world_id), db_path)
+
+        loaded_char = list(loaded.characters.values())[0]
+        rel = loaded_char.relationships["mentor-id"]
+        assert rel.target_id == "mentor-id"
+        assert rel.affinity == 55
+        assert rel.label == RelationshipLabel.TRUST
+        assert rel.note == "在废墟中结盟"
+
+    def test_legacy_string_relationships_still_load(self, db_path, sample_world):
+        """Old worlds with string relationships should remain loadable."""
+        char = list(sample_world.characters.values())[0]
+        payload = sample_world.model_dump(mode="json")
+        payload["characters"][str(char.id)]["relationships"] = {"legacy-id": "rival"}
+
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute(
+                """INSERT INTO worlds (world_id, title, premise, state_json, tick, is_complete, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    str(sample_world.world_id),
+                    sample_world.title,
+                    sample_world.premise,
+                    json.dumps(payload, ensure_ascii=False),
+                    sample_world.tick,
+                    1 if sample_world.is_complete else 0,
+                    "2026-01-01T00:00:00+00:00",
+                    "2026-01-01T00:00:00+00:00",
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        loaded = load_world(str(sample_world.world_id), db_path)
+        loaded_char = list(loaded.characters.values())[0]
+        rel = loaded_char.relationships["legacy-id"]
+        assert rel.target_id == "legacy-id"
+        assert rel.label == RelationshipLabel.RIVAL
+
 
 class TestSessionCRUD:
     def test_save_and_load_session(self, db_path, sample_world):
@@ -133,6 +188,19 @@ class TestSessionCRUD:
             status="complete",
             world=sample_world,
             nodes_json=[{"title": "节点1"}],
+            telemetry_events=[
+                {
+                    "event_id": "evt-1",
+                    "sim_id": "test123",
+                    "tick": 0,
+                    "agent": "director",
+                    "stage": "world_initialized",
+                    "level": "info",
+                    "message": "初始化完成",
+                    "payload": {},
+                    "ts": "2026-01-01T00:00:00+00:00",
+                }
+            ],
             db_path=db_path,
         )
         loaded = load_session("test123", db_path)
@@ -141,6 +209,7 @@ class TestSessionCRUD:
         assert loaded["status"] == "complete"
         assert loaded["world"] is not None
         assert len(loaded["nodes_rendered"]) == 1
+        assert loaded["telemetry_events"][0]["event_id"] == "evt-1"
 
     def test_load_nonexistent_session(self, db_path):
         """Loading a nonexistent session should return None."""

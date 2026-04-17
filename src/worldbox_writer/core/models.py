@@ -12,7 +12,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # ---------------------------------------------------------------------------
 # Enumerations
@@ -54,6 +54,25 @@ class ConstraintSeverity(str, Enum):
     SOFT = "soft"  # Should be respected; Gate Keeper will warn but allow
 
 
+class RelationshipLabel(str, Enum):
+    """Canonical labels for character-to-character relationships."""
+
+    ALLY = "ally"
+    NEUTRAL = "neutral"
+    RIVAL = "rival"
+    FEAR = "fear"
+    TRUST = "trust"
+    UNKNOWN = "unknown"
+
+
+class TelemetryLevel(str, Enum):
+    """Severity level for user-visible telemetry events."""
+
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+
+
 # ---------------------------------------------------------------------------
 # Core Models
 # ---------------------------------------------------------------------------
@@ -72,8 +91,8 @@ class Character(BaseModel):
     personality: str = ""
     goals: List[str] = Field(default_factory=list)
     status: CharacterStatus = CharacterStatus.ALIVE
-    # Relationship map: other character id -> relationship description
-    relationships: Dict[str, str] = Field(default_factory=dict)
+    # Relationship map: other character id -> structured relationship edge
+    relationships: Dict[str, "Relationship"] = Field(default_factory=dict)
     # Short-term memory: recent events this character has experienced
     memory: List[str] = Field(default_factory=list, max_length=20)
     # Arbitrary metadata for extensibility
@@ -81,15 +100,117 @@ class Character(BaseModel):
 
     model_config = {"frozen": False}
 
+    @field_validator("relationships", mode="before")
+    @classmethod
+    def _coerce_legacy_relationships(
+        cls, raw_relationships: Any
+    ) -> Dict[str, "Relationship"]:
+        """Accept legacy string maps and normalize them into structured edges."""
+        if not raw_relationships:
+            return {}
+
+        normalized: Dict[str, Relationship | Dict[str, Any]] = {}
+        for other_id, value in raw_relationships.items():
+            if isinstance(value, Relationship):
+                normalized[other_id] = value.model_copy(
+                    update={"target_id": value.target_id or other_id}
+                )
+                continue
+
+            if isinstance(value, str):
+                label = (
+                    RelationshipLabel(value)
+                    if value in RelationshipLabel._value2member_map_
+                    else RelationshipLabel.UNKNOWN
+                )
+                normalized[other_id] = {
+                    "target_id": other_id,
+                    "affinity": 0,
+                    "label": label,
+                    "note": "" if label != RelationshipLabel.UNKNOWN else value,
+                    "updated_at_tick": None,
+                }
+                continue
+
+            if isinstance(value, dict):
+                normalized[other_id] = {
+                    "target_id": value.get("target_id", other_id),
+                    "affinity": value.get("affinity", 0),
+                    "label": value.get("label", RelationshipLabel.UNKNOWN),
+                    "note": value.get("note", ""),
+                    "updated_at_tick": value.get("updated_at_tick"),
+                }
+                continue
+
+            raise TypeError(
+                f"Unsupported relationship payload for {other_id}: {type(value)!r}"
+            )
+
+        return normalized
+
     def add_memory(self, event: str) -> None:
         """Append an event to the character's memory, capping at 20 entries."""
         self.memory.append(event)
         if len(self.memory) > 20:
             self.memory = self.memory[-20:]
 
-    def update_relationship(self, other_id: str, description: str) -> None:
-        """Update or create a relationship entry with another character."""
-        self.relationships[other_id] = description
+    def update_relationship(
+        self,
+        other_id: str,
+        relationship: str | "Relationship",
+        *,
+        affinity: int = 0,
+        label: RelationshipLabel | str = RelationshipLabel.UNKNOWN,
+        note: str = "",
+        updated_at_tick: Optional[int] = None,
+    ) -> None:
+        """Update or create a structured relationship entry with another character."""
+        if isinstance(relationship, Relationship):
+            edge = relationship.model_copy(update={"target_id": other_id})
+        else:
+            resolved_label = (
+                RelationshipLabel(label)
+                if isinstance(label, str)
+                else label
+            )
+            if relationship in RelationshipLabel._value2member_map_:
+                resolved_label = RelationshipLabel(relationship)
+                resolved_note = note
+            else:
+                resolved_note = relationship if not note else note
+            edge = Relationship(
+                target_id=other_id,
+                affinity=affinity,
+                label=resolved_label,
+                note=resolved_note,
+                updated_at_tick=updated_at_tick,
+            )
+
+        self.relationships[other_id] = edge
+
+
+class Relationship(BaseModel):
+    """Structured representation of an edge between two characters."""
+
+    target_id: str
+    affinity: int = 0
+    label: RelationshipLabel = RelationshipLabel.UNKNOWN
+    note: str = ""
+    updated_at_tick: Optional[int] = None
+
+
+class TelemetryEvent(BaseModel):
+    """Structured, user-visible telemetry event for a simulation session."""
+
+    event_id: str
+    sim_id: str
+    tick: int
+    agent: str
+    stage: str
+    level: TelemetryLevel = TelemetryLevel.INFO
+    message: str
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    ts: str
 
 
 class Constraint(BaseModel):

@@ -92,6 +92,14 @@ def init_db(db_path: Optional[str] = None) -> None:
     conn = _get_conn(db_path)
     try:
         conn.executescript(_SCHEMA)
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(sessions)").fetchall()
+        }
+        if "telemetry_json" not in columns:
+            conn.execute(
+                "ALTER TABLE sessions ADD COLUMN telemetry_json TEXT NOT NULL DEFAULT '[]'"
+            )
         conn.commit()
     finally:
         conn.close()
@@ -166,6 +174,7 @@ def save_session(
     status: str,
     world: Optional[WorldState],
     nodes_json: List[Dict[str, Any]],
+    telemetry_events: Optional[List[Dict[str, Any]]] = None,
     intervention_context: Optional[str] = None,
     error: Optional[str] = None,
     db_path: Optional[str] = None,
@@ -181,11 +190,12 @@ def save_session(
     conn = _get_conn(db_path)
     try:
         conn.execute(
-            """INSERT INTO sessions (sim_id, premise, max_ticks, status, world_id, nodes_json, intervention_context, error, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """INSERT INTO sessions (sim_id, premise, max_ticks, status, world_id, nodes_json, telemetry_json, intervention_context, error, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(sim_id) DO UPDATE SET
                  status=excluded.status, world_id=excluded.world_id,
                  nodes_json=excluded.nodes_json,
+                 telemetry_json=excluded.telemetry_json,
                  intervention_context=excluded.intervention_context,
                  error=excluded.error, updated_at=excluded.updated_at""",
             (
@@ -195,6 +205,7 @@ def save_session(
                 status,
                 world_id,
                 json.dumps(nodes_json, ensure_ascii=False),
+                json.dumps(telemetry_events or [], ensure_ascii=False),
                 intervention_context,
                 error,
                 now,
@@ -227,6 +238,7 @@ def load_session(
             "status": row["status"],
             "world": world,
             "nodes_rendered": json.loads(row["nodes_json"]),
+            "telemetry_events": json.loads(row["telemetry_json"] or "[]"),
             "intervention_context": row["intervention_context"],
             "error": row["error"],
         }
@@ -239,7 +251,7 @@ def list_sessions(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     conn = _get_conn(db_path)
     try:
         rows = conn.execute(
-            "SELECT sim_id, premise, status, nodes_json, created_at FROM sessions ORDER BY created_at DESC"
+            "SELECT sim_id, premise, status, nodes_json FROM sessions ORDER BY created_at DESC"
         ).fetchall()
         return [
             {

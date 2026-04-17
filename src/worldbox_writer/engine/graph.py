@@ -21,6 +21,7 @@ WorldBox Writer — Simulation Engine (LangGraph StateGraph).
 
 from __future__ import annotations
 
+from itertools import combinations
 from typing import Any, Dict, Literal, Optional
 
 from langgraph.graph import END, START, StateGraph
@@ -30,7 +31,12 @@ from worldbox_writer.agents.director import DirectorAgent
 from worldbox_writer.agents.gate_keeper import GateKeeperAgent
 from worldbox_writer.agents.node_detector import NodeDetector
 from worldbox_writer.agents.world_builder import WorldBuilderAgent
-from worldbox_writer.core.models import NodeType, StoryNode, WorldState
+from worldbox_writer.core.models import (
+    NodeType,
+    RelationshipLabel,
+    StoryNode,
+    WorldState,
+)
 from worldbox_writer.memory.memory_manager import MemoryManager
 from worldbox_writer.utils.llm import chat_completion
 
@@ -54,6 +60,147 @@ class SimulationState(TypedDict):
     streaming_callbacks: Optional[Dict]
 
 
+_POSITIVE_RELATIONSHIP_KEYWORDS = {
+    "结盟",
+    "联手",
+    "并肩",
+    "合作",
+    "和解",
+    "帮助",
+    "相助",
+}
+_TRUST_RELATIONSHIP_KEYWORDS = {"救下", "守护", "信任", "托付", "保护"}
+_NEGATIVE_RELATIONSHIP_KEYWORDS = {
+    "背叛",
+    "攻击",
+    "追杀",
+    "决裂",
+    "敌对",
+    "冲突",
+    "争吵",
+    "威胁",
+    "刺杀",
+}
+
+
+def _emit_telemetry(
+    state: SimulationState,
+    *,
+    tick: int,
+    agent: str,
+    stage: str,
+    message: str,
+    level: str = "info",
+    payload: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Emit a user-visible telemetry event when a callback is configured."""
+    callbacks = state.get("streaming_callbacks") or {}
+    on_telemetry = callbacks.get("on_telemetry")
+    if on_telemetry:
+        on_telemetry(
+            {
+                "tick": tick,
+                "agent": agent,
+                "stage": stage,
+                "level": level,
+                "message": message,
+                "payload": payload or {},
+            }
+        )
+
+
+def _select_character_ids_for_event(
+    world: WorldState, event_description: str, max_chars: int = 3
+) -> list[str]:
+    """Infer the most likely involved characters from the final event text."""
+    matched: list[tuple[int, str]] = []
+    for char_id, char in world.characters.items():
+        index = event_description.find(char.name)
+        if index != -1:
+            matched.append((index, char_id))
+
+    if matched:
+        matched.sort(key=lambda item: item[0])
+        return [char_id for _, char_id in matched[:max_chars]]
+
+    alive_ids = [
+        char_id
+        for char_id, char in world.characters.items()
+        if char.status.value == "alive"
+    ]
+    return alive_ids[:max_chars]
+
+
+def _clamp_affinity(value: int) -> int:
+    return max(-100, min(100, value))
+
+
+def _relationship_signal(
+    event_description: str,
+) -> tuple[Optional[RelationshipLabel], int]:
+    """Map event text to a simple, explainable relationship update signal."""
+    text = event_description.lower()
+
+    if any(keyword in text for keyword in _NEGATIVE_RELATIONSHIP_KEYWORDS):
+        return RelationshipLabel.RIVAL, -25
+    if any(keyword in text for keyword in _TRUST_RELATIONSHIP_KEYWORDS):
+        return RelationshipLabel.TRUST, 20
+    if any(keyword in text for keyword in _POSITIVE_RELATIONSHIP_KEYWORDS):
+        return RelationshipLabel.ALLY, 15
+
+    return None, 0
+
+
+def _apply_relationship_updates(
+    world: WorldState,
+    character_ids: list[str],
+    event_description: str,
+    *,
+    tick: int,
+) -> bool:
+    """Apply simple pairwise relationship updates based on the committed node text."""
+    if len(character_ids) < 2:
+        return False
+
+    label, delta = _relationship_signal(event_description)
+    if label is None or delta == 0:
+        return False
+
+    changed = False
+    note = event_description[:80]
+
+    for left_id, right_id in combinations(character_ids[:3], 2):
+        left = world.get_character(left_id)
+        right = world.get_character(right_id)
+        if not left or not right:
+            continue
+
+        left_existing = left.relationships.get(right_id)
+        right_existing = right.relationships.get(left_id)
+        left_affinity = _clamp_affinity((left_existing.affinity if left_existing else 0) + delta)
+        right_affinity = _clamp_affinity((right_existing.affinity if right_existing else 0) + delta)
+
+        left.update_relationship(
+            right_id,
+            label.value,
+            affinity=left_affinity,
+            label=label,
+            note=note,
+            updated_at_tick=tick,
+        )
+        right.update_relationship(
+            left_id,
+            label.value,
+            affinity=right_affinity,
+            label=label,
+            note=note,
+            updated_at_tick=tick,
+        )
+        changed = True
+
+    return changed
+
+
 # ---------------------------------------------------------------------------
 # Node Functions
 # ---------------------------------------------------------------------------
@@ -68,6 +215,17 @@ def director_node(state: SimulationState) -> Dict[str, Any]:
     agent = DirectorAgent()
     # initialize_world(user_premise, existing_world=None)
     updated_world = agent.initialize_world(world.premise, world)
+    _emit_telemetry(
+        state,
+        tick=updated_world.tick,
+        agent="director",
+        stage="world_initialized",
+        message="世界骨架初始化完成",
+        payload={
+            "characters": len(updated_world.characters),
+            "constraints": len(updated_world.constraints),
+        },
+    )
     return {"world": updated_world, "initialized": True}
 
 
@@ -79,6 +237,17 @@ def world_builder_node(state: SimulationState) -> Dict[str, Any]:
     world = state["world"]
     agent = WorldBuilderAgent()
     enriched_world = agent.expand_world(world)
+    _emit_telemetry(
+        state,
+        tick=enriched_world.tick,
+        agent="world_builder",
+        stage="world_enriched",
+        message="世界设定扩写完成",
+        payload={
+            "factions": len(enriched_world.factions),
+            "locations": len(enriched_world.locations),
+        },
+    )
     return {"world": enriched_world, "world_built": True}
 
 
@@ -147,6 +316,14 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
     candidate = chat_completion(
         messages, role="actor", temperature=0.8, max_tokens=200, top_p=0.95
     )
+    _emit_telemetry(
+        state,
+        tick=world.tick,
+        agent="actor",
+        stage="proposal_generated",
+        message="生成了新的候选事件",
+        payload={"preview": candidate.strip()[:80]},
+    )
     return {"candidate_event": candidate.strip()}
 
 
@@ -166,6 +343,18 @@ def gate_keeper_node(state: SimulationState) -> Dict[str, Any]:
     result = agent.validate(world, temp_node)
 
     if not result.is_valid:
+        _emit_telemetry(
+            state,
+            tick=world.tick,
+            agent="gate_keeper",
+            stage="rejected",
+            level="warning",
+            message="候选事件被边界层拒绝",
+            payload={
+                "reason": result.rejection_reason,
+                "hint": result.revision_hint,
+            },
+        )
         return {
             "validation_passed": False,
             "candidate_event": (
@@ -174,6 +363,13 @@ def gate_keeper_node(state: SimulationState) -> Dict[str, Any]:
             ),
         }
 
+    _emit_telemetry(
+        state,
+        tick=world.tick,
+        agent="gate_keeper",
+        stage="passed",
+        message="候选事件通过边界校验",
+    )
     return {"validation_passed": True}
 
 
@@ -186,6 +382,14 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
 
     if not validation_passed:
         world.advance_tick()
+        _emit_telemetry(
+            state,
+            tick=world.tick,
+            agent="node_detector",
+            stage="skipped",
+            level="warning",
+            message="当前 tick 未固化故事节点",
+        )
         return {"world": world, "needs_intervention": False}
 
     # Determine node type
@@ -202,18 +406,52 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
         node_type = NodeType.BRANCH
 
     parent_ids = [world.current_node_id] if world.current_node_id else []
+    involved_character_ids = _select_character_ids_for_event(world, candidate)
 
     new_node = StoryNode(
         title=f"第{world.tick + 1}幕",
         description=candidate,
         node_type=node_type,
         parent_ids=parent_ids,
-        character_ids=list(world.characters.keys())[:3],
+        character_ids=involved_character_ids,
     )
+
+    if parent_ids:
+        parent = world.get_node(parent_ids[0])
+        if parent and str(new_node.id) not in parent.child_ids:
+            parent.child_ids.append(str(new_node.id))
 
     world.add_node(new_node)
     world.current_node_id = str(new_node.id)
     world.advance_tick()
+    relationships_changed = _apply_relationship_updates(
+        world,
+        involved_character_ids,
+        candidate,
+        tick=world.tick,
+    )
+    _emit_telemetry(
+        state,
+        tick=world.tick,
+        agent="node_detector",
+        stage="node_committed",
+        message="新故事节点已固化",
+        payload={
+            "node_id": str(new_node.id),
+            "node_type": new_node.node_type.value,
+            "title": new_node.title,
+            "characters": involved_character_ids,
+        },
+    )
+    if relationships_changed:
+        _emit_telemetry(
+            state,
+            tick=world.tick,
+            agent="node_detector",
+            stage="relationships_updated",
+            message="角色关系已根据事件结果更新",
+            payload={"characters": involved_character_ids},
+        )
 
     # Record to memory
     importance = 0.5
@@ -227,9 +465,19 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
     detector = NodeDetector()
     signal = detector.detect(new_node, world)
     needs_intervention = signal is not None and signal.urgency in ["high", "critical"]
+    new_node.requires_intervention = needs_intervention
 
     if needs_intervention and signal:
         world.request_intervention(signal.context)
+        _emit_telemetry(
+            state,
+            tick=world.tick,
+            agent="node_detector",
+            stage="intervention_requested",
+            level="warning",
+            message="检测到高优先级分歧，等待用户干预",
+            payload={"context": signal.context},
+        )
 
     # Check story completion
     if node_type == NodeType.RESOLUTION or world.tick >= state.get("max_ticks", 10):
@@ -297,6 +545,14 @@ def narrator_node(state: SimulationState) -> Dict[str, Any]:
     on_end_cb = callbacks.get("on_end")
 
     if on_start_cb:
+        _emit_telemetry(
+            state,
+            tick=world.tick,
+            agent="narrator",
+            stage="started",
+            message="开始渲染小说文本",
+            payload={"node_id": str(current_node.id), "title": current_node.title},
+        )
         on_start_cb(
             node_id=str(current_node.id),
             title=current_node.title,
@@ -316,6 +572,14 @@ def narrator_node(state: SimulationState) -> Dict[str, Any]:
 
     if on_end_cb:
         on_end_cb()
+    _emit_telemetry(
+        state,
+        tick=world.tick,
+        agent="narrator",
+        stage="completed",
+        message="小说文本渲染完成",
+        payload={"node_id": str(current_node.id), "title": current_node.title},
+    )
 
     current_node.rendered_text = prose.strip()
     current_node.is_rendered = True
@@ -403,6 +667,7 @@ def run_simulation(
     on_streaming_token=None,
     on_streaming_start=None,
     on_streaming_end=None,
+    on_telemetry=None,
 ) -> WorldState:
     """Run a full story simulation.
 
@@ -414,6 +679,7 @@ def run_simulation(
         on_streaming_token: fn(token: str) callback for token-level streaming.
         on_streaming_start: fn(node_info: dict) callback when narrator starts.
         on_streaming_end: fn() callback when narrator finishes streaming.
+        on_telemetry: fn(event: dict) callback for structured telemetry events.
 
     Returns:
         Final WorldState with all story nodes.
@@ -436,8 +702,17 @@ def run_simulation(
                 "on_token": on_streaming_token,
                 "on_start": on_streaming_start,
                 "on_end": on_streaming_end,
+                "on_telemetry": on_telemetry,
             }
-            if on_streaming_token
+            if any(
+                callback is not None
+                for callback in (
+                    on_streaming_token,
+                    on_streaming_start,
+                    on_streaming_end,
+                    on_telemetry,
+                )
+            )
             else None
         ),
     }

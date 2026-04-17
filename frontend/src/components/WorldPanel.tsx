@@ -33,7 +33,7 @@ export function WorldPanel({ world }: WorldPanelProps) {
           <div>
             <div className="label">势力数量</div>
             <div style={{ fontSize: 20, fontWeight: 800, marginTop: 2 }}>
-              {Object.keys(world.factions).length}
+              {world.factions.length}
             </div>
           </div>
         </div>

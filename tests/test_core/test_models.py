@@ -16,6 +16,8 @@ from worldbox_writer.core.models import (
     ConstraintSeverity,
     ConstraintType,
     NodeType,
+    Relationship,
+    RelationshipLabel,
     StoryNode,
     WorldState,
 )
@@ -52,13 +54,43 @@ class TestCharacter:
     def test_update_relationship_creates_entry(self):
         c = Character(name="Alice")
         c.update_relationship("bob-id", "rival")
-        assert c.relationships["bob-id"] == "rival"
+        assert c.relationships["bob-id"].target_id == "bob-id"
+        assert c.relationships["bob-id"].label == RelationshipLabel.RIVAL
 
     def test_update_relationship_overwrites_existing(self):
         c = Character(name="Alice")
         c.update_relationship("bob-id", "rival")
-        c.update_relationship("bob-id", "ally")
-        assert c.relationships["bob-id"] == "ally"
+        c.update_relationship("bob-id", "ally", affinity=35)
+        assert c.relationships["bob-id"].label == RelationshipLabel.ALLY
+        assert c.relationships["bob-id"].affinity == 35
+
+    def test_legacy_string_relationships_are_normalized(self):
+        c = Character.model_validate(
+            {"name": "Alice", "relationships": {"bob-id": "rival"}}
+        )
+        assert c.relationships["bob-id"].target_id == "bob-id"
+        assert c.relationships["bob-id"].label == RelationshipLabel.RIVAL
+
+    def test_structured_relationships_are_preserved(self):
+        c = Character.model_validate(
+            {
+                "name": "Alice",
+                "relationships": {
+                    "bob-id": {
+                        "target_id": "bob-id",
+                        "affinity": 60,
+                        "label": "trust",
+                        "note": "saved my life",
+                        "updated_at_tick": 3,
+                    }
+                },
+            }
+        )
+        rel = c.relationships["bob-id"]
+        assert isinstance(rel, Relationship)
+        assert rel.affinity == 60
+        assert rel.label == RelationshipLabel.TRUST
+        assert rel.note == "saved my life"
 
 
 # ---------------------------------------------------------------------------

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import "./index.css";
 import { useSimulation } from "./hooks/useSimulation";
 import { Header } from "./components/Header";
@@ -7,10 +8,25 @@ import { StoryFeed } from "./components/StoryFeed";
 import { InterventionPanel } from "./components/InterventionPanel";
 import { ExportPanel } from "./components/ExportPanel";
 import { EditPanel } from "./components/EditPanel";
+import { RelationshipPanel } from "./components/RelationshipPanel";
+import { TelemetryPanel } from "./components/TelemetryPanel";
 
 export default function App() {
-  const { simId, state, loading, error, start, sendIntervention, doExport, reset } =
+  const {
+    simId,
+    state,
+    loading,
+    error,
+    recentSessions,
+    start,
+    openSession,
+    sendIntervention,
+    doExport,
+    refresh,
+    reset,
+  } =
     useSimulation();
+  const [rightTab, setRightTab] = useState<"graph" | "telemetry">("graph");
 
   const isRunning = state?.status === "running" || state?.status === "initializing";
   const isWaiting = state?.status === "waiting";
@@ -25,7 +41,12 @@ export default function App() {
     return (
       <>
         <Header status={null} onReset={reset} />
-        <StartPanel onStart={start} loading={loading} />
+        <StartPanel
+          onStart={start}
+          onOpenSession={openSession}
+          recentSessions={recentSessions}
+          loading={loading}
+        />
       </>
     );
   }
@@ -162,9 +183,7 @@ export default function App() {
             <EditPanel
               simId={simId}
               world={state.world}
-              onUpdated={() => {
-                /* state will be refreshed via SSE or next poll */
-              }}
+              onUpdated={refresh}
             />
           )}
         </main>
@@ -282,6 +301,34 @@ export default function App() {
               />
             </div>
           ))}
+
+          <hr style={{ border: "none", borderTop: "1px solid var(--color-border)", margin: "16px 0" }} />
+
+          <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+            <button
+              className={`btn ${rightTab === "graph" ? "btn-primary" : ""}`}
+              style={{ flex: 1, justifyContent: "center", fontSize: 11, padding: "6px 10px" }}
+              onClick={() => setRightTab("graph")}
+            >
+              Graph
+            </button>
+            <button
+              className={`btn ${rightTab === "telemetry" ? "btn-primary" : ""}`}
+              style={{ flex: 1, justifyContent: "center", fontSize: 11, padding: "6px 10px" }}
+              onClick={() => setRightTab("telemetry")}
+            >
+              Telemetry
+            </button>
+          </div>
+
+          {rightTab === "graph" ? (
+            <RelationshipPanel world={state?.world ?? null} />
+          ) : (
+            <TelemetryPanel
+              events={state?.telemetry ?? []}
+              isRunning={isRunning}
+            />
+          )}
         </aside>
       </div>
     </>

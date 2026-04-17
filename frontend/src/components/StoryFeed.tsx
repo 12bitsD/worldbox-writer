@@ -78,7 +78,7 @@ export function StoryFeed({ nodes, isRunning }: StoryFeedProps) {
                   letterSpacing: "0.05em",
                 }}
               >
-                已干预
+                {node.intervention_instruction ? "已干预" : "关键节点"}
               </span>
             )}
           </div>

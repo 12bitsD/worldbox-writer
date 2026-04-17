@@ -8,13 +8,24 @@ import {
   intervene,
   exportSimulation,
   createEventStream,
+  listSessions,
 } from "../utils/api";
+
+const LAST_SIM_ID_KEY = "worldbox:last-sim-id";
 
 export function useSimulation() {
   const [simId, setSimId] = useState<string | null>(null);
   const [state, setState] = useState<SimulationState | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recentSessions, setRecentSessions] = useState<
+    Array<{
+      sim_id: string;
+      status: string;
+      premise: string;
+      nodes_count: number;
+    }>
+  >([]);
   const esRef = useRef<EventSource | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -27,6 +38,16 @@ export function useSimulation() {
       esRef.current.close();
       esRef.current = null;
     }
+  }, []);
+
+  const refreshRecentSessions = useCallback(() => {
+    return listSessions()
+      .then((sessions) => {
+        setRecentSessions(sessions);
+      })
+      .catch(() => {
+        // ignore recent session load errors
+      });
   }, []);
 
   /** Fallback polling when SSE fails */
@@ -101,6 +122,19 @@ export function useSimulation() {
             });
           } else if (type === "narrator_end") {
             // Streaming done; the next "node" event will carry final rendered_text
+          } else if (type === "telemetry") {
+            const telemetry = event.data as SimulationState["telemetry"][0];
+            setState((prev) => {
+              if (!prev) return prev;
+              const exists = prev.telemetry.some(
+                (item) => item.event_id === telemetry.event_id
+              );
+              if (exists) return prev;
+              return {
+                ...prev,
+                telemetry: [...prev.telemetry, telemetry],
+              };
+            });
           } else if (type === "intervention") {
             setState((prev) => {
               if (!prev) return prev;
@@ -125,7 +159,7 @@ export function useSimulation() {
             }
           }
         },
-        (_err) => {
+        () => {
           // SSE error — fallback to polling
           console.warn("SSE connection lost, falling back to polling");
           esRef.current?.close();
@@ -137,6 +171,45 @@ export function useSimulation() {
     [stopAll, startFallbackPolling]
   );
 
+  const openSession = useCallback(
+    async (id: string) => {
+      setLoading(true);
+      setError(null);
+      stopAll();
+      try {
+        const nextState = await getSimulation(id);
+        setSimId(id);
+        setState(nextState);
+        window.sessionStorage.setItem(LAST_SIM_ID_KEY, id);
+        void refreshRecentSessions();
+
+        if (
+          nextState.status === "running" ||
+          nextState.status === "waiting" ||
+          nextState.status === "initializing"
+        ) {
+          startSSE(id);
+        }
+      } catch (e) {
+        setError(String(e));
+        window.sessionStorage.removeItem(LAST_SIM_ID_KEY);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [refreshRecentSessions, startSSE, stopAll]
+  );
+
+  const refresh = useCallback(async () => {
+    if (!simId) return;
+    try {
+      const nextState = await getSimulation(simId);
+      setState(nextState);
+    } catch (e) {
+      setError(String(e));
+    }
+  }, [simId]);
+
   const start = useCallback(
     async (premise: string, maxTicks = 8) => {
       setLoading(true);
@@ -147,6 +220,8 @@ export function useSimulation() {
       try {
         const res = await startSimulation(premise, maxTicks);
         setSimId(res.sim_id);
+        window.sessionStorage.setItem(LAST_SIM_ID_KEY, res.sim_id);
+        void refreshRecentSessions();
         // Initial fetch for immediate state
         const s = await getSimulation(res.sim_id);
         setState(s);
@@ -158,7 +233,7 @@ export function useSimulation() {
         setLoading(false);
       }
     },
-    [stopAll, startSSE]
+    [refreshRecentSessions, startSSE, stopAll]
   );
 
   const sendIntervention = useCallback(
@@ -189,20 +264,35 @@ export function useSimulation() {
     setState(null);
     setError(null);
     setLoading(false);
+    window.sessionStorage.removeItem(LAST_SIM_ID_KEY);
   }, [stopAll]);
 
   useEffect(() => {
     return () => stopAll();
   }, [stopAll]);
 
+  useEffect(() => {
+    void refreshRecentSessions();
+  }, [refreshRecentSessions]);
+
+  useEffect(() => {
+    const storedId = window.sessionStorage.getItem(LAST_SIM_ID_KEY);
+    if (!storedId) return;
+    void openSession(storedId);
+  }, [openSession]);
+
   return {
     simId,
     state,
     loading,
     error,
+    recentSessions,
     start,
+    openSession,
     sendIntervention,
     doExport,
+    refresh,
+    refreshRecentSessions,
     reset,
   };
 }

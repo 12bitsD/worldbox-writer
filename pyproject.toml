@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "worldbox-writer"
-version = "0.1.0"
+version = "0.5.0"
 description = "A multi-agent novel writing system based on WorldBox concept"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -14,14 +14,11 @@ authors = [
 ]
 dependencies = [
     "langgraph>=0.0.26",
-    "langchain>=0.1.0",
-    "langchain-openai>=0.0.5",
     "openai>=1.0.0",
     "pydantic>=2.5.0",
     "typing-extensions>=4.9.0",
     "fastapi>=0.100.0",
     "uvicorn>=0.20.0",
-    "httpx>=0.24.0",
 ]
 
 [project.optional-dependencies]
