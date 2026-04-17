@@ -237,6 +237,15 @@ class StoryNode(BaseModel):
 
     StoryNodes form a directed acyclic graph (DAG) that represents the
     narrative history and future possibilities of the world.
+
+    Branching & Merging (Sprint 8+ architecture reservation):
+    - ``branch_id`` identifies which timeline branch this node belongs to.
+      The root branch is always ``"main"``. When a user forks at a node,
+      a new ``branch_id`` is generated and all subsequent nodes on that
+      fork carry the new id.
+    - ``merged_from_ids`` records the source branch node IDs when two
+      previously divergent branches reconverge into a single storyline.
+      This enables future "merge" operations similar to Git.
     """
 
     id: UUID = Field(default_factory=uuid4)
@@ -249,6 +258,11 @@ class StoryNode(BaseModel):
     child_ids: List[str] = Field(default_factory=list)
     # Characters involved in this node
     character_ids: List[str] = Field(default_factory=list)
+    # ---- Branching & Merging (reserved for Sprint 8+) ----
+    # Which timeline branch this node belongs to ("main" by default)
+    branch_id: str = "main"
+    # If this node is a merge point, record the source branch node IDs
+    merged_from_ids: List[str] = Field(default_factory=list)
     # Whether this node has been rendered into prose by the Narrator
     is_rendered: bool = False
     # The rendered prose text (populated by Narrator Agent)
@@ -288,6 +302,15 @@ class WorldState(BaseModel):
     # Story graph
     nodes: Dict[str, StoryNode] = Field(default_factory=dict)
     current_node_id: Optional[str] = None
+
+    # ---- Branching & Merging (reserved for Sprint 8+) ----
+    # Registry of known branches: branch_id -> metadata dict
+    # e.g. {"main": {"label": "Main Timeline", "forked_from_node": None}}
+    branches: Dict[str, Dict[str, Any]] = Field(
+        default_factory=lambda: {"main": {"label": "Main Timeline", "forked_from_node": None}}
+    )
+    # Which branch is currently being advanced
+    active_branch_id: str = "main"
 
     # Constraints managed by Gate Keeper
     constraints: List[Constraint] = Field(default_factory=list)

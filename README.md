@@ -183,45 +183,37 @@ worldbox-writer/
 
 ---
 
+## 演进路径 (Roadmap)
+
+在经过深度的产品评审后，WorldBox Writer 的演进路径被定义为一条**认知递进**的旅程：
+
+1. **Release 2: 看见世界 (Observe)**
+   - *核心逻辑*：用户必须先看懂 Agent 的决策逻辑和关系网络，才能做出有意义的干预。
+   - *核心交付*：动态关系图谱、Agent 遥测日志面板。
+2. **Release 3: 掌控世界 (Control)**
+   - *核心逻辑*：在看懂世界后，用户需要"后悔药"和"平行宇宙"，对比不同干预带来的蝴蝶效应。
+   - *核心交付*：时间线回溯、多分支并行推演（已在底层架构预留 `branch_id` 和合并空间）。
+3. **Release 4: 创作作品 (Create)**
+   - *核心逻辑*：在拥有强大的推演掌控力后，补齐生产力闭环，将推演结果转化为专业作品。
+   - *核心交付*：大纲导入、交互式 Wiki、长文富文本编辑器、多模型智能路由、专业格式导出。
+
 ## 开发状态
 
 | Sprint | 目标 | 状态 |
 | :--- | :--- | :--- |
-| Sprint 0 | 基础设施、文档体系、CI/CD、仓库配置 | ✅ 完成 |
-| Sprint 1 | 核心数据结构 + Director + GateKeeper + NodeDetector | ✅ 完成 |
-| Sprint 2 | LangGraph 编排图 + Actor + Narrator，端到端 Demo | ✅ 完成 |
-| Sprint 3 | 分层记忆系统 + WorldBuilder Agent | ✅ 完成 |
-| Sprint 4 | 前端可视化面板（React + 实时事件流） | ✅ 完成 |
-| Sprint 5 | 持久化存储与实时编辑 (SQLite + SSE) | ✅ 完成 |
-| Sprint 6 | 看见世界（首个交付）：关系图谱 + 遥测基础 | ✅ 完成（P0 闭环已交付） |
-| Sprint 7 | 可视化补齐与稳定性加固 | 📋 已批准计划 |
-| Sprint 8 | 时间线分叉与多分支控制 | 📋 已批准计划 |
-| Sprint 9 | 长篇记忆、智能路由与创作工作台 | 📋 已批准计划 |
+| Sprint 0-5 | MVP 核心能力闭环（推演引擎、UI、持久化、干预编辑） | ✅ 已发布 (v0.5.0) |
+| Sprint 6 | 看见世界：关系图谱 + 遥测基础 | ✅ 完成（P0 闭环已交付） |
+| Sprint 7 | 可视化补齐与稳定性加固 | 📋 计划中 |
+| Sprint 8 | 掌控世界：时间线分叉与多分支控制 | 📋 计划中 |
+| Sprint 9 | 创作作品：智能记忆、多模型路由与创作工作台 | 📋 计划中 |
 
 **当前版本**：v0.5.0
 
 - 已发布能力（v0.5.0）：实时事件流、本地 SQLite 持久化、等待态编辑能力。
-- 已完成的 Sprint 6 交付：结构化关系 schema、Telemetry v1、关系图谱面板、Telemetry 面板、历史会话恢复、最近会话入口、前端 fixtures 自动化验证，以及 telemetry 恢复和关系推断的数据正确性修复。
-- 当前测试状态：后端 `pytest -m "not integration"` 已验证 `74 passed, 57 deselected`；Sprint 6 相关目标测试已验证 `60 passed`；前端 `pnpm test` 已验证 `5 passed`，`pnpm build` 通过。
-- 当前迭代状态：Sprint 6 已按 P0 / 主目标完成，后续进入 Sprint 7；图谱交互补齐、日志筛选分组、统一调用链与稳定性护栏继续留在 Sprint 7。
-
----
-
-## Roadmap
-
-接下来的路线图已经明确为“看见世界 → 掌控世界 → 创作作品”三段式推进。
-
-| 阶段 | 对应 Sprint | 目标 | 核心交付 |
-| :--- | :--- | :--- | :--- |
-| 看见世界 | Sprint 6-7 | 让推演过程可见且稳定 | 关系图谱、遥测日志、统一调用链、可靠性护栏 |
-| 掌控世界 | Sprint 8 | 让用户能回溯并分叉世界线 | `fork_at_node()`、多分支时间线、节奏控制、灰度回滚 |
-| 创作作品 | Sprint 9 | 让系统支持长篇创作与生产力闭环 | 智能记忆、多模型路由、Wiki、富文本、容量门禁 |
-
-**版本演进**：
-
-- v0.6.x：补齐可视化与稳定性短板。
-- v0.7.x：上线分支推演核心能力。
-- v0.8.x：补齐长篇创作工作台能力。
+- 已完成的 Sprint 6 交付：结构化关系 schema、Telemetry v1、关系图谱面板、Telemetry 面板、历史会话恢复、最近会话入口、前端 fixtures 自动化验证、telemetry 恢复和关系推断的数据正确性修复。
+- 架构预留：`StoryNode` 和 `WorldState` 已预留 `branch_id` 和 `merged_from_ids`，为未来的分支管理奠定基础。
+- 测试状态：后端 L1 纯逻辑测试 `78 passed`；前端 `pnpm test` `5 passed`；L2 集成测试已全面替换 Mock。
+- 当前迭代状态：Sprint 6 已按 P0 完成，后续进入 Sprint 7；图谱交互补齐、日志筛选分组、统一调用链与稳定性护栏继续留在 Sprint 7。
 
 ---
 
@@ -262,16 +254,14 @@ python -m pytest -m integration
 - [架构设计文档](docs/architecture/DESIGN.md)
 - [关系结构协议 v1](docs/architecture/RELATIONSHIP_SCHEMA_V1.md)
 - [Telemetry 协议 v1](docs/architecture/TELEMETRY_SCHEMA_V1.md)
+- [产品评审报告 (v0.6.0+)](docs/product/PRODUCT_REVIEW.md)
 - [产品演进规划](docs/product/PRODUCT_PLANNING.md)
 - [长期路线图](docs/product/FUTURE_ROADMAP.md)
 - [用户故事与 Product Backlog](docs/product/USER_STORIES.md)
-- [敏捷开发指南（TDD + 分支策略 + DoD）](docs/development/AGILE_GUIDE.md)
+- [敏捷开发指南（测试策略 + 分支规范）](docs/development/AGILE_GUIDE.md)
 - [CI 配置说明](docs/development/CI_SETUP.md)
-- [Sprint 0 记录](docs/sprints/SPRINT_0.md)
-- [Sprint 1 记录](docs/sprints/SPRINT_1.md)
-- [Sprint 2-4 记录](docs/sprints/SPRINT_2_4.md)
+- [Sprint 2-5 历史记录](docs/sprints/SPRINT_2_4.md)
 - [Sprint 6 计划](docs/sprints/SPRINT_6.md)
-- [Sprint 6 Demo Script](docs/sprints/SPRINT_6_DEMO_SCRIPT.md)
 - [Sprint 7-9 批准版计划](docs/sprints/FINAL_SPRINT_7_8_9_PLAN.md)
 
 ---

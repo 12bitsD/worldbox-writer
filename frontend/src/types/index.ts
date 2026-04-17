@@ -57,6 +57,11 @@ export interface Constraint {
   type: string;
 }
 
+export interface BranchMeta {
+  label: string;
+  forked_from_node: string | null;
+}
+
 export interface WorldData {
   title: string;
   premise: string;
@@ -67,6 +72,9 @@ export interface WorldData {
   locations: WorldEntity[];
   world_rules: string[];
   constraints: Constraint[];
+  // ---- Branching & Merging (reserved for Sprint 8+) ----
+  branches: Record<string, BranchMeta>;
+  active_branch_id: string;
 }
 
 export interface StoryNode {
@@ -79,6 +87,9 @@ export interface StoryNode {
   requires_intervention: boolean;
   intervention_instruction?: string;
   streaming_text?: string;
+  // ---- Branching & Merging (reserved for Sprint 8+) ----
+  branch_id: string;               // "main" by default
+  merged_from_ids: string[];        // source branch node IDs on merge
 }
 
 export interface SimulationState {
