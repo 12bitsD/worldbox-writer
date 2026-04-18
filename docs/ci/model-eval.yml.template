@@ -38,5 +38,5 @@ jobs:
         env:
           LLM_PROVIDER: ${{ matrix.provider }}
         run: |
-          echo "TODO: implement model-eval harness for provider=$LLM_PROVIDER"
+          echo "TODO: implement model-eval workflow for provider=$LLM_PROVIDER"
           echo "This job is a placeholder for Sprint 9 multi-model testing."

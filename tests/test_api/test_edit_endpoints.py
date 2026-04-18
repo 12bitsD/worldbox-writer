@@ -7,7 +7,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 import worldbox_writer.api.server as server_module
-from worldbox_writer.api.server import SimulationSession, _run_simulation_sync, _sessions, app
+from worldbox_writer.api.server import (
+    SimulationSession,
+    _run_simulation_sync,
+    _sessions,
+    app,
+)
 from worldbox_writer.core.models import Character, WorldState
 from worldbox_writer.storage.db import init_db
 

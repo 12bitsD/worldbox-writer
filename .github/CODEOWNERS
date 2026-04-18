@@ -1,0 +1,26 @@
+# Default owner
+* @12bitsD
+
+# Backend domains
+/src/worldbox_writer/agents/ @12bitsD
+/src/worldbox_writer/api/ @12bitsD
+/src/worldbox_writer/core/ @12bitsD
+/src/worldbox_writer/engine/ @12bitsD
+/src/worldbox_writer/memory/ @12bitsD
+/src/worldbox_writer/storage/ @12bitsD
+/src/worldbox_writer/utils/ @12bitsD
+
+# Frontend
+/frontend/ @12bitsD
+
+# CI and repo governance
+/.github/ @12bitsD
+/scripts/ @12bitsD
+/Makefile @12bitsD
+
+# Docs
+/docs/ @12bitsD
+/README.md @12bitsD
+/CONTRIBUTING.md @12bitsD
+/SECURITY.md @12bitsD
+/CHANGELOG.md @12bitsD

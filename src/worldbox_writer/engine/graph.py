@@ -184,8 +184,12 @@ def _apply_relationship_updates(
 
     left_existing = left.relationships.get(right_id)
     right_existing = right.relationships.get(left_id)
-    left_affinity = _clamp_affinity((left_existing.affinity if left_existing else 0) + delta)
-    right_affinity = _clamp_affinity((right_existing.affinity if right_existing else 0) + delta)
+    left_affinity = _clamp_affinity(
+        (left_existing.affinity if left_existing else 0) + delta
+    )
+    right_affinity = _clamp_affinity(
+        (right_existing.affinity if right_existing else 0) + delta
+    )
 
     left.update_relationship(
         right_id,

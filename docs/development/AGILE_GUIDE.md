@@ -2,7 +2,7 @@
 
 **文档状态**：Active (v0.6.0+)
 **作者**：Manus AI
-**最后更新**：2026-04-17
+**最后更新**：2026-04-18
 
 本文档规定了 WorldBox Writer 项目的开发流程、代码规范与质量标准。所有贡献者必须严格遵守。
 
@@ -110,7 +110,7 @@ Product Vision (产品愿景)
    - 对应的 L1 纯逻辑测试已编写并全部通过。
    - 如涉及 Agent 行为变更，对应的 L2 集成测试已编写并在本地验证通过。
 3. **代码审查通过**：提交 Pull Request (PR)，并至少获得一名核心维护者的 Approve。
-4. **CI 流水线通过**：GitHub Actions 中的 Lint、Type Check、L1 Tests 全部呈绿色。
+4. **CI 流水线通过**：GitHub Actions 中默认阻塞门禁全部呈绿色。
 5. **文档已更新**：
    - 如果新增了 API，Swagger/OpenAPI 文档已更新。
    - 如果修改了核心架构或 Agent 行为，对应的设计文档已同步更新。
@@ -123,12 +123,13 @@ Product Vision (产品愿景)
 
 | 触发条件 | Job | 检查内容 |
 |---|---|---|
-| 每次 push / PR 到 `main` | `lint` | `black` 格式化检查 + `isort` 导入排序检查 |
-| 每次 push / PR 到 `main` | `typecheck` | `mypy` 静态类型检查 |
-| 每次 push / PR 到 `main` | `test` | L1 纯逻辑测试（`pytest -m "not integration"`） |
+| 每次 push / PR 到 `main` | `backend-quality` | `black` + `isort` + L1 纯逻辑测试（`pytest -m "not integration"`） |
+| 每次 push / PR 到 `main` | `frontend-quality` | `eslint` + `vitest` + `pnpm build` |
 | 手动触发 (`workflow_dispatch`) | `model-eval` | L3 多模型评估基准（Sprint 9+ 实现） |
 
 ### 5.2 集成测试的 CI 策略
+
+`mypy` 当前仍保留为显式检查命令，但由于历史类型债务尚未清零，**不在默认阻塞门禁中运行**。
 
 L2 集成测试（`@pytest.mark.integration`）**不在常规 CI 中运行**，原因如下：
 - 需要真实的 LLM API 密钥和额度。

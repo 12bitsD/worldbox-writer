@@ -40,3 +40,5 @@ Thumbs.db
 *.db
 chroma_db/
 neo4j_data/
+artifacts/
+.pnpm-store/

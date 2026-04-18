@@ -23,7 +23,9 @@ class TestRelationshipRules:
         for name in ("阿璃", "白夜", "赤霄"):
             world.add_character(Character(name=name))
 
-        ids = graph_module._select_character_ids_for_event(world, "暴雨将至，城中气氛愈发紧张。")
+        ids = graph_module._select_character_ids_for_event(
+            world, "暴雨将至，城中气氛愈发紧张。"
+        )
 
         assert len(ids) == 3
 

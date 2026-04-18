@@ -5,6 +5,13 @@ export const sprint6WorldFixture: WorldData = {
   premise: "两名敌对继承人在灭国危机前被迫联手。",
   tick: 3,
   is_complete: false,
+  branches: {
+    main: {
+      label: "主时间线",
+      forked_from_node: null,
+    },
+  },
+  active_branch_id: "main",
   factions: [
     { name: "北境军", description: "驻守边境的王朝军团" },
     { name: "赤潮盟", description: "游离于王朝之外的旧部联盟" },

@@ -169,9 +169,7 @@ class Character(BaseModel):
             edge = relationship.model_copy(update={"target_id": other_id})
         else:
             resolved_label = (
-                RelationshipLabel(label)
-                if isinstance(label, str)
-                else label
+                RelationshipLabel(label) if isinstance(label, str) else label
             )
             if relationship in RelationshipLabel._value2member_map_:
                 resolved_label = RelationshipLabel(relationship)
@@ -307,7 +305,9 @@ class WorldState(BaseModel):
     # Registry of known branches: branch_id -> metadata dict
     # e.g. {"main": {"label": "Main Timeline", "forked_from_node": None}}
     branches: Dict[str, Dict[str, Any]] = Field(
-        default_factory=lambda: {"main": {"label": "Main Timeline", "forked_from_node": None}}
+        default_factory=lambda: {
+            "main": {"label": "Main Timeline", "forked_from_node": None}
+        }
     )
     # Which branch is currently being advanced
     active_branch_id: str = "main"

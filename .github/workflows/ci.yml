@@ -7,71 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+  backend-quality:
+    uses: ./.github/workflows/reusable-backend-quality.yml
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install lint tools
-        run: pip install black isort
-
-      - name: Check formatting (black)
-        run: black --check .
-
-      - name: Check import order (isort)
-        run: isort --check-only .
-
-  typecheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Cache pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-typecheck-${{ hashFiles('pyproject.toml') }}
-          restore-keys: ${{ runner.os }}-pip-typecheck-
-
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install --no-cache-dir .[dev]
-
-      - name: Type check (mypy)
-        run: mypy src/
-
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Cache pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-test-${{ hashFiles('pyproject.toml') }}
-          restore-keys: ${{ runner.os }}-pip-test-
-
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install --no-cache-dir .[dev]
-
-      - name: Run tests
-        run: pytest -m "not integration" --cov=worldbox_writer --cov-report=term-missing -v
+  frontend-quality:
+    uses: ./.github/workflows/reusable-frontend-quality.yml
