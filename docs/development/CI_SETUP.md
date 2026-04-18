@@ -45,11 +45,6 @@ Workflow 文件位于 `.github/workflows/ci.yml`，包含以下 Job：
 - `scripts/ci/frontend-quality.sh`
 - `scripts/ci/model-eval.sh`
 
-同时，常规 CI 已经进一步抽成可复用 workflow：
-
-- `.github/workflows/reusable-backend-quality.yml`
-- `.github/workflows/reusable-frontend-quality.yml`
-
 这样本地开发、GitHub Actions 和后续任意 CI 平台都复用同一套命令入口。
 
 ### 3.1 关于类型检查
@@ -126,7 +121,6 @@ make integration
 - 真实 LLM 调用不进入默认 CI，避免成本和不稳定性扩散
 - 所有 CI 命令必须先在仓库脚本中落地，再由平台调用
 - 前后端分开门禁，减少单点失败导致的排障成本
-- 常见质量门禁应优先抽成可复用 workflow，减少复制粘贴
 
 ## 7. 推荐仓库设置
 

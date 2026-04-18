@@ -8,7 +8,54 @@ on:
 
 jobs:
   backend-quality:
-    uses: ./.github/workflows/reusable-backend-quality.yml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-py311-backend-${{ hashFiles('pyproject.toml') }}
+          restore-keys: ${{ runner.os }}-py311-backend-
+
+      - name: Run backend quality gate
+        run: |
+          INSTALL_DEPS=1 PYTHON_BIN=python sh scripts/ci/backend-quality.sh --lint-only
+          PYTHON_BIN=python sh scripts/ci/backend-quality.sh --test-only
+
+      - name: Upload backend reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-reports
+          path: artifacts/reports/backend
+          if-no-files-found: ignore
 
   frontend-quality:
-    uses: ./.github/workflows/reusable-frontend-quality.yml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Run frontend quality gate
+        run: CI=true INSTALL_DEPS=1 sh scripts/ci/frontend-quality.sh
+
+      - name: Upload frontend reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-reports
+          path: artifacts/reports/frontend
+          if-no-files-found: ignore
