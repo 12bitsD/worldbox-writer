@@ -10,17 +10,22 @@ import { ExportPanel } from "./components/ExportPanel";
 import { EditPanel } from "./components/EditPanel";
 import { RelationshipPanel } from "./components/RelationshipPanel";
 import { TelemetryPanel } from "./components/TelemetryPanel";
+import { BranchPanel } from "./components/BranchPanel";
 
 export default function App() {
   const {
     simId,
     state,
+    branchCompare,
     loading,
     error,
     recentSessions,
     start,
     openSession,
     sendIntervention,
+    forkAtNode,
+    activateBranch,
+    setBranchPacing,
     doExport,
     refresh,
     reset,
@@ -34,6 +39,14 @@ export default function App() {
 
   const handleSkip = () => {
     sendIntervention("按照故事自然发展，不干预");
+  };
+
+  const handleForkNode = (nodeId: string) => {
+    const label = window.prompt("新分支名称（可留空使用默认命名）")?.trim();
+    void forkAtNode(nodeId, {
+      label: label || undefined,
+      continueSimulation: true,
+    });
   };
 
   // No simulation started yet
@@ -163,7 +176,15 @@ export default function App() {
           }}
         >
           <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
-            {state && <StoryFeed nodes={state.nodes} isRunning={isRunning} />}
+            {state && (
+              <StoryFeed
+                nodes={state.nodes}
+                isRunning={isRunning}
+                branchingEnabled={state.features.branching_enabled}
+                activeBranchId={state.world?.active_branch_id ?? "main"}
+                onForkNode={handleForkNode}
+              />
+            )}
             {isComplete && simId && (
               <div style={{ marginTop: 16 }}>
                 <ExportPanel simId={simId} onExport={doExport} />
@@ -224,6 +245,17 @@ export default function App() {
 
           {state && (
             <>
+              {state.world && state.features.branching_enabled && (
+                <div style={{ marginBottom: 16 }}>
+                  <BranchPanel
+                    world={state.world}
+                    compare={branchCompare}
+                    isRunning={isRunning}
+                    onSwitch={activateBranch}
+                    onPacingChange={setBranchPacing}
+                  />
+                </div>
+              )}
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginBottom: 4 }}>
                   故事节点

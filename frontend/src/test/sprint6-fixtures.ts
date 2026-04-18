@@ -105,6 +105,10 @@ export const sprint6TelemetryFixture: TelemetryEvent[] = [
     provider: "openai",
     model: "gpt-4.1-mini",
     duration_ms: 420,
+    branch_id: "main",
+    forked_from_node_id: null,
+    source_branch_id: null,
+    source_sim_id: null,
     ts: "2026-04-17T10:00:00+00:00",
   },
   {
@@ -123,6 +127,10 @@ export const sprint6TelemetryFixture: TelemetryEvent[] = [
     provider: "openai",
     model: "gpt-4.1-mini",
     duration_ms: 315,
+    branch_id: "main",
+    forked_from_node_id: null,
+    source_branch_id: null,
+    source_sim_id: null,
     ts: "2026-04-17T10:00:02+00:00",
   },
   {
@@ -141,6 +149,10 @@ export const sprint6TelemetryFixture: TelemetryEvent[] = [
     provider: null,
     model: null,
     duration_ms: null,
+    branch_id: "main",
+    forked_from_node_id: null,
+    source_branch_id: null,
+    source_sim_id: null,
     ts: "2026-04-17T10:00:03+00:00",
   },
 ];

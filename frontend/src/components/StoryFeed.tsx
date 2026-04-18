@@ -3,6 +3,9 @@ import type { StoryNode, NodeType } from "../types";
 interface StoryFeedProps {
   nodes: StoryNode[];
   isRunning: boolean;
+  branchingEnabled: boolean;
+  activeBranchId: string;
+  onForkNode: (nodeId: string) => void;
 }
 
 const nodeTypeLabel: Record<NodeType, string> = {
@@ -13,7 +16,13 @@ const nodeTypeLabel: Record<NodeType, string> = {
   resolution: "结局",
 };
 
-export function StoryFeed({ nodes, isRunning }: StoryFeedProps) {
+export function StoryFeed({
+  nodes,
+  isRunning,
+  branchingEnabled,
+  activeBranchId,
+  onForkNode,
+}: StoryFeedProps) {
   if (nodes.length === 0 && !isRunning) return null;
 
   return (
@@ -66,6 +75,19 @@ export function StoryFeed({ nodes, isRunning }: StoryFeedProps) {
               {nodeTypeLabel[node.node_type] || node.node_type}
             </span>
             <span style={{ fontWeight: 700, fontSize: 13 }}>{node.title}</span>
+            <span
+              style={{
+                fontSize: 10,
+                padding: "1px 6px",
+                border: "1px solid var(--color-border)",
+                color:
+                  node.branch_id === activeBranchId
+                    ? "var(--color-warning)"
+                    : "var(--color-text-muted)",
+              }}
+            >
+              {node.branch_id}
+            </span>
             {node.requires_intervention && (
               <span
                 style={{
@@ -80,6 +102,15 @@ export function StoryFeed({ nodes, isRunning }: StoryFeedProps) {
               >
                 {node.intervention_instruction ? "已干预" : "关键节点"}
               </span>
+            )}
+            {branchingEnabled && !isRunning && (
+              <button
+                className="btn"
+                style={{ marginLeft: "auto", fontSize: 11, padding: "6px 10px" }}
+                onClick={() => onForkNode(node.id)}
+              >
+                从此分叉
+              </button>
             )}
           </div>
 

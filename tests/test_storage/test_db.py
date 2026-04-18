@@ -22,9 +22,11 @@ from worldbox_writer.core.models import (
     WorldState,
 )
 from worldbox_writer.storage.db import (
+    BranchSeedNotFoundError,
     delete_session,
     init_db,
     list_sessions,
+    load_branch_seed_snapshot,
     load_memory_entries,
     load_session,
     load_world,
@@ -215,6 +217,8 @@ class TestSessionCRUD:
         assert loaded["sim_id"] == "test123"
         assert loaded["status"] == "complete"
         assert loaded["world"] is not None
+        assert loaded["active_branch_id"] == "main"
+        assert loaded["branch_registry"]["main"]["label"] == "Main Timeline"
         assert len(loaded["nodes_rendered"]) == 1
         assert loaded["telemetry_events"][0]["event_id"] == "evt-1"
         assert loaded["telemetry_events"][0]["trace_id"] == "trace-1"
@@ -242,6 +246,138 @@ class TestSessionCRUD:
         assert load_session("del1", db_path) is not None
         delete_session("del1", db_path)
         assert load_session("del1", db_path) is None
+
+    def test_save_session_persists_branch_seed_snapshot(self, db_path, sample_world):
+        """Saving a session should persist a recoverable seed for the current node."""
+        node_id = next(iter(sample_world.nodes))
+        sample_world.current_node_id = node_id
+        sample_world.tick = 1
+
+        save_session(
+            "seed-1",
+            "测试前提",
+            5,
+            "waiting",
+            sample_world,
+            [{"id": node_id, "title": "开始"}],
+            db_path=db_path,
+        )
+
+        restored = load_branch_seed_snapshot("seed-1", node_id, "main", db_path)
+        assert restored.current_node_id == node_id
+        assert restored.tick == 1
+        assert restored.title == "测试世界"
+        assert restored.get_node(node_id).title == "开始"
+
+    def test_branch_seed_snapshot_isolated_from_later_world_mutations(
+        self, db_path, sample_world
+    ):
+        """An older node seed should remain stable after later nodes are persisted."""
+        first_node_id = next(iter(sample_world.nodes))
+        sample_world.current_node_id = first_node_id
+        sample_world.tick = 1
+        save_session(
+            "seed-2",
+            "测试前提",
+            5,
+            "waiting",
+            sample_world,
+            [{"id": first_node_id, "title": "开始"}],
+            db_path=db_path,
+        )
+
+        first_snapshot = load_branch_seed_snapshot(
+            "seed-2", first_node_id, db_path=db_path
+        )
+        assert first_snapshot.tick == 1
+
+        sample_world.title = "后续世界"
+        next_node = StoryNode(
+            title="第二幕",
+            description="故事继续推进",
+            node_type=NodeType.DEVELOPMENT,
+            parent_ids=[first_node_id],
+        )
+        sample_world.add_node(next_node)
+        sample_world.current_node_id = str(next_node.id)
+        sample_world.tick = 2
+
+        save_session(
+            "seed-2",
+            "测试前提",
+            5,
+            "complete",
+            sample_world,
+            [
+                {"id": first_node_id, "title": "开始"},
+                {"id": str(next_node.id), "title": "第二幕"},
+            ],
+            db_path=db_path,
+        )
+
+        restored_first = load_branch_seed_snapshot(
+            "seed-2", first_node_id, db_path=db_path
+        )
+        restored_second = load_branch_seed_snapshot(
+            "seed-2", str(next_node.id), db_path=db_path
+        )
+
+        assert restored_first.title == "测试世界"
+        assert restored_first.tick == 1
+        assert restored_first.current_node_id == first_node_id
+        assert restored_second.title == "后续世界"
+        assert restored_second.tick == 2
+        assert restored_second.current_node_id == str(next_node.id)
+
+    def test_load_branch_seed_snapshot_raises_for_legacy_session_without_seed(
+        self, db_path, sample_world
+    ):
+        """Sessions written before snapshot support should fail explicitly."""
+        now = "2026-01-01T00:00:00+00:00"
+        state_json = sample_world.model_dump_json()
+
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute(
+                """INSERT INTO worlds (world_id, title, premise, state_json, tick, is_complete, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    str(sample_world.world_id),
+                    sample_world.title,
+                    sample_world.premise,
+                    state_json,
+                    sample_world.tick,
+                    1 if sample_world.is_complete else 0,
+                    now,
+                    now,
+                ),
+            )
+            conn.execute(
+                """INSERT INTO sessions (sim_id, premise, max_ticks, status, world_id, nodes_json, telemetry_json, intervention_context, error, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    "legacy-seed",
+                    "测试前提",
+                    5,
+                    "complete",
+                    str(sample_world.world_id),
+                    "[]",
+                    "[]",
+                    None,
+                    None,
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        node_id = next(iter(sample_world.nodes))
+        with pytest.raises(BranchSeedNotFoundError) as exc_info:
+            load_branch_seed_snapshot("legacy-seed", node_id, db_path=db_path)
+
+        assert "暂不支持从该节点分叉" in str(exc_info.value)
 
 
 class TestMemoryEntries:

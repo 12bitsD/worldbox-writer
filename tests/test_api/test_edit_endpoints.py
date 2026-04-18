@@ -3,18 +3,39 @@ Tests for edit API endpoints — tests permission checks (waiting vs running).
 Uses FastAPI TestClient, no LLM required.
 """
 
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 
 import worldbox_writer.api.server as server_module
 from worldbox_writer.api.server import (
     SimulationSession,
+    _restore_world_at_node,
     _run_simulation_sync,
     _sessions,
     app,
 )
-from worldbox_writer.core.models import Character, WorldState
-from worldbox_writer.storage.db import init_db
+from worldbox_writer.core.models import Character, StoryNode, WorldState
+from worldbox_writer.storage.db import BranchSeedNotFoundError, init_db
+
+
+def _rendered_node_payload(
+    node: StoryNode, tick: int, rendered_text: str | None = None
+) -> dict:
+    return {
+        "id": str(node.id),
+        "title": node.title,
+        "description": node.description,
+        "node_type": node.node_type.value,
+        "rendered_text": rendered_text,
+        "tick": tick,
+        "requires_intervention": node.requires_intervention,
+        "intervention_instruction": node.intervention_instruction,
+        "parent_ids": node.parent_ids,
+        "branch_id": node.branch_id,
+        "merged_from_ids": node.merged_from_ids,
+    }
 
 
 @pytest.fixture(autouse=True)
@@ -60,6 +81,146 @@ def running_session():
     session.world = world
     _sessions[sim_id] = session
     return sim_id
+
+
+@pytest.fixture
+def branchable_session():
+    sim_id = "branchable"
+    world = WorldState(title="测试世界", premise="测试前提")
+    char = Character(name="角色A", personality="沉着", goals=["守住王城"])
+    world.add_character(char)
+
+    node1 = StoryNode(
+        title="第一幕", description="主线开场", character_ids=[str(char.id)]
+    )
+    world.add_node(node1)
+    world.current_node_id = str(node1.id)
+    world.tick = 1
+    node1.is_rendered = True
+    node1.rendered_text = "主线开场正文"
+    node1.metadata["tick"] = 1
+    server_module.db_save_session(
+        sim_id=sim_id,
+        premise="测试前提",
+        max_ticks=5,
+        status="running",
+        world=world,
+        nodes_json=[_rendered_node_payload(node1, 1, node1.rendered_text)],
+        telemetry_events=[
+            {
+                "event_id": "evt-main-1",
+                "sim_id": sim_id,
+                "trace_id": "trace-branch",
+                "request_id": None,
+                "parent_event_id": None,
+                "tick": 1,
+                "agent": "node_detector",
+                "stage": "node_committed",
+                "level": "info",
+                "span_kind": "event",
+                "message": "主线第一幕已提交",
+                "payload": {"node_id": str(node1.id)},
+                "branch_id": "main",
+                "forked_from_node_id": None,
+                "source_branch_id": None,
+                "source_sim_id": None,
+                "ts": "2026-01-01T00:00:00+00:00",
+            }
+        ],
+    )
+
+    node2 = StoryNode(
+        title="第二幕",
+        description="主线继续推进",
+        parent_ids=[str(node1.id)],
+        character_ids=[str(char.id)],
+    )
+    node2.is_rendered = True
+    node2.rendered_text = "主线推进正文"
+    node2.metadata["tick"] = 2
+    node1.child_ids.append(str(node2.id))
+    world.add_node(node2)
+    world.current_node_id = str(node2.id)
+    world.tick = 2
+    world.is_complete = True
+    world.branches["main"] = {
+        "label": "Main Timeline",
+        "forked_from_node": None,
+        "source_branch_id": None,
+        "source_sim_id": None,
+        "created_at_tick": 0,
+        "latest_node_id": str(node2.id),
+        "latest_tick": 2,
+        "last_node_summary": node2.description,
+        "nodes_count": 2,
+        "status": "complete",
+        "pacing": "balanced",
+    }
+    server_module.db_save_session(
+        sim_id=sim_id,
+        premise="测试前提",
+        max_ticks=5,
+        status="complete",
+        world=world,
+        nodes_json=[
+            _rendered_node_payload(node1, 1, node1.rendered_text),
+            _rendered_node_payload(node2, 2, node2.rendered_text),
+        ],
+        telemetry_events=[
+            {
+                "event_id": "evt-main-1",
+                "sim_id": sim_id,
+                "trace_id": "trace-branch",
+                "request_id": None,
+                "parent_event_id": None,
+                "tick": 1,
+                "agent": "node_detector",
+                "stage": "node_committed",
+                "level": "info",
+                "span_kind": "event",
+                "message": "主线第一幕已提交",
+                "payload": {"node_id": str(node1.id)},
+                "branch_id": "main",
+                "forked_from_node_id": None,
+                "source_branch_id": None,
+                "source_sim_id": None,
+                "ts": "2026-01-01T00:00:00+00:00",
+            },
+            {
+                "event_id": "evt-main-2",
+                "sim_id": sim_id,
+                "trace_id": "trace-branch",
+                "request_id": None,
+                "parent_event_id": "evt-main-1",
+                "tick": 2,
+                "agent": "node_detector",
+                "stage": "node_committed",
+                "level": "info",
+                "span_kind": "event",
+                "message": "主线第二幕已提交",
+                "payload": {"node_id": str(node2.id)},
+                "branch_id": "main",
+                "forked_from_node_id": None,
+                "source_branch_id": None,
+                "source_sim_id": None,
+                "ts": "2026-01-01T00:00:01+00:00",
+            },
+        ],
+    )
+
+    session = SimulationSession(sim_id=sim_id, premise="测试前提", max_ticks=5)
+    session.status = "complete"
+    session.world = world
+    session.nodes_rendered = [
+        _rendered_node_payload(node1, 1, node1.rendered_text),
+        _rendered_node_payload(node2, 2, node2.rendered_text),
+    ]
+    session.telemetry_events = [
+        server_module.TelemetryEvent.model_validate(event)
+        for event in server_module.db_load_session(sim_id)["telemetry_events"]
+    ]
+    _sessions[sim_id] = session
+    return sim_id, str(node1.id), str(node2.id)
 
 
 class TestUpdateCharacter:
@@ -399,3 +560,180 @@ class TestSessionRecovery:
         assert len(recovered["telemetry_events"]) == 1
         assert recovered["telemetry_events"][0]["event_id"] == "evt-1"
         assert recovered["telemetry_events"][0]["trace_id"] == "trace-1"
+
+
+class TestBranchSeedRecovery:
+    def test_restore_world_at_node_prefers_live_session_snapshot(self):
+        """Current in-memory node state should be restorable without replay."""
+        world = WorldState(title="测试世界", premise="测试前提")
+        node = StoryNode(title="第一幕", description="故事开始")
+        world.add_node(node)
+        world.current_node_id = str(node.id)
+        world.tick = 1
+
+        session = SimulationSession(
+            sim_id="restore-live", premise="测试前提", max_ticks=3
+        )
+        session.world = world
+        _sessions[session.sim_id] = session
+
+        restored = _restore_world_at_node(session.sim_id, str(node.id), "main")
+
+        assert restored.current_node_id == str(node.id)
+        assert restored.tick == 1
+        assert restored.title == "测试世界"
+        assert restored is not world
+
+    def test_restore_world_at_node_raises_for_legacy_session_without_seed(self):
+        """Legacy persisted sessions should fail explicitly when no fork seed exists."""
+        world = WorldState(title="旧世界", premise="旧前提")
+        server_module.db_save_session(
+            sim_id="legacy-branch-seed",
+            premise="旧前提",
+            max_ticks=2,
+            status="complete",
+            world=world,
+            nodes_json=[],
+            telemetry_events=[],
+        )
+
+        with pytest.raises(BranchSeedNotFoundError):
+            _restore_world_at_node(
+                "legacy-branch-seed",
+                "missing-node",
+                "main",
+            )
+
+
+class TestBranchingAPI:
+    def test_create_branch_registers_new_branch(self, client, branchable_session):
+        sim_id, source_node_id, _ = branchable_session
+
+        res = client.post(
+            f"/api/simulate/{sim_id}/branch",
+            json={
+                "source_node_id": source_node_id,
+                "label": "雨夜支线",
+                "continue_simulation": False,
+                "pacing": "intense",
+            },
+        )
+
+        assert res.status_code == 200
+        body = res.json()
+        active_branch_id = body["world"]["active_branch_id"]
+        assert active_branch_id != "main"
+        assert (
+            body["world"]["branches"][active_branch_id]["forked_from_node"]
+            == source_node_id
+        )
+        assert body["world"]["branches"][active_branch_id]["source_branch_id"] == "main"
+        assert body["world"]["branches"][active_branch_id]["pacing"] == "intense"
+        assert [node["id"] for node in body["nodes"]] == [source_node_id]
+
+    def test_create_branch_can_continue_without_polluting_main(
+        self, client, branchable_session, monkeypatch
+    ):
+        sim_id, source_node_id, main_latest_node_id = branchable_session
+
+        def fake_run_simulation(**kwargs):
+            world = kwargs["initial_world"].model_copy(deep=True)
+            new_node = StoryNode(
+                title="分支续跑",
+                description="支线已经继续推进",
+                parent_ids=[world.current_node_id],
+                branch_id=world.active_branch_id,
+            )
+            new_node.is_rendered = True
+            new_node.rendered_text = "支线正文"
+            world.add_node(new_node)
+            world.current_node_id = str(new_node.id)
+            world.advance_tick()
+            new_node.metadata["tick"] = world.tick
+            kwargs["on_node_rendered"](new_node, world)
+            kwargs["on_telemetry"](
+                {
+                    "tick": world.tick,
+                    "agent": "simulation",
+                    "stage": "branch_progressed",
+                    "message": "支线已继续推进",
+                    "payload": {"node_id": str(new_node.id)},
+                }
+            )
+            world.is_complete = True
+            return world
+
+        monkeypatch.setattr(server_module, "run_simulation", fake_run_simulation)
+
+        res = client.post(
+            f"/api/simulate/{sim_id}/branch",
+            json={
+                "source_node_id": source_node_id,
+                "continue_simulation": True,
+            },
+        )
+
+        assert res.status_code == 200
+        branch_id = res.json()["world"]["active_branch_id"]
+
+        for _ in range(20):
+            session = _sessions[sim_id]
+            if session.status == "complete" and len(session.nodes_rendered) >= 3:
+                break
+            time.sleep(0.01)
+
+        session = _sessions[sim_id]
+        branch_nodes = [
+            n for n in session.nodes_rendered if n["branch_id"] == branch_id
+        ]
+        main_nodes = [n for n in session.nodes_rendered if n["branch_id"] == "main"]
+
+        assert len(main_nodes) == 2
+        assert len(branch_nodes) == 1
+        assert branch_nodes[0]["parent_ids"] == [source_node_id]
+        assert branch_nodes[0]["id"] != main_latest_node_id
+
+    def test_switch_branch_and_compare_summary(self, client, branchable_session):
+        sim_id, source_node_id, _ = branchable_session
+        create_res = client.post(
+            f"/api/simulate/{sim_id}/branch",
+            json={
+                "source_node_id": source_node_id,
+                "label": "对照支线",
+                "continue_simulation": False,
+            },
+        )
+        branch_id = create_res.json()["world"]["active_branch_id"]
+
+        compare_res = client.get(f"/api/simulate/{sim_id}/branch/compare")
+        assert compare_res.status_code == 200
+        compare = compare_res.json()
+        assert compare["branches"]["main"]["nodes_count"] == 2
+        assert compare["branches"][branch_id]["forked_from_node"] == source_node_id
+
+        switch_res = client.post(
+            f"/api/simulate/{sim_id}/branch/switch",
+            json={"branch_id": "main"},
+        )
+        assert switch_res.status_code == 200
+        assert switch_res.json()["world"]["active_branch_id"] == "main"
+
+        branch_view_res = client.get(f"/api/simulate/{sim_id}?branch={branch_id}")
+        assert branch_view_res.status_code == 200
+        branch_view = branch_view_res.json()
+        assert branch_view["world"]["active_branch_id"] == branch_id
+        assert [node["id"] for node in branch_view["nodes"]] == [source_node_id]
+
+    def test_branch_endpoints_respect_feature_flag(
+        self, client, branchable_session, monkeypatch
+    ):
+        sim_id, source_node_id, _ = branchable_session
+        monkeypatch.setenv("FEATURE_BRANCHING_ENABLED", "0")
+
+        res = client.post(
+            f"/api/simulate/{sim_id}/branch",
+            json={"source_node_id": source_node_id},
+        )
+
+        assert res.status_code == 403
+        assert "FEATURE_BRANCHING_ENABLED=1" in res.json()["detail"]

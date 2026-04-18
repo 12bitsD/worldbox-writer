@@ -108,6 +108,7 @@ def _emit_telemetry(
     callbacks = state.get("streaming_callbacks") or {}
     on_telemetry = callbacks.get("on_telemetry")
     if on_telemetry:
+        branch_context = _resolve_branch_context(state.get("world"))
         on_telemetry(
             {
                 "tick": tick,
@@ -123,6 +124,10 @@ def _emit_telemetry(
                 "provider": provider,
                 "model": model,
                 "duration_ms": duration_ms,
+                "branch_id": branch_context["branch_id"],
+                "forked_from_node_id": branch_context["forked_from_node_id"],
+                "source_branch_id": branch_context["source_branch_id"],
+                "source_sim_id": branch_context["source_sim_id"],
             }
         )
 
@@ -138,6 +143,79 @@ def _llm_telemetry_fields(metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         "model": metadata.get("model"),
         "duration_ms": metadata.get("duration_ms"),
     }
+
+
+def _resolve_branch_context(world: Optional[WorldState]) -> Dict[str, Optional[str]]:
+    if world is None:
+        return {
+            "branch_id": "main",
+            "forked_from_node_id": None,
+            "source_branch_id": None,
+            "source_sim_id": None,
+        }
+
+    branch_id = world.active_branch_id or "main"
+    branch_meta = world.branches.get(branch_id, {})
+    return {
+        "branch_id": branch_id,
+        "forked_from_node_id": branch_meta.get("forked_from_node"),
+        "source_branch_id": branch_meta.get("source_branch_id"),
+        "source_sim_id": branch_meta.get("source_sim_id"),
+    }
+
+
+def _resolve_branch_pacing(world: WorldState) -> str:
+    branch_meta = world.branches.get(world.active_branch_id, {})
+    return str(branch_meta.get("pacing", "balanced"))
+
+
+def _pacing_prompt_hint(pacing: str) -> str:
+    if pacing == "calm":
+        return "当前分支节奏偏好：calm。优先生成更克制、日常、铺垫型推进，避免无准备的高压冲突。"
+    if pacing == "intense":
+        return "当前分支节奏偏好：intense。优先生成更强的冲突、压力、风险和局势转折，但仍需符合角色与约束。"
+    return "当前分支节奏偏好：balanced。在日常铺垫和冲突推进之间保持均衡。"
+
+
+def _ordered_lineage_nodes(world: WorldState) -> list[StoryNode]:
+    if not world.current_node_id:
+        return []
+
+    ordered: list[StoryNode] = []
+    seen: set[str] = set()
+    cursor: Optional[str] = world.current_node_id
+
+    while cursor and cursor not in seen:
+        seen.add(cursor)
+        node = world.get_node(cursor)
+        if not node:
+            break
+        ordered.append(node)
+        cursor = node.parent_ids[0] if node.parent_ids else None
+
+    ordered.reverse()
+    return ordered
+
+
+def rebuild_memory_from_world(
+    world: WorldState, *, short_term_limit: int = 15
+) -> MemoryManager:
+    """Rebuild a lightweight memory context from the current branch lineage."""
+    memory = MemoryManager(short_term_limit=short_term_limit)
+    lineage = _ordered_lineage_nodes(world)
+
+    for index, node in enumerate(lineage, start=1):
+        importance = 0.5
+        if node.node_type in (NodeType.CLIMAX, NodeType.BRANCH):
+            importance = 0.9
+        elif node.node_type == NodeType.SETUP:
+            importance = 0.8
+
+        replay_world = world.model_copy(deep=False)
+        replay_world.tick = index
+        memory.record_event(node, replay_world, importance=importance)
+
+    return memory
 
 
 def _select_character_ids_for_event(
@@ -372,6 +450,7 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
         if world.locations
         else "无"
     )
+    pacing = _resolve_branch_pacing(world)
 
     messages = [
         {
@@ -394,6 +473,7 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
                 f"当前角色状态：\n{chars_summary}\n\n"
                 f"故事记忆（按时间排序）：\n{memory_context}\n\n"
                 f"世界约束：\n{constraints_text}\n\n"
+                f"{_pacing_prompt_hint(pacing)}\n\n"
                 f"当前推演步数：{world.tick}\n\n"
                 "请生成下一个故事事件："
             ),
@@ -410,7 +490,7 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
         agent="actor",
         stage="proposal_generated",
         message="生成了新的候选事件",
-        payload={"preview": candidate.strip()[:80]},
+        payload={"preview": candidate.strip()[:80], "pacing": pacing},
         **llm_fields,
     )
     return {"candidate_event": candidate.strip()}
@@ -567,6 +647,7 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
         node_type=node_type,
         parent_ids=parent_ids,
         character_ids=involved_character_ids,
+        branch_id=world.active_branch_id,
     )
 
     if parent_ids:
@@ -577,6 +658,7 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
     world.add_node(new_node)
     world.current_node_id = str(new_node.id)
     world.advance_tick()
+    new_node.metadata["tick"] = world.tick
     relationships_changed = _apply_relationship_updates(
         world,
         relationship_character_ids,
@@ -821,6 +903,8 @@ def run_simulation(
     max_ticks: int = 8,
     sim_id: str = "",
     trace_id: str = "",
+    initial_world: Optional[WorldState] = None,
+    initial_memory: Optional[MemoryManager] = None,
     intervention_callback=None,
     on_node_rendered=None,
     on_streaming_token=None,
@@ -843,8 +927,16 @@ def run_simulation(
     Returns:
         Final WorldState with all story nodes.
     """
-    world = WorldState(premise=premise, title=f"《{premise[:20]}》")
-    memory = MemoryManager(short_term_limit=15)
+    if initial_world is not None:
+        world = initial_world.model_copy(deep=True)
+        memory = initial_memory or rebuild_memory_from_world(world)
+    else:
+        world = WorldState(premise=premise, title=f"《{premise[:20]}》")
+        memory = MemoryManager(short_term_limit=15)
+
+    if world.pending_intervention and intervention_callback:
+        user_input = intervention_callback(world.intervention_context)
+        world.resolve_intervention(user_input)
 
     initial_state: SimulationState = {
         "world": world,
@@ -852,8 +944,8 @@ def run_simulation(
         "candidate_event": "",
         "validation_passed": False,
         "needs_intervention": False,
-        "initialized": False,
-        "world_built": False,
+        "initialized": initial_world is not None,
+        "world_built": initial_world is not None,
         "max_ticks": max_ticks,
         "error": "",
         "sim_id": sim_id,

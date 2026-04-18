@@ -15,6 +15,7 @@ WorldBox Writer — FastAPI 后端服务
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import os
 import queue
@@ -36,8 +37,14 @@ from worldbox_writer.core.models import (
     WorldState,
 )
 from worldbox_writer.engine.graph import run_simulation
-from worldbox_writer.storage.db import init_db
+from worldbox_writer.storage.db import (
+    BranchSeedNotFoundError,
+    init_db,
+)
 from worldbox_writer.storage.db import list_sessions as db_list_sessions
+from worldbox_writer.storage.db import (
+    load_branch_seed_snapshot as db_load_branch_seed_snapshot,
+)
 from worldbox_writer.storage.db import load_session as db_load_session
 from worldbox_writer.storage.db import save_session as db_save_session
 from worldbox_writer.utils.llm import get_provider_info
@@ -79,9 +86,254 @@ _executor = ThreadPoolExecutor(max_workers=4)
 
 # sim_id -> SimulationSession
 _sessions: Dict[str, "SimulationSession"] = {}
+_BRANCHING_FEATURE_ENV = "FEATURE_BRANCHING_ENABLED"
+_VALID_PACING_VALUES = {"calm", "balanced", "intense"}
+
+
+def _branching_enabled() -> bool:
+    raw = os.environ.get(_BRANCHING_FEATURE_ENV, "1").strip().lower()
+    return raw not in {"0", "false", "off", "no"}
+
+
+def _branching_feature_payload() -> Dict[str, bool]:
+    return {"branching_enabled": _branching_enabled()}
+
+
+def _default_branch_meta() -> Dict[str, Any]:
+    return {
+        "label": "Main Timeline",
+        "forked_from_node": None,
+        "source_branch_id": None,
+        "source_sim_id": None,
+        "created_at_tick": 0,
+        "latest_node_id": None,
+        "latest_tick": 0,
+        "last_node_summary": None,
+        "nodes_count": 0,
+        "status": "complete",
+        "pacing": "balanced",
+    }
+
+
+def _normalize_branch_registry(
+    branches: Optional[Dict[str, Dict[str, Any]]],
+) -> Dict[str, Dict[str, Any]]:
+    normalized = copy.deepcopy(branches or {})
+    main_meta = _default_branch_meta()
+    main_meta["label"] = "Main Timeline"
+    normalized["main"] = {**main_meta, **normalized.get("main", {})}
+    return normalized
+
+
+def _node_index(nodes: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    return {str(node["id"]): node for node in nodes if node.get("id")}
+
+
+def _lineage_from_latest_node(
+    nodes: List[Dict[str, Any]], latest_node_id: Optional[str]
+) -> List[Dict[str, Any]]:
+    if not latest_node_id:
+        return []
+
+    indexed = _node_index(nodes)
+    lineage: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    cursor: Optional[str] = latest_node_id
+    while cursor and cursor not in seen:
+        seen.add(cursor)
+        node = indexed.get(cursor)
+        if not node:
+            break
+        lineage.append(node)
+        parent_ids = node.get("parent_ids") or []
+        cursor = parent_ids[0] if parent_ids else None
+
+    lineage.reverse()
+    return lineage
+
+
+def _branch_cutoffs(
+    branches: Dict[str, Dict[str, Any]], branch_id: str
+) -> Dict[str, float]:
+    if branch_id == "main":
+        return {"main": float("inf")}
+
+    cutoffs: Dict[str, float] = {branch_id: float("inf")}
+    cursor = branch_id
+    while True:
+        branch_meta = branches.get(cursor) or {}
+        parent_id = branch_meta.get("source_branch_id")
+        if not parent_id:
+            break
+        cutoffs[parent_id] = float(branch_meta.get("created_at_tick", 0))
+        cursor = parent_id
+    cutoffs.setdefault("main", float("inf"))
+    return cutoffs
+
+
+def _filter_nodes_for_branch(
+    nodes: List[Dict[str, Any]],
+    branches: Dict[str, Dict[str, Any]],
+    branch_id: str,
+) -> List[Dict[str, Any]]:
+    latest_node_id = (branches.get(branch_id) or {}).get("latest_node_id")
+    lineage = _lineage_from_latest_node(nodes, latest_node_id)
+    if lineage:
+        return lineage
+
+    if branch_id == "main":
+        return [node for node in nodes if node.get("branch_id", "main") == "main"]
+
+    cutoffs = _branch_cutoffs(branches, branch_id)
+    return [
+        node
+        for node in nodes
+        if node.get("branch_id", "main") in cutoffs
+        and float(node.get("tick", 0)) <= cutoffs[node.get("branch_id", "main")]
+    ]
+
+
+def _filter_telemetry_for_branch(
+    events: List[Any],
+    branches: Dict[str, Dict[str, Any]],
+    branch_id: str,
+) -> List[Any]:
+    cutoffs = _branch_cutoffs(branches, branch_id)
+    filtered: List[Any] = []
+    for event in events:
+        event_branch_id = (
+            event.branch_id
+            if isinstance(event, TelemetryEvent)
+            else event.get("branch_id", "main")
+        ) or "main"
+        event_tick = (
+            event.tick if isinstance(event, TelemetryEvent) else event.get("tick", 0)
+        )
+        if event_branch_id in cutoffs and float(event_tick) <= cutoffs[event_branch_id]:
+            filtered.append(event)
+    return filtered
+
+
+def _update_branch_meta(
+    session: "SimulationSession", branch_id: Optional[str] = None
+) -> None:
+    if not session.world:
+        return
+
+    session.world.branches = _normalize_branch_registry(session.world.branches)
+    active_branch_id = branch_id or session.world.active_branch_id or "main"
+    session.world.active_branch_id = active_branch_id
+    branch_meta = session.world.branches.get(active_branch_id, _default_branch_meta())
+
+    filtered_nodes = _filter_nodes_for_branch(
+        session.nodes_rendered,
+        session.world.branches,
+        active_branch_id,
+    )
+    latest_node = filtered_nodes[-1] if filtered_nodes else None
+    session.world.branches[active_branch_id] = {
+        **_default_branch_meta(),
+        **branch_meta,
+        "latest_node_id": (
+            str(session.world.current_node_id)
+            if session.world.current_node_id
+            else branch_meta.get("latest_node_id")
+        ),
+        "latest_tick": session.world.tick,
+        "last_node_summary": (
+            latest_node.get("description")
+            if latest_node
+            else branch_meta.get("last_node_summary")
+        ),
+        "nodes_count": (
+            len(filtered_nodes) if filtered_nodes else branch_meta.get("nodes_count", 0)
+        ),
+        "status": session.status,
+    }
+
+
+def _compare_summary(
+    world: WorldState, nodes_rendered: List[Dict[str, Any]]
+) -> Dict[str, Dict[str, Any]]:
+    branches = _normalize_branch_registry(world.branches)
+    summary: Dict[str, Dict[str, Any]] = {}
+    for branch_id, meta in branches.items():
+        filtered_nodes = _filter_nodes_for_branch(nodes_rendered, branches, branch_id)
+        latest_node = filtered_nodes[-1] if filtered_nodes else None
+        summary[branch_id] = {
+            "branch_id": branch_id,
+            "label": meta.get("label", branch_id),
+            "forked_from_node": meta.get("forked_from_node"),
+            "source_branch_id": meta.get("source_branch_id"),
+            "source_sim_id": meta.get("source_sim_id"),
+            "created_at_tick": meta.get("created_at_tick", 0),
+            "latest_node_id": meta.get("latest_node_id"),
+            "latest_tick": meta.get(
+                "latest_tick",
+                latest_node.get("tick") if latest_node else 0,
+            ),
+            "nodes_count": meta.get("nodes_count", len(filtered_nodes)),
+            "last_node_summary": meta.get(
+                "last_node_summary",
+                latest_node.get("description") if latest_node else None,
+            ),
+            "status": meta.get("status", "complete"),
+            "pacing": meta.get("pacing", "balanced"),
+            "is_active": branch_id == world.active_branch_id,
+        }
+    return summary
+
+
+def _build_simulation_payload(
+    *,
+    sim_id: str,
+    status: str,
+    premise: str,
+    world: Optional[WorldState],
+    nodes_rendered: List[Dict[str, Any]],
+    telemetry_events: List[Any],
+    intervention_context: Optional[str],
+    error: Optional[str],
+    branch_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    if not world:
+        return {
+            "sim_id": sim_id,
+            "status": status,
+            "premise": premise,
+            "world": None,
+            "nodes": [],
+            "telemetry": [],
+            "intervention_context": intervention_context,
+            "error": error,
+            "features": _branching_feature_payload(),
+        }
+
+    world.branches = _normalize_branch_registry(world.branches)
+    selected_branch_id = branch_id or world.active_branch_id or "main"
+    world.active_branch_id = selected_branch_id
+
+    return {
+        "sim_id": sim_id,
+        "status": status,
+        "premise": premise,
+        "world": _serialize_world(world),
+        "nodes": _serialize_nodes(
+            _filter_nodes_for_branch(nodes_rendered, world.branches, selected_branch_id)
+        ),
+        "telemetry": _serialize_telemetry(
+            _filter_telemetry_for_branch(
+                telemetry_events, world.branches, selected_branch_id
+            )
+        ),
+        "intervention_context": intervention_context,
+        "error": error,
+        "features": _branching_feature_payload(),
+    }
 
 
 def _serialize_world(world: WorldState) -> Dict[str, Any]:
+    world.branches = _normalize_branch_registry(world.branches)
     return {
         "title": world.title,
         "premise": world.premise,
@@ -131,6 +383,7 @@ def _serialize_node(node: Any, world: WorldState) -> Dict[str, Any]:
         "tick": world.tick,
         "requires_intervention": node.requires_intervention,
         "intervention_instruction": node.intervention_instruction,
+        "parent_ids": node.parent_ids,
         "branch_id": node.branch_id,
         "merged_from_ids": node.merged_from_ids,
     }
@@ -140,6 +393,7 @@ def _serialize_nodes(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return [
         {
             **node,
+            "parent_ids": node.get("parent_ids", []),
             "branch_id": node.get("branch_id", "main"),
             "merged_from_ids": node.get("merged_from_ids", []),
         }
@@ -176,6 +430,16 @@ def _upsert_rendered_node(
 def _append_telemetry_event(
     session: "SimulationSession", event_data: Dict[str, Any]
 ) -> TelemetryEvent:
+    active_branch_id = (
+        session.world.active_branch_id
+        if session.world and session.world.active_branch_id
+        else "main"
+    )
+    branch_meta = (
+        session.world.branches.get(active_branch_id, {})
+        if session.world and session.world.branches
+        else {}
+    )
     telemetry = TelemetryEvent(
         event_id=event_data.get("event_id") or str(uuid.uuid4()),
         sim_id=event_data.get("sim_id") or session.sim_id,
@@ -192,6 +456,13 @@ def _append_telemetry_event(
         provider=event_data.get("provider"),
         model=event_data.get("model"),
         duration_ms=event_data.get("duration_ms"),
+        branch_id=event_data.get("branch_id") or active_branch_id,
+        forked_from_node_id=event_data.get("forked_from_node_id")
+        or branch_meta.get("forked_from_node"),
+        source_branch_id=event_data.get("source_branch_id")
+        or branch_meta.get("source_branch_id"),
+        source_sim_id=event_data.get("source_sim_id")
+        or branch_meta.get("source_sim_id"),
         ts=event_data.get("ts") or os.environ.get("FAKE_TELEMETRY_TS", ""),
     )
     if not telemetry.ts:
@@ -211,6 +482,7 @@ def _append_telemetry_event(
 def _persist_session(session: "SimulationSession") -> None:
     """Persist session state to DB."""
     try:
+        _update_branch_meta(session)
         db_save_session(
             sim_id=session.sim_id,
             premise=session.premise,
@@ -224,6 +496,119 @@ def _persist_session(session: "SimulationSession") -> None:
         )
     except Exception:
         pass  # Don't let DB errors break the simulation
+
+
+def _restore_world_at_node(
+    sim_id: str, node_id: str, branch_id: Optional[str] = None
+) -> WorldState:
+    """Restore a recoverable world snapshot for a historical node.
+
+    Sprint 8 Branch Seed Snapshot v1 uses full WorldState snapshots captured
+    at node boundaries instead of replaying the entire LLM-driven history.
+    """
+    session = _sessions.get(sim_id)
+    if session and session.world and session.world.current_node_id == node_id:
+        current_node = session.world.get_node(node_id)
+        if current_node and (branch_id is None or current_node.branch_id == branch_id):
+            return session.world.model_copy(deep=True)
+
+    try:
+        return db_load_branch_seed_snapshot(sim_id, node_id, branch_id)
+    except BranchSeedNotFoundError:
+        raise
+
+
+def _coerce_pacing(value: Optional[str]) -> str:
+    pacing = (value or "balanced").strip().lower()
+    if pacing not in _VALID_PACING_VALUES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"无效的节奏档位: {value}，允许值为 calm / balanced / intense",
+        )
+    return pacing
+
+
+def _ensure_branching_enabled() -> None:
+    if not _branching_enabled():
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "分支功能当前已关闭。请设置 FEATURE_BRANCHING_ENABLED=1 后再试，"
+                "关闭后系统仅保留单主线安全行为。"
+            ),
+        )
+
+
+def _load_session_into_memory(sim_id: str) -> Optional["SimulationSession"]:
+    existing = _sessions.get(sim_id)
+    if existing:
+        return existing
+
+    data = db_load_session(sim_id)
+    if not data:
+        return None
+
+    session = SimulationSession(
+        sim_id=data["sim_id"],
+        premise=data["premise"],
+        max_ticks=data["max_ticks"],
+    )
+    session.status = data["status"]
+    session.world = data["world"]
+    session.nodes_rendered = data["nodes_rendered"]
+    session.intervention_context = data["intervention_context"]
+    session.error = data["error"]
+    session.telemetry_events = [
+        (
+            event
+            if isinstance(event, TelemetryEvent)
+            else TelemetryEvent.model_validate(event)
+        )
+        for event in data["telemetry_events"]
+    ]
+    session.last_event_id = (
+        session.telemetry_events[-1].event_id if session.telemetry_events else None
+    )
+    if session.telemetry_events and session.telemetry_events[-1].trace_id:
+        session.trace_id = session.telemetry_events[-1].trace_id
+
+    _sessions[sim_id] = session
+    return session
+
+
+def _find_rendered_node(
+    nodes: List[Dict[str, Any]], node_id: str
+) -> Optional[Dict[str, Any]]:
+    return next((node for node in nodes if node.get("id") == node_id), None)
+
+
+def _branch_status(world: WorldState, branch_id: str) -> str:
+    branch_meta = world.branches.get(branch_id, {})
+    if branch_meta.get("status"):
+        return str(branch_meta["status"])
+    if world.pending_intervention:
+        return "waiting"
+    if world.is_complete:
+        return "complete"
+    return "running"
+
+
+def _restore_branch_world(sim_id: str, world: WorldState, branch_id: str) -> WorldState:
+    world.branches = _normalize_branch_registry(world.branches)
+    if branch_id not in world.branches:
+        raise HTTPException(status_code=404, detail=f"分支 {branch_id} 不存在")
+
+    latest_node_id = world.branches[branch_id].get("latest_node_id")
+    if latest_node_id:
+        try:
+            branch_world = _restore_world_at_node(sim_id, latest_node_id, branch_id)
+        except BranchSeedNotFoundError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+    else:
+        branch_world = world.model_copy(deep=True)
+    branch_world.branches = copy.deepcopy(world.branches)
+    branch_world.active_branch_id = branch_id
+    return branch_world
 
 
 def _recover_sessions() -> None:
@@ -268,16 +653,16 @@ class SimulationSession:
         self.active_stream_node_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
-            "sim_id": self.sim_id,
-            "status": self.status,
-            "premise": self.premise,
-            "world": _serialize_world(self.world) if self.world else None,
-            "nodes": _serialize_nodes(self.nodes_rendered),
-            "telemetry": _serialize_telemetry(self.telemetry_events),
-            "intervention_context": self.intervention_context,
-            "error": self.error,
-        }
+        return _build_simulation_payload(
+            sim_id=self.sim_id,
+            status=self.status,
+            premise=self.premise,
+            world=self.world,
+            nodes_rendered=self.nodes_rendered,
+            telemetry_events=self.telemetry_events,
+            intervention_context=self.intervention_context,
+            error=self.error,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -320,6 +705,23 @@ class AddConstraintRequest(BaseModel):
     constraint_type: str = "narrative"
     severity: str = "hard"
     rule: str
+
+
+class CreateBranchRequest(BaseModel):
+    source_node_id: str
+    label: Optional[str] = None
+    switch_immediately: bool = True
+    continue_simulation: bool = True
+    pacing: str = "balanced"
+
+
+class SwitchBranchRequest(BaseModel):
+    branch_id: str
+
+
+class UpdateBranchPacingRequest(BaseModel):
+    branch_id: str
+    pacing: str
 
 
 # ---------------------------------------------------------------------------
@@ -427,6 +829,7 @@ def _run_simulation_sync(session: SimulationSession) -> None:
             max_ticks=session.max_ticks,
             sim_id=session.sim_id,
             trace_id=session.trace_id,
+            initial_world=session.world,
             intervention_callback=intervention_callback,
             on_node_rendered=on_node_rendered,
             on_streaming_token=on_streaming_token,
@@ -515,10 +918,27 @@ async def start_simulation(request: StartSimulationRequest):
 
 
 @app.get("/api/simulate/{sim_id}")
-async def get_simulation(sim_id: str):
+async def get_simulation(sim_id: str, branch: Optional[str] = None):
     # Check in-memory first
     session = _sessions.get(sim_id)
     if session:
+        if branch and session.world:
+            branch_world = _restore_branch_world(sim_id, session.world, branch)
+            return _build_simulation_payload(
+                sim_id=session.sim_id,
+                status=_branch_status(branch_world, branch),
+                premise=session.premise,
+                world=branch_world,
+                nodes_rendered=session.nodes_rendered,
+                telemetry_events=session.telemetry_events,
+                intervention_context=(
+                    branch_world.intervention_context
+                    if _branch_status(branch_world, branch) == "waiting"
+                    else None
+                ),
+                error=session.error,
+                branch_id=branch,
+            )
         return session.to_dict()
 
     # Fall back to DB
@@ -527,16 +947,227 @@ async def get_simulation(sim_id: str):
         raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
 
     world = data["world"]
+    status = data["status"]
+    intervention_context = data["intervention_context"]
+    if branch and world:
+        world = _restore_branch_world(sim_id, world, branch)
+        status = _branch_status(world, branch)
+        intervention_context = (
+            world.intervention_context if status == "waiting" else None
+        )
+
+    return _build_simulation_payload(
+        sim_id=data["sim_id"],
+        status=status,
+        premise=data["premise"],
+        world=world,
+        nodes_rendered=data["nodes_rendered"],
+        telemetry_events=data["telemetry_events"],
+        intervention_context=intervention_context,
+        error=data["error"],
+        branch_id=branch,
+    )
+
+
+@app.post("/api/simulate/{sim_id}/branch")
+async def create_branch(sim_id: str, request: CreateBranchRequest):
+    _ensure_branching_enabled()
+    session = _load_session_into_memory(sim_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
+    if session.status in ("running", "initializing"):
+        raise HTTPException(
+            status_code=409,
+            detail="推演仍在运行中，暂时不能创建或切换分支",
+        )
+    if not session.world:
+        raise HTTPException(status_code=400, detail="世界尚未初始化")
+
+    pacing = _coerce_pacing(request.pacing)
+    source_node = _find_rendered_node(session.nodes_rendered, request.source_node_id)
+    if not source_node:
+        raise HTTPException(
+            status_code=404, detail=f"历史节点 {request.source_node_id} 不存在"
+        )
+
+    source_branch_id = str(source_node.get("branch_id", "main"))
+    try:
+        restored_world = _restore_world_at_node(
+            sim_id, request.source_node_id, source_branch_id
+        )
+    except BranchSeedNotFoundError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    restored_world.branches = _normalize_branch_registry(session.world.branches)
+
+    branch_id = f"branch_{uuid.uuid4().hex[:8]}"
+    restored_world.branches[branch_id] = {
+        **_default_branch_meta(),
+        "label": request.label or f"{source_node.get('title', '历史节点')} · 分支",
+        "forked_from_node": request.source_node_id,
+        "source_branch_id": source_branch_id,
+        "source_sim_id": sim_id,
+        "created_at_tick": int(source_node.get("tick", restored_world.tick)),
+        "latest_node_id": request.source_node_id,
+        "latest_tick": int(source_node.get("tick", restored_world.tick)),
+        "last_node_summary": source_node.get("description"),
+        "nodes_count": len(
+            _filter_nodes_for_branch(
+                session.nodes_rendered,
+                {
+                    **restored_world.branches,
+                    branch_id: {
+                        **_default_branch_meta(),
+                        "forked_from_node": request.source_node_id,
+                        "source_branch_id": source_branch_id,
+                        "created_at_tick": int(
+                            source_node.get("tick", restored_world.tick)
+                        ),
+                        "latest_node_id": request.source_node_id,
+                    },
+                },
+                branch_id,
+            )
+        ),
+        "status": (
+            "initializing"
+            if request.continue_simulation
+            else _branch_status(restored_world, source_branch_id)
+        ),
+        "pacing": pacing,
+    }
+    restored_world.active_branch_id = (
+        branch_id if request.switch_immediately else restored_world.active_branch_id
+    )
+
+    session.world = restored_world
+    session.error = None
+    session.intervention_context = restored_world.intervention_context
+    _append_telemetry_event(
+        session,
+        {
+            "tick": restored_world.tick,
+            "agent": "simulation",
+            "stage": "branch_created",
+            "span_kind": "system",
+            "message": "已从历史节点创建新分支",
+            "payload": {
+                "branch_id": branch_id,
+                "label": restored_world.branches[branch_id]["label"],
+                "forked_from_node": request.source_node_id,
+                "source_branch_id": source_branch_id,
+                "continue_simulation": request.continue_simulation,
+                "pacing": pacing,
+            },
+            "branch_id": branch_id,
+            "forked_from_node_id": request.source_node_id,
+            "source_branch_id": source_branch_id,
+            "source_sim_id": sim_id,
+        },
+    )
+
+    if request.continue_simulation:
+        session.loop = asyncio.get_running_loop()
+        session.status = "initializing"
+        _persist_session(session)
+        loop = asyncio.get_running_loop()
+        loop.run_in_executor(_executor, _run_simulation_sync, session)
+    else:
+        session.status = _branch_status(restored_world, branch_id)
+        _persist_session(session)
+
+    return session.to_dict()
+
+
+@app.post("/api/simulate/{sim_id}/branch/switch")
+async def switch_branch(sim_id: str, request: SwitchBranchRequest):
+    _ensure_branching_enabled()
+    session = _load_session_into_memory(sim_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
+    if session.status in ("running", "initializing"):
+        raise HTTPException(
+            status_code=409,
+            detail="推演仍在运行中，暂时不能切换分支",
+        )
+    if not session.world:
+        raise HTTPException(status_code=400, detail="世界尚未初始化")
+
+    branch_world = _restore_branch_world(sim_id, session.world, request.branch_id)
+    session.world = branch_world
+    session.status = _branch_status(branch_world, request.branch_id)
+    session.intervention_context = (
+        branch_world.intervention_context if session.status == "waiting" else None
+    )
+    session.error = None
+    _append_telemetry_event(
+        session,
+        {
+            "tick": branch_world.tick,
+            "agent": "simulation",
+            "stage": "branch_switched",
+            "span_kind": "system",
+            "message": "已切换活跃分支",
+            "payload": {"branch_id": request.branch_id},
+            "branch_id": request.branch_id,
+        },
+    )
+    _persist_session(session)
+    return session.to_dict()
+
+
+@app.get("/api/simulate/{sim_id}/branch/compare")
+async def compare_branches(sim_id: str):
+    _ensure_branching_enabled()
+    session = _load_session_into_memory(sim_id)
+    if session and session.world:
+        world = session.world
+        nodes_rendered = session.nodes_rendered
+    else:
+        data = db_load_session(sim_id)
+        if not data or not data["world"]:
+            raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
+        world = data["world"]
+        nodes_rendered = data["nodes_rendered"]
 
     return {
-        "sim_id": data["sim_id"],
-        "status": data["status"],
-        "premise": data["premise"],
-        "world": _serialize_world(world) if world else None,
-        "nodes": _serialize_nodes(data["nodes_rendered"]),
-        "telemetry": _serialize_telemetry(data["telemetry_events"]),
-        "intervention_context": data["intervention_context"],
-        "error": data["error"],
+        "sim_id": sim_id,
+        "active_branch_id": world.active_branch_id,
+        "branches": _compare_summary(world, nodes_rendered),
+    }
+
+
+@app.post("/api/simulate/{sim_id}/branch/pacing")
+async def update_branch_pacing(sim_id: str, request: UpdateBranchPacingRequest):
+    _ensure_branching_enabled()
+    session = _load_session_into_memory(sim_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
+    if not session.world:
+        raise HTTPException(status_code=400, detail="世界尚未初始化")
+
+    pacing = _coerce_pacing(request.pacing)
+    session.world.branches = _normalize_branch_registry(session.world.branches)
+    if request.branch_id not in session.world.branches:
+        raise HTTPException(status_code=404, detail=f"分支 {request.branch_id} 不存在")
+
+    session.world.branches[request.branch_id]["pacing"] = pacing
+    _append_telemetry_event(
+        session,
+        {
+            "tick": session.world.tick,
+            "agent": "user",
+            "stage": "pacing_updated",
+            "span_kind": "user",
+            "message": "已更新分支节奏偏好",
+            "payload": {"branch_id": request.branch_id, "pacing": pacing},
+            "branch_id": request.branch_id,
+        },
+    )
+    _persist_session(session)
+    return {
+        "message": "分支节奏已更新",
+        "branch_id": request.branch_id,
+        "pacing": pacing,
     }
 
 
@@ -568,7 +1199,7 @@ async def intervene(sim_id: str, request: InterveneRequest):
 
 
 @app.get("/api/simulate/{sim_id}/export")
-async def export_simulation(sim_id: str):
+async def export_simulation(sim_id: str, branch: Optional[str] = None):
     # Check in-memory first, then DB
     session = _sessions.get(sim_id)
     world = session.world if session else None
@@ -584,8 +1215,16 @@ async def export_simulation(sim_id: str):
     if not world:
         raise HTTPException(status_code=400, detail="推演尚未产生世界数据")
 
+    selected_branch = branch or world.active_branch_id or "main"
+    world = _restore_branch_world(sim_id, world, selected_branch)
+    filtered_nodes = _filter_nodes_for_branch(
+        nodes_rendered or [],
+        world.branches,
+        selected_branch,
+    )
+
     novel_parts = []
-    for node_dict in nodes_rendered or []:
+    for node_dict in filtered_nodes:
         if node_dict.get("rendered_text"):
             novel_parts.append(
                 f"【{node_dict['title']}】\n\n{node_dict['rendered_text']}"
@@ -620,7 +1259,7 @@ async def export_simulation(sim_id: str):
                 "description": n["description"],
                 "intervention": n.get("intervention_instruction"),
             }
-            for n in (nodes_rendered or [])
+            for n in filtered_nodes
         ],
     }
 

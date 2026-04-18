@@ -1,12 +1,12 @@
 # 用户故事与产品待办列表 (User Stories & Product Backlog)
 
-**文档状态**：Active (Sprint 7 Delivered)  
+**文档状态**：Active (Sprint 8 Delivered)
 **作者**：Manus AI / Codex  
-**最后更新**：2026-04-18
+**最后更新**：2026-04-19
 
 ## 1. 史诗故事 (Epics)
 
-在敏捷开发框架下，WorldBox Writer 的核心功能被划分为以下五个史诗故事（Epics）：
+在敏捷开发框架下，WorldBox Writer 的核心功能被划分为以下六个史诗故事（Epics）：
 
 | Epic ID | 史诗名称 | 描述 |
 | :--- | :--- | :--- |
@@ -15,6 +15,7 @@
 | **E03** | **记忆与上下文管理 (Memory & Context)** | 实现角色的分层记忆系统与全局世界观知识库，确保长篇生成的一致性。 |
 | **E04** | **双速渲染模式 (Dual-Speed Rendering)** | 提供快速推演（仅结构化事件）与精细渲染（完整小说文本）两种模式的无缝切换。 |
 | **E05** | **可视化沙盒面板 (Visual Sandbox Dashboard)** | 开发前端交互界面，实时展示事件流、人物关系图谱与全局状态看板。 |
+| **E06** | **多世界线与分支控制 (Branching Control)** | 提供时间线回溯、分支创建、分支切换和基础对比能力，让用户真正掌控世界走向。 |
 
 ---
 
@@ -88,3 +89,36 @@ Sprint 7 已按以下范围完成交付：
 - **P1 伸缩项**：US-02.04、S7-EN-04
 
 当前 Observe 层已经从 v1 演示版提升为可信、可读、可恢复的观察层，后续主线进入 Sprint 8 的分支控制能力。
+
+### Epic 06: 多世界线与分支控制
+
+Sprint 8 的目标不是把所有“分支相关想法”一次吞完，而是先交付一个可用的 branching loop：从历史节点分叉、在新分支续跑、切换世界线并做基础比较。
+
+| Story ID | 用户故事 (As a... I want to... So that...) | 验收标准 (Acceptance Criteria) | 优先级 | 估算 (Story Points) | 状态 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **US-06.01** | 作为**创世神**，我希望**能从任意已持久化的历史节点创建新分支并继续推演**，以便**探索“如果这里做出另一种选择会怎样”**。 | 1. 用户可从历史节点触发分支创建，并生成新的 `branch_id`。<br>2. 新分支必须绑定可恢复的 fork seed / snapshot，不能仅靠前端复制节点数组假装分叉。<br>3. 在新分支继续推演时，不会污染原分支已有节点链。<br>4. 历史会话重开后仍能识别主线与支线关系。 | P0 | 13 | ✅ Done (Sprint 8) |
+| **US-06.02** | 作为**创世神**，我希望**能查看、切换并基础对比多条世界线**，以便**快速判断哪条分支值得继续深化**。 | 1. 前端可展示分支列表和当前活跃分支。<br>2. 切换分支后，节点流、世界状态和 Telemetry 只展示对应世界线。<br>3. 至少可比较 `forked_from_node`、节点数、最新 tick 和最后节点摘要。<br>4. 页面刷新或历史恢复后，仍保持相同的 active branch 语义。 | P0 | 8 | ✅ Done (Sprint 8) |
+| **US-06.03** | 作为**导演**，我希望**能为当前分支设置节奏偏好**，以便**控制后续推演更偏日常、均衡或高压冲突**。 | 1. 至少提供一组受控的节奏档位，而不是自由文本随意传递。<br>2. 节奏选择会持久化到当前分支或会话上下文。<br>3. 后续提议筛选或节点推进能显式读取该节奏上下文。 | P1 | 5 | ✅ Done (Sprint 8) |
+
+## 5. Sprint 8 工程使能项 (Enablers, Not User Stories)
+
+下面这些工作进入 Sprint Backlog，但不应冒充用户故事。它们的价值在于支撑 US-06.01 和 US-06.02 稳定落地。
+
+| ID | 条目 | 支撑的 User Story | 优先级 | 状态 |
+| :--- | :--- | :--- | :--- | :--- |
+| **S8-EN-01** | Branch Seed Snapshot v1 | US-06.01, US-06.02 | P0 | ✅ Done (Sprint 8) |
+| **S8-EN-02** | Branch-aware API & Persistence Contract | US-06.01, US-06.02 | P0 | ✅ Done (Sprint 8) |
+| **S8-EN-03** | Branch Trace & Telemetry Extension | US-06.01, US-06.02, US-06.03 | P0 | ✅ Done (Sprint 8) |
+| **S8-EN-04** | Feature Flag & Rollback Runbook | US-06.01, US-06.02 | P0 | ✅ Done (Sprint 8) |
+| **S8-EN-05** | 时间线性能护栏（懒加载 / 虚拟化按需引入） | US-06.02 | P1 | ⏸ Deferred (Not Needed for Sprint 8 Goal) |
+
+## 6. Sprint 8 范围说明
+
+Sprint 8 默认不承诺以下事项，避免把首个 branching release 做成失焦的大拼盘：
+
+- 多 Actor 协商机制
+- 自动回滚平台化
+- 分支合并（Reconvergence）真实功能
+- 前端全量 Zod 运行时 schema 体系
+
+这些方向并非不重要，而是对当前代码基线来说，它们都不比“先把分叉与切换做稳”更优先。

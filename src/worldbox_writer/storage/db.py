@@ -63,10 +63,25 @@ CREATE TABLE IF NOT EXISTS sessions (
     status         TEXT NOT NULL,
     world_id       TEXT,
     nodes_json     TEXT NOT NULL DEFAULT '[]',
+    branch_metadata_json TEXT NOT NULL DEFAULT '{"main": {"label": "Main Timeline", "forked_from_node": null}}',
+    active_branch_id TEXT NOT NULL DEFAULT 'main',
     intervention_context TEXT,
     error          TEXT,
     created_at     TEXT NOT NULL,
     updated_at     TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS branch_seed_snapshots (
+    sim_id         TEXT NOT NULL,
+    node_id        TEXT NOT NULL,
+    branch_id      TEXT NOT NULL,
+    seed_kind      TEXT NOT NULL DEFAULT 'world_state_v1',
+    tick           INTEGER NOT NULL DEFAULT 0,
+    state_json     TEXT NOT NULL,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL,
+    PRIMARY KEY (sim_id, node_id, branch_id),
+    FOREIGN KEY (sim_id) REFERENCES sessions(sim_id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS memory_entries (
@@ -84,7 +99,27 @@ CREATE TABLE IF NOT EXISTS memory_entries (
 
 CREATE INDEX IF NOT EXISTS idx_memory_sim ON memory_entries(sim_id);
 CREATE INDEX IF NOT EXISTS idx_memory_tick ON memory_entries(sim_id, tick);
+CREATE INDEX IF NOT EXISTS idx_branch_seed_sim ON branch_seed_snapshots(sim_id);
+CREATE INDEX IF NOT EXISTS idx_branch_seed_tick ON branch_seed_snapshots(sim_id, tick);
 """
+
+
+class BranchSeedNotFoundError(LookupError):
+    """Raised when a history node cannot be restored into a fork seed snapshot."""
+
+    def __init__(self, sim_id: str, node_id: str, branch_id: Optional[str] = None):
+        branch_hint = f"（branch_id={branch_id}）" if branch_id else ""
+        super().__init__(
+            f"历史节点 {node_id}{branch_hint} 缺少 Branch Seed Snapshot v1，"
+            "当前会话暂不支持从该节点分叉。"
+        )
+        self.sim_id = sim_id
+        self.node_id = node_id
+        self.branch_id = branch_id
+
+
+def _default_branch_registry() -> Dict[str, Dict[str, Any]]:
+    return {"main": {"label": "Main Timeline", "forked_from_node": None}}
 
 
 def init_db(db_path: Optional[str] = None) -> None:
@@ -99,6 +134,14 @@ def init_db(db_path: Optional[str] = None) -> None:
         if "telemetry_json" not in columns:
             conn.execute(
                 "ALTER TABLE sessions ADD COLUMN telemetry_json TEXT NOT NULL DEFAULT '[]'"
+            )
+        if "branch_metadata_json" not in columns:
+            conn.execute(
+                'ALTER TABLE sessions ADD COLUMN branch_metadata_json TEXT NOT NULL DEFAULT \'{"main": {"label": "Main Timeline", "forked_from_node": null}}\''
+            )
+        if "active_branch_id" not in columns:
+            conn.execute(
+                "ALTER TABLE sessions ADD COLUMN active_branch_id TEXT NOT NULL DEFAULT 'main'"
             )
         conn.commit()
     finally:
@@ -182,6 +225,12 @@ def save_session(
     """Save or update a simulation session."""
     now = _now()
     world_id = str(world.world_id) if world else None
+    branch_registry = (
+        world.branches if world and world.branches else _default_branch_registry()
+    )
+    active_branch_id = (
+        world.active_branch_id if world and world.active_branch_id else "main"
+    )
 
     # Also save world if present
     if world:
@@ -190,12 +239,14 @@ def save_session(
     conn = _get_conn(db_path)
     try:
         conn.execute(
-            """INSERT INTO sessions (sim_id, premise, max_ticks, status, world_id, nodes_json, telemetry_json, intervention_context, error, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """INSERT INTO sessions (sim_id, premise, max_ticks, status, world_id, nodes_json, telemetry_json, branch_metadata_json, active_branch_id, intervention_context, error, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(sim_id) DO UPDATE SET
                  status=excluded.status, world_id=excluded.world_id,
                  nodes_json=excluded.nodes_json,
                  telemetry_json=excluded.telemetry_json,
+                 branch_metadata_json=excluded.branch_metadata_json,
+                 active_branch_id=excluded.active_branch_id,
                  intervention_context=excluded.intervention_context,
                  error=excluded.error, updated_at=excluded.updated_at""",
             (
@@ -206,13 +257,75 @@ def save_session(
                 world_id,
                 json.dumps(nodes_json, ensure_ascii=False),
                 json.dumps(telemetry_events or [], ensure_ascii=False),
+                json.dumps(branch_registry, ensure_ascii=False),
+                active_branch_id,
                 intervention_context,
                 error,
                 now,
                 now,
             ),
         )
+        if world and world.current_node_id:
+            current_node = world.get_node(world.current_node_id)
+            if current_node:
+                conn.execute(
+                    """INSERT INTO branch_seed_snapshots (
+                           sim_id, node_id, branch_id, seed_kind, tick, state_json, created_at, updated_at
+                       )
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(sim_id, node_id, branch_id) DO UPDATE SET
+                         tick=excluded.tick,
+                         state_json=excluded.state_json,
+                         updated_at=excluded.updated_at""",
+                    (
+                        sim_id,
+                        world.current_node_id,
+                        world.active_branch_id,
+                        "world_state_v1",
+                        world.tick,
+                        world.model_dump_json(),
+                        now,
+                        now,
+                    ),
+                )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def load_branch_seed_snapshot(
+    sim_id: str,
+    node_id: str,
+    branch_id: Optional[str] = None,
+    db_path: Optional[str] = None,
+) -> WorldState:
+    """Load the persisted world snapshot for a specific historical branch node."""
+    conn = _get_conn(db_path)
+    try:
+        if branch_id is None:
+            row = conn.execute(
+                """SELECT state_json
+                   FROM branch_seed_snapshots
+                   WHERE sim_id=? AND node_id=?
+                   ORDER BY updated_at DESC
+                   LIMIT 1""",
+                (sim_id, node_id),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                """SELECT state_json
+                   FROM branch_seed_snapshots
+                   WHERE sim_id=? AND node_id=? AND branch_id=?""",
+                (sim_id, node_id, branch_id),
+            ).fetchone()
+
+        if not row:
+            raise BranchSeedNotFoundError(sim_id, node_id, branch_id)
+
+        world = WorldState.model_validate_json(row["state_json"])
+        if world.current_node_id != node_id:
+            raise BranchSeedNotFoundError(sim_id, node_id, branch_id)
+        return world
     finally:
         conn.close()
 
@@ -231,12 +344,21 @@ def load_session(
         world = None
         if row["world_id"]:
             world = load_world(row["world_id"], db_path)
+        branch_registry = json.loads(
+            row["branch_metadata_json"] or json.dumps(_default_branch_registry())
+        )
+        active_branch_id = row["active_branch_id"] or "main"
+        if world:
+            world.branches = branch_registry or _default_branch_registry()
+            world.active_branch_id = active_branch_id
         return {
             "sim_id": row["sim_id"],
             "premise": row["premise"],
             "max_ticks": row["max_ticks"],
             "status": row["status"],
             "world": world,
+            "branch_registry": branch_registry or _default_branch_registry(),
+            "active_branch_id": active_branch_id,
             "nodes_rendered": json.loads(row["nodes_json"]),
             "telemetry_events": json.loads(row["telemetry_json"] or "[]"),
             "intervention_context": row["intervention_context"],
@@ -270,6 +392,7 @@ def delete_session(sim_id: str, db_path: Optional[str] = None) -> None:
     """Delete a session and its associated memory entries."""
     conn = _get_conn(db_path)
     try:
+        conn.execute("DELETE FROM branch_seed_snapshots WHERE sim_id=?", (sim_id,))
         conn.execute("DELETE FROM memory_entries WHERE sim_id=?", (sim_id,))
         conn.execute("DELETE FROM sessions WHERE sim_id=?", (sim_id,))
         conn.commit()

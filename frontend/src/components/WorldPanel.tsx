@@ -18,6 +18,29 @@ export function WorldPanel({ world }: WorldPanelProps) {
         <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
           {world.premise}
         </p>
+        <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <span
+            style={{
+              fontSize: 10,
+              padding: "2px 8px",
+              border: "1px solid var(--color-warning)",
+              color: "var(--color-warning)",
+              textTransform: "uppercase",
+            }}
+          >
+            active: {world.active_branch_id}
+          </span>
+          <span
+            style={{
+              fontSize: 10,
+              padding: "2px 8px",
+              border: "1px solid var(--color-border)",
+              color: "var(--color-text-muted)",
+            }}
+          >
+            {world.branches[world.active_branch_id]?.label ?? "Main Timeline"}
+          </span>
+        </div>
         <div className="divider" />
         <div style={{ display: "flex", gap: 24 }}>
           <div>

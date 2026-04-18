@@ -80,6 +80,45 @@ curl http://localhost:8000/api/health
 - `artifacts/reports/frontend/vitest.xml`
 - `frontend` 构建错误输出
 
+### 2.6 Sprint 8 分支能力需要紧急止损
+
+Sprint 8 的 branching loop 由环境变量 `FEATURE_BRANCHING_ENABLED` 控制。
+
+关闭方式：
+
+```bash
+FEATURE_BRANCHING_ENABLED=0 make dev-api
+```
+
+或在现有服务环境里显式注入：
+
+```bash
+export FEATURE_BRANCHING_ENABLED=0
+```
+
+关闭后的预期行为：
+
+- `POST /api/simulate/{id}/branch`
+- `POST /api/simulate/{id}/branch/switch`
+- `POST /api/simulate/{id}/branch/pacing`
+- `GET /api/simulate/{id}/branch/compare`
+
+这些接口会返回可解释错误，系统退回单主线安全行为。
+
+止损验证步骤：
+
+1. 访问 `GET /api/health`，确认服务已重启且无启动错误。
+2. 打开一个已有会话，确认 `GET /api/simulate/{id}` 仍可读取主线。
+3. 调用任一 branch 接口，确认返回“分支功能当前已关闭”。
+4. 继续执行一次普通单主线推演，确认 `start / intervene / export` 不受影响。
+
+恢复方式：
+
+```bash
+export FEATURE_BRANCHING_ENABLED=1
+make dev-api
+```
+
 ## 3. 数据与路径
 
 当前默认数据文件：

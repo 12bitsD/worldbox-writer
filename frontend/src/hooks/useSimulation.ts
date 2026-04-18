@@ -1,14 +1,21 @@
 // WorldBox Writer — useSimulation Hook
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import type { SimulationState } from "../types";
+import type {
+  BranchCompareResponse,
+  SimulationState,
+} from "../types";
 import {
+  compareBranches,
+  createBranch,
+  switchBranch,
   startSimulation,
   getSimulation,
   intervene,
   exportSimulation,
   createEventStream,
   listSessions,
+  updateBranchPacing,
 } from "../utils/api";
 import {
   appendStreamingToken,
@@ -24,6 +31,8 @@ export function useSimulation() {
   const [state, setState] = useState<SimulationState | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [branchCompare, setBranchCompare] =
+    useState<BranchCompareResponse["branches"] | null>(null);
   const [recentSessions, setRecentSessions] = useState<
     Array<{
       sim_id: string;
@@ -56,6 +65,15 @@ export function useSimulation() {
       });
   }, []);
 
+  const refreshBranchCompare = useCallback(async (id: string) => {
+    try {
+      const compare = await compareBranches(id);
+      setBranchCompare(compare.branches);
+    } catch {
+      setBranchCompare(null);
+    }
+  }, []);
+
   /** Fallback polling when SSE fails */
   const startFallbackPolling = useCallback(
     (id: string) => {
@@ -64,6 +82,9 @@ export function useSimulation() {
         try {
           const s = await getSimulation(id);
           setState((prev) => mergeSimulationSnapshot(prev, s));
+          if (s.features.branching_enabled) {
+            void refreshBranchCompare(id);
+          }
           if (s.status === "complete" || s.status === "error") {
             stopAll();
           }
@@ -72,7 +93,7 @@ export function useSimulation() {
         }
       }, 1500);
     },
-    [stopAll]
+    [refreshBranchCompare, stopAll]
   );
 
   /** Primary: SSE real-time stream */
@@ -180,6 +201,11 @@ export function useSimulation() {
         const nextState = await getSimulation(id);
         setSimId(id);
         setState((prev) => mergeSimulationSnapshot(prev, nextState));
+        if (nextState.features.branching_enabled) {
+          void refreshBranchCompare(id);
+        } else {
+          setBranchCompare(null);
+        }
         window.sessionStorage.setItem(LAST_SIM_ID_KEY, id);
         void refreshRecentSessions();
 
@@ -197,7 +223,7 @@ export function useSimulation() {
         setLoading(false);
       }
     },
-    [refreshRecentSessions, startSSE, stopAll]
+    [refreshBranchCompare, refreshRecentSessions, startSSE, stopAll]
   );
 
   const refresh = useCallback(async () => {
@@ -205,10 +231,13 @@ export function useSimulation() {
     try {
       const nextState = await getSimulation(simId);
       setState((prev) => mergeSimulationSnapshot(prev, nextState));
+      if (nextState.features.branching_enabled) {
+        void refreshBranchCompare(simId);
+      }
     } catch (e) {
       setError(String(e));
     }
-  }, [simId]);
+  }, [refreshBranchCompare, simId]);
 
   const start = useCallback(
     async (premise: string, maxTicks = 8) => {
@@ -225,6 +254,11 @@ export function useSimulation() {
         // Initial fetch for immediate state
         const s = await getSimulation(res.sim_id);
         setState((prev) => mergeSimulationSnapshot(prev, s));
+        if (s.features.branching_enabled) {
+          void refreshBranchCompare(res.sim_id);
+        } else {
+          setBranchCompare(null);
+        }
         // Start SSE for real-time updates
         startSSE(res.sim_id);
       } catch (e) {
@@ -233,7 +267,7 @@ export function useSimulation() {
         setLoading(false);
       }
     },
-    [refreshRecentSessions, startSSE, stopAll]
+    [refreshBranchCompare, refreshRecentSessions, startSSE, stopAll]
   );
 
   const sendIntervention = useCallback(
@@ -251,12 +285,76 @@ export function useSimulation() {
   const doExport = useCallback(async () => {
     if (!simId) return null;
     try {
-      return await exportSimulation(simId);
+      return await exportSimulation(simId, state?.world?.active_branch_id);
     } catch (e) {
       setError(String(e));
       return null;
     }
-  }, [simId]);
+  }, [simId, state?.world?.active_branch_id]);
+
+  const forkAtNode = useCallback(
+    async (
+      sourceNodeId: string,
+      options?: {
+        label?: string;
+        pacing?: "calm" | "balanced" | "intense";
+        continueSimulation?: boolean;
+      }
+    ) => {
+      if (!simId) return;
+      try {
+        const nextState = await createBranch(simId, {
+          source_node_id: sourceNodeId,
+          label: options?.label,
+          pacing: options?.pacing,
+          continue_simulation: options?.continueSimulation ?? true,
+          switch_immediately: true,
+        });
+        setState(nextState);
+        void refreshBranchCompare(simId);
+        if (
+          nextState.status === "running" ||
+          nextState.status === "waiting" ||
+          nextState.status === "initializing"
+        ) {
+          startSSE(simId);
+        }
+      } catch (e) {
+        setError(String(e));
+      }
+    },
+    [refreshBranchCompare, simId, startSSE]
+  );
+
+  const activateBranch = useCallback(
+    async (branchId: string) => {
+      if (!simId) return;
+      try {
+        const nextState = await switchBranch(simId, branchId);
+        setState(nextState);
+        void refreshBranchCompare(simId);
+      } catch (e) {
+        setError(String(e));
+      }
+    },
+    [refreshBranchCompare, simId]
+  );
+
+  const setBranchPacing = useCallback(
+    async (
+      branchId: string,
+      pacing: "calm" | "balanced" | "intense"
+    ) => {
+      if (!simId) return;
+      try {
+        await updateBranchPacing(simId, branchId, pacing);
+        await refresh();
+      } catch (e) {
+        setError(String(e));
+      }
+    },
+    [refresh, simId]
+  );
 
   const reset = useCallback(() => {
     stopAll();
@@ -264,6 +362,7 @@ export function useSimulation() {
     setState(null);
     setError(null);
     setLoading(false);
+    setBranchCompare(null);
     window.sessionStorage.removeItem(LAST_SIM_ID_KEY);
   }, [stopAll]);
 
@@ -284,12 +383,16 @@ export function useSimulation() {
   return {
     simId,
     state,
+    branchCompare,
     loading,
     error,
     recentSessions,
     start,
     openSession,
     sendIntervention,
+    forkAtNode,
+    activateBranch,
+    setBranchPacing,
     doExport,
     refresh,
     refreshRecentSessions,

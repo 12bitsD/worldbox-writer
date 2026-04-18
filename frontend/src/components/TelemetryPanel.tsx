@@ -17,7 +17,16 @@ type GroupMode = "none" | "tick" | "agent";
 const MAX_VISIBLE_EVENTS = 120;
 
 function summarizePayload(payload: Record<string, unknown>): string | null {
-  const previewKeys = ["reason", "hint", "preview", "node_id", "title", "context"];
+  const previewKeys = [
+    "reason",
+    "hint",
+    "preview",
+    "node_id",
+    "title",
+    "context",
+    "branch_id",
+    "pacing",
+  ];
   const parts = previewKeys
     .filter((key) => payload[key] != null)
     .map((key) => `${key}: ${String(payload[key])}`);
@@ -216,6 +225,19 @@ export function TelemetryPanel({ events, isRunning }: TelemetryPanelProps) {
                         >
                           {event.span_kind}
                         </span>
+                        <span
+                          style={{
+                            fontSize: 10,
+                            padding: "1px 6px",
+                            border: "1px solid var(--color-border)",
+                            color:
+                              event.branch_id === "main"
+                                ? "var(--color-text-muted)"
+                                : "var(--color-warning)",
+                          }}
+                        >
+                          {event.branch_id}
+                        </span>
                         {event.request_id && (
                           <span style={{ fontSize: 10, color: "var(--color-text-muted)", fontFamily: "monospace" }}>
                             req: {event.request_id}
@@ -227,6 +249,11 @@ export function TelemetryPanel({ events, isRunning }: TelemetryPanelProps) {
                         {event.parent_event_id && (
                           <span style={{ fontSize: 10, color: "var(--color-text-muted)", fontFamily: "monospace" }}>
                             parent: {event.parent_event_id}
+                          </span>
+                        )}
+                        {event.forked_from_node_id && (
+                          <span style={{ fontSize: 10, color: "var(--color-text-muted)", fontFamily: "monospace" }}>
+                            fork: {event.forked_from_node_id}
                           </span>
                         )}
                         {event.provider && (

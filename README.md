@@ -201,7 +201,7 @@ worldbox-writer/
 | Sprint 0-5 | MVP 核心能力闭环（推演引擎、UI、持久化、干预编辑） | ✅ 已发布 (v0.5.0) |
 | Sprint 6 | 看见世界：关系图谱 + 遥测基础 | ✅ 完成（P0 闭环已交付） |
 | Sprint 7 | 可视化补齐与稳定性加固 | ✅ 完成（v0.6.x 范围已交付） |
-| Sprint 8 | 掌控世界：时间线分叉与多分支控制 | 📋 计划中 |
+| Sprint 8 | 掌控世界：时间线分叉与多分支控制 | ✅ 完成（branching loop 已交付） |
 | Sprint 9 | 创作作品：智能记忆、多模型路由与创作工作台 | 📋 计划中 |
 
 **当前版本**：v0.5.0
@@ -209,9 +209,10 @@ worldbox-writer/
 - 已发布能力（v0.5.0）：实时事件流、本地 SQLite 持久化、等待态编辑能力。
 - 已完成的 Sprint 6 交付：结构化关系 schema、Telemetry v1、关系图谱面板、Telemetry 面板、历史会话恢复、最近会话入口、前端 fixtures 自动化验证、telemetry 恢复和关系推断的数据正确性修复。
 - 已完成的 Sprint 7 交付：关系图谱聚焦与边详情、Telemetry 按 Agent/Stage 过滤与分组、统一 LLM 调用元数据、Telemetry 关联字段、实时/历史/刷新一致性修复、GateKeeper 拒绝自愈、长日志可读性与最小性能护栏。
+- 已完成的 Sprint 8 交付：历史节点分叉与续跑、Branch Seed Snapshot v1、多分支查看与切换、基础 compare 摘要、分支级 pacing 控制、branch-aware telemetry、Feature Flag + rollback runbook。
 - 架构预留：`StoryNode` 和 `WorldState` 已预留 `branch_id` 和 `merged_from_ids`，为未来的分支管理奠定基础。
-- 测试状态：`make lint` 通过；`make test` 通过，其中后端 `80 passed`，前端 `11 passed`。`make typecheck` 通过。`make integration` 依赖可达的真实 LLM Provider，当前无网络环境下会在首个真实请求处报 `APIConnectionError`。
-- 当前迭代状态：Sprint 7 已完成，后续进入 Sprint 8 的时间线分叉与多分支控制。
+- 测试状态：`make lint` 通过；`make test` 通过；`make typecheck` 通过。`make integration` 依赖可达的真实 LLM Provider，当前无网络环境下会在首个真实请求处报 `APIConnectionError`。
+- 当前迭代状态：Sprint 8 已完成，后续进入 Sprint 9 的创作工作台与智能路由阶段。
 
 ---
 
@@ -223,8 +224,12 @@ worldbox-writer/
 | :--- | :--- | :--- |
 | `POST` | `/api/simulate/start` | 启动新的故事推演 |
 | `GET` | `/api/simulate/{id}` | 获取推演当前状态 |
+| `POST` | `/api/simulate/{id}/branch` | 从指定历史节点创建新分支并可选择立即续跑 |
+| `POST` | `/api/simulate/{id}/branch/switch` | 切换当前活跃分支 |
+| `GET` | `/api/simulate/{id}/branch/compare` | 查看主线/支线的基础对比摘要 |
+| `POST` | `/api/simulate/{id}/branch/pacing` | 设置当前分支的节奏档位 |
 | `POST` | `/api/simulate/{id}/intervene` | 提交用户干预指令 |
-| `GET` | `/api/simulate/{id}/export` | 导出故事内容 |
+| `GET` | `/api/simulate/{id}/export` | 导出故事内容，支持按 `branch` 查询参数导出指定世界线 |
 | `GET` | `/api/health` | 健康检查 + LLM 配置信息 |
 | `GET` | `/api/simulate/{id}/stream` | 获取实时推演事件流 (SSE) |
 | `PATCH` | `/api/simulate/{id}/characters/{char_id}` | 编辑角色属性（仅 waiting 状态） |

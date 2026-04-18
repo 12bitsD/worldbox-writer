@@ -224,6 +224,10 @@ class TelemetryEvent(BaseModel):
     provider: Optional[str] = None
     model: Optional[str] = None
     duration_ms: Optional[int] = None
+    branch_id: str = "main"
+    forked_from_node_id: Optional[str] = None
+    source_branch_id: Optional[str] = None
+    source_sim_id: Optional[str] = None
     ts: str
 
 

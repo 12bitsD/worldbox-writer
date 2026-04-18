@@ -17,6 +17,7 @@ function buildNode(overrides: Partial<StoryNode> = {}): StoryNode {
     rendered_text: null,
     tick: 1,
     requires_intervention: false,
+    parent_ids: [],
     branch_id: "main",
     merged_from_ids: [],
     ...overrides,
@@ -40,6 +41,10 @@ function buildTelemetry(overrides: Partial<TelemetryEvent> = {}): TelemetryEvent
     provider: null,
     model: null,
     duration_ms: null,
+    branch_id: "main",
+    forked_from_node_id: null,
+    source_branch_id: null,
+    source_sim_id: null,
     ts: "2026-01-01T00:00:01+00:00",
     ...overrides,
   };
@@ -55,6 +60,7 @@ function buildState(overrides: Partial<SimulationState> = {}): SimulationState {
     telemetry: [],
     intervention_context: null,
     error: null,
+    features: { branching_enabled: true },
     ...overrides,
   };
 }
@@ -108,5 +114,55 @@ describe("simulationState helpers", () => {
     expect(merged.nodes).toHaveLength(1);
     expect(merged.nodes[0].rendered_text).toBe("最终正文");
     expect(merged.telemetry).toHaveLength(2);
+  });
+
+  it("mergeSimulationSnapshot replaces nodes and telemetry when active branch changes", () => {
+    const current = buildState({
+      world: {
+        title: "世界",
+        premise: "前提",
+        tick: 3,
+        is_complete: false,
+        characters: [],
+        factions: [],
+        locations: [],
+        world_rules: [],
+        constraints: [],
+        branches: {
+          main: { label: "主线", forked_from_node: null },
+        },
+        active_branch_id: "main",
+      },
+      nodes: [buildNode({ id: "main-node" })],
+      telemetry: [buildTelemetry({ event_id: "main-evt" })],
+    });
+    const incoming = buildState({
+      world: {
+        title: "世界",
+        premise: "前提",
+        tick: 4,
+        is_complete: false,
+        characters: [],
+        factions: [],
+        locations: [],
+        world_rules: [],
+        constraints: [],
+        branches: {
+          main: { label: "主线", forked_from_node: null },
+          branch_a: { label: "支线A", forked_from_node: "main-node" },
+        },
+        active_branch_id: "branch_a",
+      },
+      nodes: [buildNode({ id: "branch-node", branch_id: "branch_a" })],
+      telemetry: [buildTelemetry({ event_id: "branch-evt", branch_id: "branch_a" })],
+    });
+
+    const merged = mergeSimulationSnapshot(current, incoming);
+
+    expect(merged.world?.active_branch_id).toBe("branch_a");
+    expect(merged.nodes).toHaveLength(1);
+    expect(merged.nodes[0].id).toBe("branch-node");
+    expect(merged.telemetry).toHaveLength(1);
+    expect(merged.telemetry[0].event_id).toBe("branch-evt");
   });
 });

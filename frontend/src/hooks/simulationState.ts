@@ -96,9 +96,21 @@ export function mergeSimulationSnapshot(
     return incoming;
   }
 
-  let nodes = current.nodes;
-  for (const node of incoming.nodes) {
-    nodes = upsertNode(nodes, node);
+  const currentBranchId = current.world?.active_branch_id ?? "main";
+  const incomingBranchId = incoming.world?.active_branch_id ?? "main";
+  const shouldReplaceTimeline =
+    current.sim_id !== incoming.sim_id || currentBranchId !== incomingBranchId;
+
+  let nodes = incoming.nodes;
+  let telemetry = incoming.telemetry;
+
+  if (!shouldReplaceTimeline) {
+    nodes = current.nodes;
+    for (const node of incoming.nodes) {
+      nodes = upsertNode(nodes, node);
+    }
+
+    telemetry = mergeTelemetryEvents(current.telemetry, incoming.telemetry);
   }
 
   return {
@@ -106,7 +118,7 @@ export function mergeSimulationSnapshot(
     ...incoming,
     world: incoming.world ?? current.world,
     nodes,
-    telemetry: mergeTelemetryEvents(current.telemetry, incoming.telemetry),
+    telemetry,
     intervention_context:
       incoming.intervention_context ?? current.intervention_context,
     error: incoming.error ?? current.error,

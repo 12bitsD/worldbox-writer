@@ -1,6 +1,10 @@
 // WorldBox Writer — API Client
 
-import type { SimulationState, ExportData } from "../types";
+import type {
+  BranchCompareResponse,
+  ExportData,
+  SimulationState,
+} from "../types";
 
 const BASE = "/api";
 
@@ -17,8 +21,12 @@ export async function startSimulation(
   return res.json();
 }
 
-export async function getSimulation(simId: string): Promise<SimulationState> {
-  const res = await fetch(`${BASE}/simulate/${simId}`);
+export async function getSimulation(
+  simId: string,
+  branchId?: string
+): Promise<SimulationState> {
+  const query = branchId ? `?branch=${encodeURIComponent(branchId)}` : "";
+  const res = await fetch(`${BASE}/simulate/${simId}${query}`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
@@ -35,10 +43,67 @@ export async function intervene(
   if (!res.ok) throw new Error(await res.text());
 }
 
-export async function exportSimulation(simId: string): Promise<ExportData> {
-  const res = await fetch(`${BASE}/simulate/${simId}/export`);
+export async function exportSimulation(
+  simId: string,
+  branchId?: string
+): Promise<ExportData> {
+  const query = branchId ? `?branch=${encodeURIComponent(branchId)}` : "";
+  const res = await fetch(`${BASE}/simulate/${simId}/export${query}`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
+}
+
+export async function createBranch(
+  simId: string,
+  input: {
+    source_node_id: string;
+    label?: string;
+    switch_immediately?: boolean;
+    continue_simulation?: boolean;
+    pacing?: "calm" | "balanced" | "intense";
+  }
+): Promise<SimulationState> {
+  const res = await fetch(`${BASE}/simulate/${simId}/branch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function switchBranch(
+  simId: string,
+  branchId: string
+): Promise<SimulationState> {
+  const res = await fetch(`${BASE}/simulate/${simId}/branch/switch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ branch_id: branchId }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function compareBranches(
+  simId: string
+): Promise<BranchCompareResponse> {
+  const res = await fetch(`${BASE}/simulate/${simId}/branch/compare`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function updateBranchPacing(
+  simId: string,
+  branchId: string,
+  pacing: "calm" | "balanced" | "intense"
+): Promise<void> {
+  const res = await fetch(`${BASE}/simulate/${simId}/branch/pacing`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ branch_id: branchId, pacing }),
+  });
+  if (!res.ok) throw new Error(await res.text());
 }
 
 export async function listSessions(): Promise<

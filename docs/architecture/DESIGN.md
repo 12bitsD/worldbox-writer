@@ -77,6 +77,17 @@
 - **关系型数据库 (RDBMS)**：PostgreSQL 或 SQLite。
   - *用途*：存储用户账户、项目元数据、存档快照（Save States）。
 
+#### Sprint 8 补充：Branch Seed Snapshot v1
+
+为支撑时间线分叉，SQLite 在原有 `sessions.state_json` 之外，补充了按 `sim_id + node_id + branch_id` 建模的 `branch_seed_snapshots` 表。
+
+- **seed 形态**：v1 直接保存完整 `WorldState` JSON snapshot，而不是 diff。
+- **写入时机**：每次会话持久化时，如果当前世界存在 `current_node_id`，就为该历史节点 upsert 一份 snapshot。
+- **恢复语义**：后续 `fork_at_node()` 必须从对应节点的 snapshot 恢复，而不是重放整条 LLM 历史。
+- **兼容策略**：旧会话若不存在对应 snapshot，系统应显式返回“该节点暂不支持分叉”，而不是静默降级或伪造支线。
+
+当前不采用“回放整条历史再从中途分叉”的原因很直接：LLM 推演并非严格确定性过程。即使提示词和历史节点文本相同，重放得到的中间世界状态、角色记忆和后续候选事件也可能发生漂移。对于 Sprint 8 的首个 branching release，优先级是**可恢复、可验证、可解释**，而不是最小存储占用。
+
 ### 4.3 大语言模型接入 (LLM Integration)
 - **云端 API**：OpenAI (GPT-4o), Anthropic (Claude 3.5 Sonnet)。
   - *用途*：用于复杂的逻辑推理、边界校验和高质量文本渲染。

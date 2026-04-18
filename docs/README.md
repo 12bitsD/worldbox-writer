@@ -45,6 +45,7 @@
 - [Sprint 6 Demo Script](sprints/SPRINT_6_DEMO_SCRIPT.md)
 - [Sprint 7-9 计划](sprints/FINAL_SPRINT_7_8_9_PLAN.md)
 - [Sprint 7 任务拆解](sprints/SPRINT_7_TASK_BREAKDOWN.md)
+- [Sprint 8 任务拆解](sprints/SPRINT_8_TASK_BREAKDOWN.md)
 
 ## 6. 实验与模板
 
