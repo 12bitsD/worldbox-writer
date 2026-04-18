@@ -1,7 +1,7 @@
 # 文档导航
 
 **文档状态**：Active (v0.6.0+)  
-**最后更新**：2026-04-18
+**最后更新**：2026-04-19
 
 本文档用于整理仓库内的文档入口，避免信息分散在多个目录中难以查找。
 
@@ -46,6 +46,8 @@
 - [Sprint 7-9 计划](sprints/FINAL_SPRINT_7_8_9_PLAN.md)
 - [Sprint 7 任务拆解](sprints/SPRINT_7_TASK_BREAKDOWN.md)
 - [Sprint 8 任务拆解](sprints/SPRINT_8_TASK_BREAKDOWN.md)
+- [Sprint 8.5 计划](sprints/SPRINT_8_5_PLAN.md)
+- [Sprint 8.5 任务拆解](sprints/SPRINT_8_5_TASK_BREAKDOWN.md)
 
 ## 6. 实验与模板
 

@@ -6,8 +6,6 @@ WorldBox Writer — Simulation Engine (LangGraph StateGraph).
      ↓
   director_node      (首次：解析前提，初始化世界骨架)
      ↓
-  world_builder_node (首次：扩展世界设定，填充势力/地点/历史)
-     ↓
   actor_node         (角色决策，生成候选事件)
      ↓
   gate_keeper_node   (校验约束，过滤非法事件)
@@ -15,6 +13,8 @@ WorldBox Writer — Simulation Engine (LangGraph StateGraph).
   node_detector_node (固化节点，判断是否需要干预)
      ↓ (conditional)
   narrator_node      (渲染小说文本)
+     ↓ (conditional)
+  world_builder_node (首次：在第一幕开始可见后补全世界细节)
      ↓ (conditional)
   actor_node (next tick) | END
 """
@@ -413,6 +413,7 @@ def world_builder_node(state: SimulationState) -> Dict[str, Any]:
         },
         **llm_fields,
     )
+    enriched_world.metadata["world_builder_completed"] = True
     return {"world": enriched_world, "world_built": True}
 
 
@@ -847,8 +848,27 @@ def should_continue(
 
 def after_narrator(
     state: SimulationState,
+) -> Literal["world_builder_node", "actor_node", "__end__"]:
+    """After narrator: optionally enrich the world, then continue or end."""
+    world = state["world"]
+    needs_intervention = state.get("needs_intervention", False)
+
+    if needs_intervention:
+        return "__end__"
+
+    if not state.get("world_built"):
+        return "world_builder_node"
+
+    if world.is_complete:
+        return "__end__"
+
+    return "actor_node"
+
+
+def after_world_builder(
+    state: SimulationState,
 ) -> Literal["actor_node", "__end__"]:
-    """After narrator: loop back to actor or end."""
+    """After deferred world enrichment: continue or finish."""
     world = state["world"]
     needs_intervention = state.get("needs_intervention", False)
 
@@ -875,8 +895,7 @@ def build_simulation_graph():
     graph.add_node("narrator_node", narrator_node)
 
     graph.add_edge(START, "director_node")
-    graph.add_edge("director_node", "world_builder_node")
-    graph.add_edge("world_builder_node", "actor_node")
+    graph.add_edge("director_node", "actor_node")
     graph.add_edge("actor_node", "gate_keeper_node")
     graph.add_edge("gate_keeper_node", "node_detector_node")
     graph.add_conditional_edges(
@@ -887,6 +906,15 @@ def build_simulation_graph():
     graph.add_conditional_edges(
         "narrator_node",
         after_narrator,
+        {
+            "world_builder_node": "world_builder_node",
+            "actor_node": "actor_node",
+            "__end__": END,
+        },
+    )
+    graph.add_conditional_edges(
+        "world_builder_node",
+        after_world_builder,
         {"actor_node": "actor_node", "__end__": END},
     )
 
@@ -930,9 +958,11 @@ def run_simulation(
     if initial_world is not None:
         world = initial_world.model_copy(deep=True)
         memory = initial_memory or rebuild_memory_from_world(world)
+        world_builder_completed = bool(world.metadata.get("world_builder_completed"))
     else:
         world = WorldState(premise=premise, title=f"《{premise[:20]}》")
         memory = MemoryManager(short_term_limit=15)
+        world_builder_completed = False
 
     if world.pending_intervention and intervention_callback:
         user_input = intervention_callback(world.intervention_context)
@@ -945,7 +975,7 @@ def run_simulation(
         "validation_passed": False,
         "needs_intervention": False,
         "initialized": initial_world is not None,
-        "world_built": initial_world is not None,
+        "world_built": world_builder_completed,
         "max_ticks": max_ticks,
         "error": "",
         "sim_id": sim_id,

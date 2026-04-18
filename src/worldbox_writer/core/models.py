@@ -342,6 +342,7 @@ class WorldState(BaseModel):
     # Simulation metadata
     tick: int = 0  # Number of story steps simulated so far
     is_complete: bool = False
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
     model_config = {"frozen": False}
 

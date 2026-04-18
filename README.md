@@ -210,9 +210,10 @@ worldbox-writer/
 - 已完成的 Sprint 6 交付：结构化关系 schema、Telemetry v1、关系图谱面板、Telemetry 面板、历史会话恢复、最近会话入口、前端 fixtures 自动化验证、telemetry 恢复和关系推断的数据正确性修复。
 - 已完成的 Sprint 7 交付：关系图谱聚焦与边详情、Telemetry 按 Agent/Stage 过滤与分组、统一 LLM 调用元数据、Telemetry 关联字段、实时/历史/刷新一致性修复、GateKeeper 拒绝自愈、长日志可读性与最小性能护栏。
 - 已完成的 Sprint 8 交付：历史节点分叉与续跑、Branch Seed Snapshot v1、多分支查看与切换、基础 compare 摘要、分支级 pacing 控制、branch-aware telemetry、Feature Flag + rollback runbook。
+- 已完成的 Sprint 8.5 交付：初始化阶段进度可见化、SSE 首包优化、首个正文关键路径裁剪、主区域 progressive feedback 面板。
 - 架构预留：`StoryNode` 和 `WorldState` 已预留 `branch_id` 和 `merged_from_ids`，为未来的分支管理奠定基础。
 - 测试状态：`make lint` 通过；`make test` 通过；`make typecheck` 通过。`make integration` 依赖可达的真实 LLM Provider，当前无网络环境下会在首个真实请求处报 `APIConnectionError`。
-- 当前迭代状态：Sprint 8 已完成，后续进入 Sprint 9 的创作工作台与智能路由阶段。
+- 当前迭代状态：Sprint 8.5 已完成，后续进入 Sprint 9 的创作工作台与智能路由阶段。
 
 ---
 

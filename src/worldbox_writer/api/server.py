@@ -303,7 +303,7 @@ def _build_simulation_payload(
             "premise": premise,
             "world": None,
             "nodes": [],
-            "telemetry": [],
+            "telemetry": _serialize_telemetry(telemetry_events),
             "intervention_context": intervention_context,
             "error": error,
             "features": _branching_feature_payload(),
@@ -1276,24 +1276,40 @@ async def stream_simulation(sim_id: str):
     async def event_generator():
         terminal_status_sent = False
         while True:
+            events: List[Dict[str, Any]] = []
+            try:
+                events.append(
+                    await asyncio.to_thread(session.token_queue.get, True, 0.25)
+                )
+            except queue.Empty:
+                pass
+
             while True:
                 try:
-                    token_event = session.token_queue.get_nowait()
-                    data = json.dumps(token_event, ensure_ascii=False)
-                    if token_event.get("type") == "status" and token_event.get(
-                        "status"
-                    ) in ("complete", "error"):
-                        terminal_status_sent = True
-                    yield f"data: {data}\n\n"
+                    events.append(session.token_queue.get_nowait())
                 except queue.Empty:
                     break
+
+            for token_event in events:
+                data = json.dumps(token_event, ensure_ascii=False)
+                if token_event.get("type") == "status" and token_event.get(
+                    "status"
+                ) in ("complete", "error"):
+                    terminal_status_sent = True
+                yield f"data: {data}\n\n"
 
             if terminal_status_sent and session.token_queue.empty():
                 break
 
-            await asyncio.sleep(0.5)
-
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/api/sessions")

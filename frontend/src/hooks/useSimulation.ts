@@ -251,7 +251,26 @@ export function useSimulation() {
         setSimId(res.sim_id);
         window.sessionStorage.setItem(LAST_SIM_ID_KEY, res.sim_id);
         void refreshRecentSessions();
-        // Initial fetch for immediate state
+
+        // Publish an immediate placeholder state so the UI can attach SSE
+        // and render telemetry/progress before the first snapshot completes.
+        setState({
+          sim_id: res.sim_id,
+          status: res.status as SimulationState["status"],
+          premise,
+          world: null,
+          nodes: [],
+          telemetry: [],
+          intervention_context: null,
+          error: null,
+          features: { branching_enabled: false },
+        });
+
+        // Start SSE first so early telemetry and narrator tokens are not gated
+        // behind an extra round-trip for the initial GET snapshot.
+        startSSE(res.sim_id);
+
+        // Initial fetch for structured state reconciliation.
         const s = await getSimulation(res.sim_id);
         setState((prev) => mergeSimulationSnapshot(prev, s));
         if (s.features.branching_enabled) {
@@ -259,8 +278,6 @@ export function useSimulation() {
         } else {
           setBranchCompare(null);
         }
-        // Start SSE for real-time updates
-        startSSE(res.sim_id);
       } catch (e) {
         setError(String(e));
       } finally {

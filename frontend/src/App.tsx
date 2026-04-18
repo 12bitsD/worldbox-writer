@@ -11,6 +11,7 @@ import { EditPanel } from "./components/EditPanel";
 import { RelationshipPanel } from "./components/RelationshipPanel";
 import { TelemetryPanel } from "./components/TelemetryPanel";
 import { BranchPanel } from "./components/BranchPanel";
+import { ProgressPanel } from "./components/ProgressPanel";
 
 export default function App() {
   const {
@@ -36,6 +37,12 @@ export default function App() {
   const isRunning = state?.status === "running" || state?.status === "initializing";
   const isWaiting = state?.status === "waiting";
   const isComplete = state?.status === "complete";
+  const showProgressPanel = Boolean(
+    state &&
+      (state.status === "initializing" || state.status === "running") &&
+      !state.nodes.some((node) => Boolean(node.rendered_text)) &&
+      (state.telemetry.length > 0 || state.nodes.length === 0)
+  );
 
   const handleSkip = () => {
     sendIntervention("按照故事自然发展，不干预");
@@ -176,6 +183,16 @@ export default function App() {
           }}
         >
           <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
+            {state && (
+              <>
+                {showProgressPanel && (
+                  <ProgressPanel
+                    events={state.telemetry}
+                    isRunning={isRunning}
+                  />
+                )}
+              </>
+            )}
             {state && (
               <StoryFeed
                 nodes={state.nodes}

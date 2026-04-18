@@ -384,6 +384,41 @@ class TestGetSimulation:
         assert body["telemetry"][0]["trace_id"] == "trace-1"
         assert body["telemetry"][0]["request_id"] == "req-1"
 
+    def test_get_simulation_keeps_initializing_telemetry_without_world(self, client):
+        """Initialization progress should stay visible before the first world snapshot."""
+        sim_id = "init-telemetry"
+        session = SimulationSession(sim_id=sim_id, premise="测试前提", max_ticks=3)
+        session.status = "initializing"
+        session.telemetry_events.append(
+            server_module.TelemetryEvent(
+                event_id="evt-init",
+                sim_id=sim_id,
+                trace_id="trace-init",
+                request_id="req-init",
+                tick=0,
+                agent="director",
+                stage="world_initialized",
+                level=server_module.TelemetryLevel.INFO,
+                span_kind=server_module.TelemetrySpanKind.LLM,
+                message="世界骨架初始化完成",
+                payload={"characters": 3},
+                provider="openai",
+                model="gpt-4.1-mini",
+                duration_ms=222,
+                ts="2026-01-01T00:00:00+00:00",
+            )
+        )
+        _sessions[sim_id] = session
+
+        res = client.get(f"/api/simulate/{sim_id}")
+
+        assert res.status_code == 200
+        body = res.json()
+        assert body["world"] is None
+        assert body["telemetry"][0]["event_id"] == "evt-init"
+        assert body["telemetry"][0]["stage"] == "world_initialized"
+        assert body["telemetry"][0]["duration_ms"] == 222
+
     def test_get_simulation_backfills_legacy_node_and_telemetry_fields(self, client):
         """Sessions loaded from DB should backfill Sprint 7 defaults for old payloads."""
         world = WorldState(title="旧世界", premise="旧前提")
