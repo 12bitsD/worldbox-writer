@@ -32,7 +32,10 @@ LLM 客户端工厂模块
 from __future__ import annotations
 
 import os
-from typing import Callable, Optional
+import time
+from contextvars import ContextVar
+from typing import Any, Callable, Optional, cast
+from uuid import uuid4
 
 from openai import OpenAI
 
@@ -113,6 +116,25 @@ def _load_dotenv() -> None:
 
 
 _load_dotenv()
+
+
+# ---------------------------------------------------------------------------
+# Per-call metadata
+# ---------------------------------------------------------------------------
+
+_LAST_LLM_CALL_METADATA: ContextVar[Optional[dict[str, Any]]] = ContextVar(
+    "_LAST_LLM_CALL_METADATA", default=None
+)
+
+
+def _set_last_llm_call_metadata(metadata: dict[str, Any]) -> None:
+    _LAST_LLM_CALL_METADATA.set(metadata)
+
+
+def get_last_llm_call_metadata() -> Optional[dict[str, Any]]:
+    """Return metadata captured for the most recent chat_completion call."""
+    metadata = _LAST_LLM_CALL_METADATA.get()
+    return dict(metadata) if metadata else None
 
 
 # ---------------------------------------------------------------------------
@@ -222,6 +244,8 @@ def chat_completion(
     model = get_model_name(role)
     provider = _detect_provider()
     extra_body = _get_extra_body(provider)
+    request_id = f"llm_{uuid4().hex[:12]}"
+    started_at = time.perf_counter()
 
     # 构建公共参数
     kwargs = dict(
@@ -235,26 +259,53 @@ def chat_completion(
     if top_p is not None:
         kwargs["top_p"] = top_p
 
-    if on_token is not None:
-        # 流式模式
-        kwargs["stream"] = True
-        response = client.chat.completions.create(**kwargs)
-        collected = []
-        for chunk in response:
-            if not chunk.choices:
-                # 最后一个 usage chunk，choices 为空
-                continue
-            delta = chunk.choices[0].delta
-            # 跳过 reasoning_content（thinking 模式的中间推理）
-            content = delta.content if delta and delta.content else None
-            if content:
-                collected.append(content)
-                on_token(content)
-        return "".join(collected)
-    else:
-        # 非流式模式（原有行为）
-        response = client.chat.completions.create(**kwargs)
-        return response.choices[0].message.content
+    try:
+        if on_token is not None:
+            # 流式模式
+            kwargs["stream"] = True
+            response = client.chat.completions.create(**cast(Any, kwargs))
+            collected = []
+            for chunk in response:
+                if not chunk.choices:
+                    # 最后一个 usage chunk，choices 为空
+                    continue
+                delta = chunk.choices[0].delta
+                # 跳过 reasoning_content（thinking 模式的中间推理）
+                content = delta.content if delta and delta.content else None
+                if content:
+                    collected.append(content)
+                    on_token(content)
+            text = "".join(collected)
+        else:
+            # 非流式模式（原有行为）
+            response = client.chat.completions.create(**cast(Any, kwargs))
+            text = response.choices[0].message.content or ""
+
+        _set_last_llm_call_metadata(
+            {
+                "request_id": request_id,
+                "provider": provider,
+                "model": model,
+                "role": role,
+                "stream": on_token is not None,
+                "duration_ms": int((time.perf_counter() - started_at) * 1000),
+                "status": "completed",
+            }
+        )
+        return text
+    except Exception:
+        _set_last_llm_call_metadata(
+            {
+                "request_id": request_id,
+                "provider": provider,
+                "model": model,
+                "role": role,
+                "stream": on_token is not None,
+                "duration_ms": int((time.perf_counter() - started_at) * 1000),
+                "status": "failed",
+            }
+        )
+        raise
 
 
 def get_provider_info() -> dict:

@@ -200,7 +200,7 @@ worldbox-writer/
 | :--- | :--- | :--- |
 | Sprint 0-5 | MVP 核心能力闭环（推演引擎、UI、持久化、干预编辑） | ✅ 已发布 (v0.5.0) |
 | Sprint 6 | 看见世界：关系图谱 + 遥测基础 | ✅ 完成（P0 闭环已交付） |
-| Sprint 7 | 可视化补齐与稳定性加固 | 📋 计划中 |
+| Sprint 7 | 可视化补齐与稳定性加固 | ✅ 完成（v0.6.x 范围已交付） |
 | Sprint 8 | 掌控世界：时间线分叉与多分支控制 | 📋 计划中 |
 | Sprint 9 | 创作作品：智能记忆、多模型路由与创作工作台 | 📋 计划中 |
 
@@ -208,9 +208,10 @@ worldbox-writer/
 
 - 已发布能力（v0.5.0）：实时事件流、本地 SQLite 持久化、等待态编辑能力。
 - 已完成的 Sprint 6 交付：结构化关系 schema、Telemetry v1、关系图谱面板、Telemetry 面板、历史会话恢复、最近会话入口、前端 fixtures 自动化验证、telemetry 恢复和关系推断的数据正确性修复。
+- 已完成的 Sprint 7 交付：关系图谱聚焦与边详情、Telemetry 按 Agent/Stage 过滤与分组、统一 LLM 调用元数据、Telemetry 关联字段、实时/历史/刷新一致性修复、GateKeeper 拒绝自愈、长日志可读性与最小性能护栏。
 - 架构预留：`StoryNode` 和 `WorldState` 已预留 `branch_id` 和 `merged_from_ids`，为未来的分支管理奠定基础。
-- 测试状态：后端 L1 纯逻辑测试 `78 passed`；前端 `pnpm test` `5 passed`；L2 集成测试已全面替换 Mock。
-- 当前迭代状态：Sprint 6 已按 P0 完成，后续进入 Sprint 7；图谱交互补齐、日志筛选分组、统一调用链与稳定性护栏继续留在 Sprint 7。
+- 测试状态：`make lint` 通过；`make test` 通过，其中后端 `80 passed`，前端 `11 passed`。`make typecheck` 通过。`make integration` 依赖可达的真实 LLM Provider，当前无网络环境下会在首个真实请求处报 `APIConnectionError`。
+- 当前迭代状态：Sprint 7 已完成，后续进入 Sprint 8 的时间线分叉与多分支控制。
 
 ---
 

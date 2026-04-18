@@ -12,10 +12,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import Any, List, Optional, cast
 
 from worldbox_writer.core.models import NodeType, StoryNode, WorldState
-from worldbox_writer.utils.llm import chat_completion
+from worldbox_writer.utils.llm import chat_completion, get_last_llm_call_metadata
 
 # ---------------------------------------------------------------------------
 # Result types
@@ -127,6 +127,7 @@ class NodeDetector:
     ) -> None:
         self.llm = llm
         self.periodic_interval = periodic_interval
+        self.last_call_metadata: Optional[dict[str, Any]] = None
 
     def evaluate(self, world: WorldState, node: StoryNode) -> InterventionSignal:
         """Evaluate whether this node warrants user intervention."""
@@ -182,8 +183,17 @@ class NodeDetector:
         """Unified LLM call: uses injected llm or falls back to chat_completion."""
         if self.llm is not None:
             response = self.llm.invoke(messages)
-            return response.content
-        return chat_completion(messages, role="node_detector", **kwargs)
+            self.last_call_metadata = {
+                "request_id": "injected-node-detector-call",
+                "provider": "injected",
+                "model": "injected",
+                "role": "node_detector",
+                "status": "completed",
+            }
+            return cast(str, response.content)
+        content = chat_completion(messages, role="node_detector", **kwargs)
+        self.last_call_metadata = get_last_llm_call_metadata()
+        return content
 
     def _contains_high_stakes_keywords(self, node: StoryNode) -> bool:
         text = (node.title + " " + node.description).lower()
@@ -217,7 +227,7 @@ class NodeDetector:
             suggested_options=raw.get("suggested_options", []),
         )
 
-    def _parse_json_response(self, content: str) -> dict:
+    def _parse_json_response(self, content: str) -> dict[str, Any]:
         text = content.strip()
         if text.startswith("```"):
             lines = text.split("\n")
@@ -227,7 +237,7 @@ class NodeDetector:
                 else "\n".join(lines[1:])
             )
         try:
-            return json.loads(text)
+            return cast(dict[str, Any], json.loads(text))
         except json.JSONDecodeError:
             start = text.find("{")
             if start != -1:
@@ -239,7 +249,9 @@ class NodeDetector:
                         depth -= 1
                         if depth == 0:
                             try:
-                                return json.loads(text[start : i + 1])
+                                return cast(
+                                    dict[str, Any], json.loads(text[start : i + 1])
+                                )
                             except json.JSONDecodeError:
                                 break
             return {

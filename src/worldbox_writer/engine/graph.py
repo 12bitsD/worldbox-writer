@@ -21,7 +21,7 @@ WorldBox Writer — Simulation Engine (LangGraph StateGraph).
 
 from __future__ import annotations
 
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Literal, Optional, cast
 
 from langgraph.graph import END, START, StateGraph
 from typing_extensions import TypedDict
@@ -37,7 +37,7 @@ from worldbox_writer.core.models import (
     WorldState,
 )
 from worldbox_writer.memory.memory_manager import MemoryManager
-from worldbox_writer.utils.llm import chat_completion
+from worldbox_writer.utils.llm import chat_completion, get_last_llm_call_metadata
 
 # ---------------------------------------------------------------------------
 # Graph State
@@ -56,7 +56,12 @@ class SimulationState(TypedDict):
     world_built: bool
     max_ticks: int
     error: str
+    sim_id: str
+    trace_id: str
     streaming_callbacks: Optional[Dict]
+
+
+_GATE_KEEPER_SELF_HEAL_ATTEMPTS = 2
 
 
 _POSITIVE_RELATIONSHIP_KEYWORDS = {
@@ -91,6 +96,13 @@ def _emit_telemetry(
     message: str,
     level: str = "info",
     payload: Optional[Dict[str, Any]] = None,
+    trace_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+    parent_event_id: Optional[str] = None,
+    span_kind: str = "event",
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    duration_ms: Optional[int] = None,
 ) -> None:
     """Emit a user-visible telemetry event when a callback is configured."""
     callbacks = state.get("streaming_callbacks") or {}
@@ -104,8 +116,28 @@ def _emit_telemetry(
                 "level": level,
                 "message": message,
                 "payload": payload or {},
+                "trace_id": trace_id or state.get("trace_id", ""),
+                "request_id": request_id,
+                "parent_event_id": parent_event_id,
+                "span_kind": span_kind,
+                "provider": provider,
+                "model": model,
+                "duration_ms": duration_ms,
             }
         )
+
+
+def _llm_telemetry_fields(metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not metadata:
+        return {}
+
+    return {
+        "request_id": metadata.get("request_id"),
+        "span_kind": "llm",
+        "provider": metadata.get("provider"),
+        "model": metadata.get("model"),
+        "duration_ms": metadata.get("duration_ms"),
+    }
 
 
 def _select_character_ids_for_event(
@@ -212,6 +244,46 @@ def _apply_relationship_updates(
     return changed
 
 
+def _revise_candidate_event(
+    world: WorldState,
+    candidate: str,
+    rejection_reason: str,
+    revision_hint: str,
+) -> str:
+    """Ask the LLM to minimally revise a rejected candidate event."""
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是 WorldBox Writer 的边界修正器。"
+                "请根据拒绝原因和修正建议，对候选事件做最小必要修改。"
+                "要求：\n"
+                "1. 保持原事件核心戏剧张力\n"
+                "2. 必须满足修正建议\n"
+                "3. 输出 50-100 字事件描述\n"
+                "4. 只输出修正后的事件，不要解释"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"世界前提：{world.premise}\n\n"
+                f"原候选事件：{candidate}\n\n"
+                f"拒绝原因：{rejection_reason}\n"
+                f"修正建议：{revision_hint}\n\n"
+                "请输出修正后的候选事件："
+            ),
+        },
+    ]
+    return chat_completion(
+        messages,
+        role="gate_keeper",
+        temperature=0.2,
+        max_tokens=220,
+        top_p=0.9,
+    ).strip()
+
+
 # ---------------------------------------------------------------------------
 # Node Functions
 # ---------------------------------------------------------------------------
@@ -226,6 +298,7 @@ def director_node(state: SimulationState) -> Dict[str, Any]:
     agent = DirectorAgent()
     # initialize_world(user_premise, existing_world=None)
     updated_world = agent.initialize_world(world.premise, world)
+    llm_fields = _llm_telemetry_fields(agent.last_call_metadata)
     _emit_telemetry(
         state,
         tick=updated_world.tick,
@@ -236,6 +309,7 @@ def director_node(state: SimulationState) -> Dict[str, Any]:
             "characters": len(updated_world.characters),
             "constraints": len(updated_world.constraints),
         },
+        **llm_fields,
     )
     return {"world": updated_world, "initialized": True}
 
@@ -248,6 +322,7 @@ def world_builder_node(state: SimulationState) -> Dict[str, Any]:
     world = state["world"]
     agent = WorldBuilderAgent()
     enriched_world = agent.expand_world(world)
+    llm_fields = _llm_telemetry_fields(agent.last_call_metadata)
     _emit_telemetry(
         state,
         tick=enriched_world.tick,
@@ -258,6 +333,7 @@ def world_builder_node(state: SimulationState) -> Dict[str, Any]:
             "factions": len(enriched_world.factions),
             "locations": len(enriched_world.locations),
         },
+        **llm_fields,
     )
     return {"world": enriched_world, "world_built": True}
 
@@ -327,6 +403,7 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
     candidate = chat_completion(
         messages, role="actor", temperature=0.8, max_tokens=200, top_p=0.95
     )
+    llm_fields = _llm_telemetry_fields(get_last_llm_call_metadata())
     _emit_telemetry(
         state,
         tick=world.tick,
@@ -334,6 +411,7 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
         stage="proposal_generated",
         message="生成了新的候选事件",
         payload={"preview": candidate.strip()[:80]},
+        **llm_fields,
     )
     return {"candidate_event": candidate.strip()}
 
@@ -344,14 +422,19 @@ def gate_keeper_node(state: SimulationState) -> Dict[str, Any]:
     candidate = state.get("candidate_event", "")
 
     agent = GateKeeperAgent()
-    temp_node = StoryNode(
-        title="候选事件",
-        description=candidate,
-        node_type=NodeType.DEVELOPMENT,
-    )
+    attempts = 0
+
+    def validate_candidate(event_text: str):
+        temp_node = StoryNode(
+            title="候选事件",
+            description=event_text,
+            node_type=NodeType.DEVELOPMENT,
+        )
+        validation = agent.validate(world, temp_node)
+        return validation, _llm_telemetry_fields(agent.last_call_metadata)
 
     # Use validate(world, node) — the canonical method
-    result = agent.validate(world, temp_node)
+    result, llm_fields = validate_candidate(candidate)
 
     if not result.is_valid:
         _emit_telemetry(
@@ -365,7 +448,60 @@ def gate_keeper_node(state: SimulationState) -> Dict[str, Any]:
                 "reason": result.rejection_reason,
                 "hint": result.revision_hint,
             },
+            **llm_fields,
         )
+
+        while (
+            attempts < _GATE_KEEPER_SELF_HEAL_ATTEMPTS
+            and result.revision_hint
+            and candidate
+        ):
+            attempts += 1
+            candidate = _revise_candidate_event(
+                world,
+                candidate,
+                result.rejection_reason,
+                result.revision_hint,
+            )
+            revision_fields = _llm_telemetry_fields(get_last_llm_call_metadata())
+            _emit_telemetry(
+                state,
+                tick=world.tick,
+                agent="gate_keeper",
+                stage="revision_generated",
+                message="边界层根据修正建议生成了新的候选事件",
+                payload={"attempt": attempts, "preview": candidate[:80]},
+                **revision_fields,
+            )
+
+            result, llm_fields = validate_candidate(candidate)
+            if result.is_valid:
+                _emit_telemetry(
+                    state,
+                    tick=world.tick,
+                    agent="gate_keeper",
+                    stage="self_heal_passed",
+                    message="候选事件在自动修正后通过边界校验",
+                    payload={"attempt": attempts},
+                    **llm_fields,
+                )
+                return {"validation_passed": True, "candidate_event": candidate}
+
+            _emit_telemetry(
+                state,
+                tick=world.tick,
+                agent="gate_keeper",
+                stage="self_heal_rejected",
+                level="warning",
+                message="自动修正后的候选事件仍未通过边界校验",
+                payload={
+                    "attempt": attempts,
+                    "reason": result.rejection_reason,
+                    "hint": result.revision_hint,
+                },
+                **llm_fields,
+            )
+
         return {
             "validation_passed": False,
             "candidate_event": (
@@ -380,6 +516,7 @@ def gate_keeper_node(state: SimulationState) -> Dict[str, Any]:
         agent="gate_keeper",
         stage="passed",
         message="候选事件通过边界校验",
+        **llm_fields,
     )
     return {"validation_passed": True}
 
@@ -482,6 +619,7 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
     signal = detector.detect(new_node, world)
     needs_intervention = signal is not None and signal.urgency in ["high", "critical"]
     new_node.requires_intervention = needs_intervention
+    detector_fields = _llm_telemetry_fields(detector.last_call_metadata)
 
     if needs_intervention and signal:
         world.request_intervention(signal.context)
@@ -493,6 +631,7 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
             level="warning",
             message="检测到高优先级分歧，等待用户干预",
             payload={"context": signal.context},
+            **detector_fields,
         )
 
     # Check story completion
@@ -585,6 +724,7 @@ def narrator_node(state: SimulationState) -> Dict[str, Any]:
         top_p=0.95,
         on_token=callbacks.get("on_token"),
     )
+    llm_fields = _llm_telemetry_fields(get_last_llm_call_metadata())
 
     if on_end_cb:
         on_end_cb()
@@ -595,6 +735,7 @@ def narrator_node(state: SimulationState) -> Dict[str, Any]:
         stage="completed",
         message="小说文本渲染完成",
         payload={"node_id": str(current_node.id), "title": current_node.title},
+        **llm_fields,
     )
 
     current_node.rendered_text = prose.strip()
@@ -678,6 +819,8 @@ def build_simulation_graph():
 def run_simulation(
     premise: str,
     max_ticks: int = 8,
+    sim_id: str = "",
+    trace_id: str = "",
     intervention_callback=None,
     on_node_rendered=None,
     on_streaming_token=None,
@@ -713,6 +856,8 @@ def run_simulation(
         "world_built": False,
         "max_ticks": max_ticks,
         "error": "",
+        "sim_id": sim_id,
+        "trace_id": trace_id,
         "streaming_callbacks": (
             {
                 "on_token": on_streaming_token,
@@ -737,7 +882,7 @@ def run_simulation(
     state = initial_state
 
     while True:
-        result = app.invoke(state)
+        result = cast(SimulationState, app.invoke(state))
         final_world = result["world"]
 
         if on_node_rendered and final_world.current_node_id:
@@ -748,8 +893,11 @@ def run_simulation(
         if final_world.pending_intervention and intervention_callback:
             user_input = intervention_callback(final_world.intervention_context)
             final_world.resolve_intervention(user_input)
-            state = {**result, "world": final_world, "needs_intervention": False}
+            state = cast(
+                SimulationState,
+                {**result, "world": final_world, "needs_intervention": False},
+            )
         else:
             break
 
-    return result["world"]
+    return cast(WorldState, result["world"])

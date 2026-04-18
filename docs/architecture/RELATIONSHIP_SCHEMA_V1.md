@@ -1,6 +1,6 @@
 # Relationship Schema v1
 
-本文档定义 Sprint 6 开始使用的角色关系结构，用于统一：
+本文档定义 Sprint 6 引入、并在 Sprint 7 继续沿用的角色关系结构，用于统一：
 - 后端 `WorldState` / `Character` 模型
 - `GET /api/simulate/{id}` 响应
 - SSE 后续关系图谱消费格式
@@ -59,4 +59,11 @@
 
 - v1 优先保证可解释、可持久化、可前端消费。
 - v1 不追求复杂社交模拟。
-- 更复杂的关系演化逻辑和交互展示留给 Sprint 7 继续补齐。
+
+## Sprint 7 落地结果
+
+Sprint 7 没有改动这份结构的核心字段，而是基于同一份 schema 补齐了前端交互能力：
+
+- 关系图谱支持节点选中与一跳聚焦。
+- 边详情直接消费 `label`、`affinity`、`note`、`updated_at_tick`。
+- 历史会话恢复时继续使用同一份结构化关系数据，不再依赖前端临时推断。

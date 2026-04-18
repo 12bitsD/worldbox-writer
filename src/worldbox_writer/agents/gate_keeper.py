@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Any, List, Optional
+from typing import Any, List, Optional, cast
 
 from worldbox_writer.core.models import (
     Constraint,
@@ -20,7 +20,7 @@ from worldbox_writer.core.models import (
     StoryNode,
     WorldState,
 )
-from worldbox_writer.utils.llm import chat_completion
+from worldbox_writer.utils.llm import chat_completion, get_last_llm_call_metadata
 
 # ---------------------------------------------------------------------------
 # Result types
@@ -97,6 +97,7 @@ class GateKeeperAgent:
 
     def __init__(self, llm: Any = None) -> None:
         self.llm = llm
+        self.last_call_metadata: Optional[dict[str, Any]] = None
 
     def validate(self, world: WorldState, node: StoryNode) -> ValidationResult:
         """Validate a proposed story node against all active constraints."""
@@ -124,12 +125,21 @@ class GateKeeperAgent:
         """Unified LLM call: uses injected llm or falls back to chat_completion."""
         if self.llm is not None:
             response = self.llm.invoke(messages)
-            return response.content
-        return chat_completion(messages, role="gate_keeper", **kwargs)
+            self.last_call_metadata = {
+                "request_id": "injected-gate-keeper-call",
+                "provider": "injected",
+                "model": "injected",
+                "role": "gate_keeper",
+                "status": "completed",
+            }
+            return cast(str, response.content)
+        content = chat_completion(messages, role="gate_keeper", **kwargs)
+        self.last_call_metadata = get_last_llm_call_metadata()
+        return content
 
     def _call_llm_for_validation(
         self, constraints: List[Constraint], node: StoryNode
-    ) -> dict:
+    ) -> dict[str, Any]:
         constraints_text = "\n".join(
             f"- [{c.severity.value.upper()}] {c.name}: {c.rule}" for c in constraints
         )
@@ -146,7 +156,7 @@ class GateKeeperAgent:
         return self._parse_json_response(response)
 
     def _build_result(
-        self, data: dict, active_constraints: List[Constraint]
+        self, data: dict[str, Any], active_constraints: List[Constraint]
     ) -> ValidationResult:
         violations: List[ConstraintViolation] = []
         constraint_lookup = {c.name: c for c in active_constraints}
@@ -183,7 +193,7 @@ class GateKeeperAgent:
             rejection_reason=rejection_reason,
         )
 
-    def _parse_json_response(self, content: str) -> dict:
+    def _parse_json_response(self, content: str) -> dict[str, Any]:
         text = content.strip()
         if text.startswith("```"):
             lines = text.split("\n")
@@ -193,7 +203,7 @@ class GateKeeperAgent:
                 else "\n".join(lines[1:])
             )
         try:
-            return json.loads(text)
+            return cast(dict[str, Any], json.loads(text))
         except json.JSONDecodeError:
             start = text.find("{")
             if start != -1:
@@ -205,7 +215,9 @@ class GateKeeperAgent:
                         depth -= 1
                         if depth == 0:
                             try:
-                                return json.loads(text[start : i + 1])
+                                return cast(
+                                    dict[str, Any], json.loads(text[start : i + 1])
+                                )
                             except json.JSONDecodeError:
                                 break
             return {"violations": [], "revision_hint": ""}

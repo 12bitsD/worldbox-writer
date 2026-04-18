@@ -73,6 +73,15 @@ class TelemetryLevel(str, Enum):
     ERROR = "error"
 
 
+class TelemetrySpanKind(str, Enum):
+    """Broad category for a telemetry event in the call chain."""
+
+    EVENT = "event"
+    LLM = "llm"
+    USER = "user"
+    SYSTEM = "system"
+
+
 # ---------------------------------------------------------------------------
 # Core Models
 # ---------------------------------------------------------------------------
@@ -109,7 +118,7 @@ class Character(BaseModel):
         if not raw_relationships:
             return {}
 
-        normalized: Dict[str, Relationship | Dict[str, Any]] = {}
+        normalized: Dict[str, Relationship] = {}
         for other_id, value in raw_relationships.items():
             if isinstance(value, Relationship):
                 normalized[other_id] = value.model_copy(
@@ -123,23 +132,23 @@ class Character(BaseModel):
                     if value in RelationshipLabel._value2member_map_
                     else RelationshipLabel.UNKNOWN
                 )
-                normalized[other_id] = {
-                    "target_id": other_id,
-                    "affinity": 0,
-                    "label": label,
-                    "note": "" if label != RelationshipLabel.UNKNOWN else value,
-                    "updated_at_tick": None,
-                }
+                normalized[other_id] = Relationship(
+                    target_id=other_id,
+                    affinity=0,
+                    label=label,
+                    note="" if label != RelationshipLabel.UNKNOWN else value,
+                    updated_at_tick=None,
+                )
                 continue
 
             if isinstance(value, dict):
-                normalized[other_id] = {
-                    "target_id": value.get("target_id", other_id),
-                    "affinity": value.get("affinity", 0),
-                    "label": value.get("label", RelationshipLabel.UNKNOWN),
-                    "note": value.get("note", ""),
-                    "updated_at_tick": value.get("updated_at_tick"),
-                }
+                normalized[other_id] = Relationship(
+                    target_id=value.get("target_id", other_id),
+                    affinity=value.get("affinity", 0),
+                    label=value.get("label", RelationshipLabel.UNKNOWN),
+                    note=value.get("note", ""),
+                    updated_at_tick=value.get("updated_at_tick"),
+                )
                 continue
 
             raise TypeError(
@@ -202,12 +211,19 @@ class TelemetryEvent(BaseModel):
 
     event_id: str
     sim_id: str
+    trace_id: str = ""
+    request_id: Optional[str] = None
+    parent_event_id: Optional[str] = None
     tick: int
     agent: str
     stage: str
     level: TelemetryLevel = TelemetryLevel.INFO
+    span_kind: TelemetrySpanKind = TelemetrySpanKind.EVENT
     message: str
     payload: Dict[str, Any] = Field(default_factory=dict)
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    duration_ms: Optional[int] = None
     ts: str
 
 

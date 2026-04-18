@@ -192,12 +192,19 @@ class TestSessionCRUD:
                 {
                     "event_id": "evt-1",
                     "sim_id": "test123",
+                    "trace_id": "trace-1",
+                    "request_id": "req-1",
+                    "parent_event_id": None,
                     "tick": 0,
                     "agent": "director",
                     "stage": "world_initialized",
                     "level": "info",
+                    "span_kind": "llm",
                     "message": "初始化完成",
                     "payload": {},
+                    "provider": "openai",
+                    "model": "gpt-4.1-mini",
+                    "duration_ms": 120,
                     "ts": "2026-01-01T00:00:00+00:00",
                 }
             ],
@@ -210,6 +217,7 @@ class TestSessionCRUD:
         assert loaded["world"] is not None
         assert len(loaded["nodes_rendered"]) == 1
         assert loaded["telemetry_events"][0]["event_id"] == "evt-1"
+        assert loaded["telemetry_events"][0]["trace_id"] == "trace-1"
 
     def test_load_nonexistent_session(self, db_path):
         """Loading a nonexistent session should return None."""

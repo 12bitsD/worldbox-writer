@@ -27,16 +27,24 @@ export interface Relationship {
 }
 
 export type TelemetryLevel = "info" | "warning" | "error";
+export type TelemetrySpanKind = "event" | "llm" | "user" | "system";
 
 export interface TelemetryEvent {
   event_id: string;
   sim_id: string;
+  trace_id: string;
+  request_id: string | null;
+  parent_event_id: string | null;
   tick: number;
   agent: string;
   stage: string;
   level: TelemetryLevel;
+  span_kind: TelemetrySpanKind;
   message: string;
   payload: Record<string, unknown>;
+  provider: string | null;
+  model: string | null;
+  duration_ms: number | null;
   ts: string;
 }
 

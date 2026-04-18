@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import Any, List, Optional, cast
 
 from worldbox_writer.core.models import NodeType, StoryNode, WorldState
-from worldbox_writer.utils.llm import chat_completion
+from worldbox_writer.utils.llm import chat_completion, get_last_llm_call_metadata
 
 # ---------------------------------------------------------------------------
 # Result types
@@ -83,6 +83,7 @@ class NarratorAgent:
 
     def __init__(self, llm: Any = None) -> None:
         self.llm = llm
+        self.last_call_metadata: Optional[dict[str, Any]] = None
 
     def render_node(
         self,
@@ -179,7 +180,7 @@ class NarratorAgent:
 
         return "".join(lines)
 
-    def generate_fast_forward_summary(self, world: WorldState) -> dict:
+    def generate_fast_forward_summary(self, world: WorldState) -> dict[str, Any]:
         """Generate a story skeleton summary for fast-forward mode."""
         nodes_summary = "\n".join(
             [
@@ -235,8 +236,17 @@ class NarratorAgent:
         """Unified LLM call: uses injected llm or falls back to chat_completion."""
         if self.llm is not None:
             response = self.llm.invoke(messages)
-            return response.content
-        return chat_completion(messages, role="narrator", **kwargs)
+            self.last_call_metadata = {
+                "request_id": "injected-narrator-call",
+                "provider": "injected",
+                "model": "injected",
+                "role": "narrator",
+                "status": "completed",
+            }
+            return cast(str, response.content)
+        content = chat_completion(messages, role="narrator", **kwargs)
+        self.last_call_metadata = get_last_llm_call_metadata()
+        return content
 
     def _generate_chapter_title(self, node: StoryNode) -> str:
         messages = [
@@ -248,7 +258,7 @@ class NarratorAgent:
         ]
         return self._invoke(messages, temperature=0.7, max_tokens=30).strip()
 
-    def _parse_json_response(self, content: str) -> dict:
+    def _parse_json_response(self, content: str) -> dict[str, Any]:
         text = content.strip()
         if text.startswith("```"):
             lines = text.split("\n")
@@ -258,7 +268,7 @@ class NarratorAgent:
                 else "\n".join(lines[1:])
             )
         try:
-            return json.loads(text)
+            return cast(dict[str, Any], json.loads(text))
         except json.JSONDecodeError:
             # Try to extract JSON object from anywhere in the response
             start = text.find("{")
@@ -271,7 +281,9 @@ class NarratorAgent:
                         depth -= 1
                         if depth == 0:
                             try:
-                                return json.loads(text[start : i + 1])
+                                return cast(
+                                    dict[str, Any], json.loads(text[start : i + 1])
+                                )
                             except json.JSONDecodeError:
                                 break
             return {"prose": text, "style_notes": ""}

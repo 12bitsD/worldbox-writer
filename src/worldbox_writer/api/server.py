@@ -32,6 +32,7 @@ from worldbox_writer.core.models import (
     ConstraintType,
     TelemetryEvent,
     TelemetryLevel,
+    TelemetrySpanKind,
     WorldState,
 )
 from worldbox_writer.engine.graph import run_simulation
@@ -105,6 +106,8 @@ def _serialize_world(world: WorldState) -> Dict[str, Any]:
         "factions": world.factions,
         "locations": world.locations,
         "world_rules": world.world_rules[:5],
+        "branches": world.branches,
+        "active_branch_id": world.active_branch_id,
         "constraints": [
             {
                 "id": str(c.id),
@@ -118,8 +121,91 @@ def _serialize_world(world: WorldState) -> Dict[str, Any]:
     }
 
 
-def _serialize_telemetry(events: List[TelemetryEvent]) -> List[Dict[str, Any]]:
-    return [event.model_dump(mode="json") for event in events]
+def _serialize_node(node: Any, world: WorldState) -> Dict[str, Any]:
+    return {
+        "id": str(node.id),
+        "title": node.title,
+        "description": node.description,
+        "node_type": node.node_type.value,
+        "rendered_text": node.rendered_text,
+        "tick": world.tick,
+        "requires_intervention": node.requires_intervention,
+        "intervention_instruction": node.intervention_instruction,
+        "branch_id": node.branch_id,
+        "merged_from_ids": node.merged_from_ids,
+    }
+
+
+def _serialize_nodes(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [
+        {
+            **node,
+            "branch_id": node.get("branch_id", "main"),
+            "merged_from_ids": node.get("merged_from_ids", []),
+        }
+        for node in nodes
+    ]
+
+
+def _serialize_telemetry(events: List[Any]) -> List[Dict[str, Any]]:
+    serialized: List[Dict[str, Any]] = []
+    for event in events:
+        if isinstance(event, TelemetryEvent):
+            serialized.append(event.model_dump(mode="json"))
+        else:
+            serialized.append(
+                TelemetryEvent.model_validate(event).model_dump(mode="json")
+            )
+    return serialized
+
+
+def _queue_event(session: "SimulationSession", event: Dict[str, Any]) -> None:
+    session.token_queue.put(event)
+
+
+def _upsert_rendered_node(
+    session: "SimulationSession", node_dict: Dict[str, Any]
+) -> None:
+    for index, existing in enumerate(session.nodes_rendered):
+        if existing["id"] == node_dict["id"]:
+            session.nodes_rendered[index] = {**existing, **node_dict}
+            return
+    session.nodes_rendered.append(node_dict)
+
+
+def _append_telemetry_event(
+    session: "SimulationSession", event_data: Dict[str, Any]
+) -> TelemetryEvent:
+    telemetry = TelemetryEvent(
+        event_id=event_data.get("event_id") or str(uuid.uuid4()),
+        sim_id=event_data.get("sim_id") or session.sim_id,
+        trace_id=event_data.get("trace_id") or session.trace_id,
+        request_id=event_data.get("request_id"),
+        parent_event_id=event_data.get("parent_event_id") or session.last_event_id,
+        tick=event_data.get("tick", 0),
+        agent=event_data["agent"],
+        stage=event_data["stage"],
+        level=TelemetryLevel(event_data.get("level", "info")),
+        span_kind=TelemetrySpanKind(event_data.get("span_kind", "event")),
+        message=event_data["message"],
+        payload=event_data.get("payload", {}),
+        provider=event_data.get("provider"),
+        model=event_data.get("model"),
+        duration_ms=event_data.get("duration_ms"),
+        ts=event_data.get("ts") or os.environ.get("FAKE_TELEMETRY_TS", ""),
+    )
+    if not telemetry.ts:
+        from datetime import datetime, timezone
+
+        telemetry.ts = datetime.now(timezone.utc).isoformat()
+
+    session.telemetry_events.append(telemetry)
+    session.last_event_id = telemetry.event_id
+    _queue_event(
+        session, {"type": "telemetry", "data": telemetry.model_dump(mode="json")}
+    )
+    _persist_session(session)
+    return telemetry
 
 
 def _persist_session(session: "SimulationSession") -> None:
@@ -163,6 +249,7 @@ def _recover_sessions() -> None:
 class SimulationSession:
     def __init__(self, sim_id: str, premise: str, max_ticks: int):
         self.sim_id = sim_id
+        self.trace_id = f"trace_{uuid.uuid4().hex[:12]}"
         self.premise = premise
         self.max_ticks = max_ticks
         self.status: str = (
@@ -177,6 +264,8 @@ class SimulationSession:
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self.token_queue: queue.Queue = queue.Queue()
         self.telemetry_events: List[TelemetryEvent] = []
+        self.last_event_id: Optional[str] = None
+        self.active_stream_node_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -184,7 +273,7 @@ class SimulationSession:
             "status": self.status,
             "premise": self.premise,
             "world": _serialize_world(self.world) if self.world else None,
-            "nodes": self.nodes_rendered,
+            "nodes": _serialize_nodes(self.nodes_rendered),
             "telemetry": _serialize_telemetry(self.telemetry_events),
             "intervention_context": self.intervention_context,
             "error": self.error,
@@ -243,26 +332,36 @@ def _run_simulation_sync(session: SimulationSession) -> None:
     try:
         session.status = "running"
         _persist_session(session)
+        _queue_event(
+            session, {"type": "status", "status": session.status, "error": None}
+        )
 
         def on_node_rendered(node, world):
             session.world = world
-            node_dict = {
-                "id": str(node.id),
-                "title": node.title,
-                "description": node.description,
-                "node_type": node.node_type.value,
-                "rendered_text": node.rendered_text,
-                "tick": world.tick,
-                "requires_intervention": node.requires_intervention,
-                "intervention_instruction": node.intervention_instruction,
-            }
-            session.nodes_rendered.append(node_dict)
+            node_dict = _serialize_node(node, world)
+            _upsert_rendered_node(session, node_dict)
+            _queue_event(
+                session,
+                {
+                    "type": "node",
+                    "data": node_dict,
+                    "world": _serialize_world(world),
+                },
+            )
             _persist_session(session)
 
         def intervention_callback(context: str) -> str:
             session.status = "waiting"
             session.intervention_context = context
             _persist_session(session)
+            _queue_event(
+                session,
+                {
+                    "type": "intervention",
+                    "context": context,
+                    "status": session.status,
+                },
+            )
             # Signal the event loop that we need intervention
             if session.loop:
                 session.loop.call_soon_threadsafe(session._intervention_event.set)
@@ -277,15 +376,28 @@ def _run_simulation_sync(session: SimulationSession) -> None:
             session.status = "running"
             session.intervention_context = None
             _persist_session(session)
+            _queue_event(
+                session,
+                {"type": "status", "status": session.status, "error": None},
+            )
             return result
 
         def on_streaming_token(token: str):
-            session.token_queue.put({"type": "token", "content": token})
+            _queue_event(
+                session,
+                {
+                    "type": "token",
+                    "content": token,
+                    "node_id": session.active_stream_node_id,
+                },
+            )
 
         def on_streaming_start(
             node_id: str, title: str, description: str, tick: int, node_type: str
         ):
-            session.token_queue.put(
+            session.active_stream_node_id = node_id
+            _queue_event(
+                session,
                 {
                     "type": "narrator_start",
                     "node": {
@@ -297,37 +409,24 @@ def _run_simulation_sync(session: SimulationSession) -> None:
                         "tick": tick,
                         "requires_intervention": False,
                     },
-                }
+                },
             )
 
         def on_streaming_end():
-            session.token_queue.put({"type": "narrator_end"})
+            _queue_event(
+                session,
+                {"type": "narrator_end", "node_id": session.active_stream_node_id},
+            )
+            session.active_stream_node_id = None
 
         def on_telemetry(event: Dict[str, Any]) -> None:
-            telemetry = TelemetryEvent(
-                event_id=str(uuid.uuid4()),
-                sim_id=session.sim_id,
-                tick=event.get("tick", 0),
-                agent=event["agent"],
-                stage=event["stage"],
-                level=TelemetryLevel(event.get("level", "info")),
-                message=event["message"],
-                payload=event.get("payload", {}),
-                ts=event.get("ts") or os.environ.get("FAKE_TELEMETRY_TS", ""),
-            )
-            if not telemetry.ts:
-                from datetime import datetime, timezone
-
-                telemetry.ts = datetime.now(timezone.utc).isoformat()
-            session.telemetry_events.append(telemetry)
-            session.token_queue.put(
-                {"type": "telemetry", "data": telemetry.model_dump(mode="json")}
-            )
-            _persist_session(session)
+            _append_telemetry_event(session, event)
 
         final_world = run_simulation(
             premise=session.premise,
             max_ticks=session.max_ticks,
+            sim_id=session.sim_id,
+            trace_id=session.trace_id,
             intervention_callback=intervention_callback,
             on_node_rendered=on_node_rendered,
             on_streaming_token=on_streaming_token,
@@ -343,32 +442,36 @@ def _run_simulation_sync(session: SimulationSession) -> None:
                 "agent": "simulation",
                 "stage": "completed",
                 "level": "info",
+                "span_kind": "system",
                 "message": "推演已完成",
                 "payload": {"nodes_count": len(final_world.nodes)},
             }
+        )
+        _queue_event(
+            session,
+            {"type": "status", "status": session.status, "error": None},
         )
         _persist_session(session)
 
     except Exception as e:
         session.error = str(e)
         session.status = "error"
-        session.telemetry_events.append(
-            TelemetryEvent(
-                event_id=str(uuid.uuid4()),
-                sim_id=session.sim_id,
-                tick=session.world.tick if session.world else 0,
-                agent="simulation",
-                stage="failed",
-                level=TelemetryLevel.ERROR,
-                message="推演执行失败",
-                payload={"error": str(e)},
-                ts="",
-            )
+        _append_telemetry_event(
+            session,
+            {
+                "tick": session.world.tick if session.world else 0,
+                "agent": "simulation",
+                "stage": "failed",
+                "level": "error",
+                "span_kind": "system",
+                "message": "推演执行失败",
+                "payload": {"error": str(e)},
+            },
         )
-        if session.telemetry_events[-1].ts == "":
-            from datetime import datetime, timezone
-
-            session.telemetry_events[-1].ts = datetime.now(timezone.utc).isoformat()
+        _queue_event(
+            session,
+            {"type": "status", "status": session.status, "error": session.error},
+        )
         _persist_session(session)
 
 
@@ -430,8 +533,8 @@ async def get_simulation(sim_id: str):
         "status": data["status"],
         "premise": data["premise"],
         "world": _serialize_world(world) if world else None,
-        "nodes": data["nodes_rendered"],
-        "telemetry": data["telemetry_events"],
+        "nodes": _serialize_nodes(data["nodes_rendered"]),
+        "telemetry": _serialize_telemetry(data["telemetry_events"]),
         "intervention_context": data["intervention_context"],
         "error": data["error"],
     }
@@ -449,30 +552,18 @@ async def intervene(sim_id: str, request: InterveneRequest):
         )
 
     session._intervention_result = request.instruction
-    session.telemetry_events.append(
-        TelemetryEvent(
-            event_id=str(uuid.uuid4()),
-            sim_id=session.sim_id,
-            tick=session.world.tick if session.world else 0,
-            agent="user",
-            stage="intervention_submitted",
-            level=TelemetryLevel.INFO,
-            message="用户已提交干预指令",
-            payload={"instruction": request.instruction},
-            ts="",
-        )
-    )
-    if session.telemetry_events[-1].ts == "":
-        from datetime import datetime, timezone
-
-        session.telemetry_events[-1].ts = datetime.now(timezone.utc).isoformat()
-    session.token_queue.put(
+    _append_telemetry_event(
+        session,
         {
-            "type": "telemetry",
-            "data": session.telemetry_events[-1].model_dump(mode="json"),
-        }
+            "tick": session.world.tick if session.world else 0,
+            "agent": "user",
+            "stage": "intervention_submitted",
+            "level": "info",
+            "span_kind": "user",
+            "message": "用户已提交干预指令",
+            "payload": {"instruction": request.instruction},
+        },
     )
-    _persist_session(session)
     return {"message": "干预指令已提交", "instruction": request.instruction}
 
 
@@ -544,43 +635,21 @@ async def stream_simulation(sim_id: str):
         raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
 
     async def event_generator():
-        last_node_count = 0
+        terminal_status_sent = False
         while True:
-            current_count = len(session.nodes_rendered)
-            if current_count > last_node_count:
-                for node in session.nodes_rendered[last_node_count:]:
-                    data = json.dumps(
-                        {"type": "node", "data": node}, ensure_ascii=False
-                    )
-                    yield f"data: {data}\n\n"
-                last_node_count = current_count
-
-            # Drain streaming token queue
             while True:
                 try:
                     token_event = session.token_queue.get_nowait()
                     data = json.dumps(token_event, ensure_ascii=False)
+                    if token_event.get("type") == "status" and token_event.get(
+                        "status"
+                    ) in ("complete", "error"):
+                        terminal_status_sent = True
                     yield f"data: {data}\n\n"
                 except queue.Empty:
                     break
 
-            if session.status == "waiting":
-                data = json.dumps(
-                    {"type": "intervention", "context": session.intervention_context},
-                    ensure_ascii=False,
-                )
-                yield f"data: {data}\n\n"
-
-            if session.status in ("complete", "error"):
-                data = json.dumps(
-                    {
-                        "type": "status",
-                        "status": session.status,
-                        "error": session.error,
-                    },
-                    ensure_ascii=False,
-                )
-                yield f"data: {data}\n\n"
+            if terminal_status_sent and session.token_queue.empty():
                 break
 
             await asyncio.sleep(0.5)

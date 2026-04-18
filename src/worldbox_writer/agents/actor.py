@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from worldbox_writer.core.models import Character, NodeType, StoryNode, WorldState
-from worldbox_writer.utils.llm import chat_completion
+from worldbox_writer.utils.llm import chat_completion, get_last_llm_call_metadata
 
 # ---------------------------------------------------------------------------
 # Result types
@@ -79,6 +79,7 @@ class ActorAgent:
 
     def __init__(self, llm: Any = None) -> None:
         self.llm = llm
+        self.last_call_metadata: Optional[Dict[str, Any]] = None
 
     def propose_action(
         self,
@@ -174,15 +175,24 @@ class ActorAgent:
         """Unified LLM call: uses injected llm or falls back to chat_completion."""
         if self.llm is not None:
             response = self.llm.invoke(messages)
-            return response.content
-        return chat_completion(messages, role="actor", **kwargs)
+            self.last_call_metadata = {
+                "request_id": "injected-actor-call",
+                "provider": "injected",
+                "model": "injected",
+                "role": "actor",
+                "status": "completed",
+            }
+            return cast(str, response.content)
+        content = chat_completion(messages, role="actor", **kwargs)
+        self.last_call_metadata = get_last_llm_call_metadata()
+        return content
 
     def _call_llm(
         self,
         character: Character,
         world: WorldState,
         context_node: Optional[StoryNode],
-    ) -> dict:
+    ) -> Dict[str, Any]:
         relationships_text = ""
         if character.relationships:
             rel_parts = []
@@ -224,7 +234,7 @@ class ActorAgent:
 
     def _build_proposal(self, data: dict, character: Character) -> ActionProposal:
         return ActionProposal(
-            character_id=character.id,
+            character_id=str(character.id),
             character_name=character.name,
             action_type=data.get("action_type", "action"),
             description=data.get("description", ""),
@@ -233,7 +243,7 @@ class ActorAgent:
             consequence_hint=data.get("consequence_hint", ""),
         )
 
-    def _parse_json_response(self, content: str) -> dict:
+    def _parse_json_response(self, content: str) -> Dict[str, Any]:
         text = content.strip()
         if text.startswith("```"):
             lines = text.split("\n")
@@ -243,7 +253,7 @@ class ActorAgent:
                 else "\n".join(lines[1:])
             )
         try:
-            return json.loads(text)
+            return cast(Dict[str, Any], json.loads(text))
         except json.JSONDecodeError:
             # Try to extract JSON object from anywhere in the response
             start = text.find("{")
@@ -256,7 +266,9 @@ class ActorAgent:
                         depth -= 1
                         if depth == 0:
                             try:
-                                return json.loads(text[start : i + 1])
+                                return cast(
+                                    Dict[str, Any], json.loads(text[start : i + 1])
+                                )
                             except json.JSONDecodeError:
                                 break
             return {

@@ -1,6 +1,6 @@
 # Telemetry Schema v1
 
-本文档定义 Sprint 6 引入的业务可读 Telemetry 结构。
+本文档定义 Sprint 6 引入、并在 Sprint 7 扩展为可关联调用链的业务可读 Telemetry 结构。
 
 目标：
 - 为前端日志面板提供稳定输入。
@@ -22,7 +22,14 @@
     "reason": "违反主角第一幕不能死亡的约束",
     "hint": "调整事件强度，避免直接死亡"
   },
-  "ts": "2026-04-17T01:23:45+00:00"
+  "ts": "2026-04-17T01:23:45+00:00",
+  "trace_id": "trace_abcd1234",
+  "request_id": "llm_1234abcd",
+  "parent_event_id": "evt-parent",
+  "span_kind": "llm",
+  "provider": "mimo",
+  "model": "mimo-v2-pro",
+  "duration_ms": 842
 }
 ```
 
@@ -49,14 +56,40 @@
   - 结构化补充信息。
 - `ts`
   - 事件生成时间戳。
+- `trace_id`
+  - 一次推演链路内共享的追踪 ID，用于前端按会话串联事件。
+- `request_id`
+  - 单次 LLM 调用或单次子过程的唯一请求 ID。
+- `parent_event_id`
+  - 父事件 ID，用于表达同一条链上的前后关联。
+- `span_kind`
+  - 事件类别，当前允许值：
+  - `event`
+  - `llm`
+  - `user`
+  - `system`
+- `provider`
+  - LLM Provider 标识，如 `mimo`、`openai`、`ollama`、`injected`。
+- `model`
+  - 本次调用实际使用的模型名。
+- `duration_ms`
+  - 调用或处理阶段耗时，单位毫秒。
 
-## Sprint 6 范围
+## Sprint 6 基线
 
 Sprint 6 只做“业务可读事件”，不做：
 - prompt 全量记录
 - chain-of-thought 暴露
 - 分布式 trace
 - span 级链路分析
+
+## Sprint 7 扩展
+
+Sprint 7 在不引入完整 tracing 系统的前提下，补了最小可用的关联字段：
+
+- 统一为每次 LLM 调用记录 `provider`、`model`、`request_id`。
+- 为一次推演会话补 `trace_id`，使 REST / SSE / 历史恢复三条链路字段一致。
+- 通过 `parent_event_id` 和 `span_kind` 区分用户事件、系统事件和 LLM 事件。
 
 ## 推荐事件类型
 
@@ -76,4 +109,4 @@ Sprint 6 只做“业务可读事件”，不做：
 
 - v1 优先稳定可读和可持久化。
 - v1 优先服务 UI 展示和会话回放。
-- 更复杂的 trace 规范留到 Sprint 7 的 Telemetry SDK v1。
+- 关联字段以“够用”为准，不引入完整分布式 tracing 基建。

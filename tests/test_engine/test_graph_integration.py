@@ -39,6 +39,9 @@ class TestBuildGraph:
             "world_built": False,
             "max_ticks": 1,
             "error": "",
+            "sim_id": "sim-integration",
+            "trace_id": "trace-integration",
+            "streaming_callbacks": None,
         }
         result = app.invoke(initial_state)
         assert result is not None

@@ -199,12 +199,18 @@ class TestGetSimulation:
             server_module.TelemetryEvent(
                 event_id="evt-1",
                 sim_id=sim_id,
+                trace_id="trace-1",
+                request_id="req-1",
                 tick=1,
                 agent="actor",
                 stage="proposal_generated",
                 level=server_module.TelemetryLevel.INFO,
+                span_kind=server_module.TelemetrySpanKind.LLM,
                 message="生成了新的候选事件",
                 payload={"preview": "预览"},
+                provider="openai",
+                model="gpt-4.1-mini",
+                duration_ms=111,
                 ts="2026-01-01T00:00:00+00:00",
             )
         )
@@ -214,6 +220,103 @@ class TestGetSimulation:
         body = res.json()
         assert body["telemetry"][0]["event_id"] == "evt-1"
         assert body["telemetry"][0]["agent"] == "actor"
+        assert body["telemetry"][0]["trace_id"] == "trace-1"
+        assert body["telemetry"][0]["request_id"] == "req-1"
+
+    def test_get_simulation_backfills_legacy_node_and_telemetry_fields(self, client):
+        """Sessions loaded from DB should backfill Sprint 7 defaults for old payloads."""
+        world = WorldState(title="旧世界", premise="旧前提")
+        server_module.db_save_session(
+            sim_id="legacy-session",
+            premise="旧前提",
+            max_ticks=2,
+            status="complete",
+            world=world,
+            nodes_json=[
+                {
+                    "id": "node-1",
+                    "title": "旧节点",
+                    "description": "旧描述",
+                    "node_type": "development",
+                    "rendered_text": "正文",
+                    "tick": 1,
+                    "requires_intervention": False,
+                    "intervention_instruction": None,
+                }
+            ],
+            telemetry_events=[
+                {
+                    "event_id": "evt-legacy",
+                    "sim_id": "legacy-session",
+                    "tick": 1,
+                    "agent": "actor",
+                    "stage": "proposal_generated",
+                    "level": "info",
+                    "message": "旧事件",
+                    "payload": {"preview": "旧预览"},
+                    "ts": "2026-01-01T00:00:00+00:00",
+                }
+            ],
+        )
+
+        res = client.get("/api/simulate/legacy-session")
+
+        assert res.status_code == 200
+        body = res.json()
+        assert body["nodes"][0]["branch_id"] == "main"
+        assert body["nodes"][0]["merged_from_ids"] == []
+        assert body["telemetry"][0]["trace_id"] == ""
+        assert body["telemetry"][0]["span_kind"] == "event"
+        assert body["telemetry"][0]["request_id"] is None
+
+
+class TestIntervene:
+    def test_intervene_appends_user_telemetry_and_queue_event(
+        self, client, waiting_session
+    ):
+        """Submitting an intervention should persist a user telemetry event."""
+        sim_id, _ = waiting_session
+        session = _sessions[sim_id]
+        session.telemetry_events.append(
+            server_module.TelemetryEvent(
+                event_id="evt-before",
+                sim_id=sim_id,
+                trace_id=session.trace_id,
+                request_id="req-before",
+                tick=1,
+                agent="node_detector",
+                stage="intervention_requested",
+                level=server_module.TelemetryLevel.WARNING,
+                span_kind=server_module.TelemetrySpanKind.EVENT,
+                message="等待干预",
+                payload={"context": "需要干预"},
+                ts="2026-01-01T00:00:00+00:00",
+            )
+        )
+        session.last_event_id = "evt-before"
+
+        res = client.post(
+            f"/api/simulate/{sim_id}/intervene",
+            json={"instruction": "让角色暂时撤退"},
+        )
+
+        assert res.status_code == 200
+        assert session._intervention_result == "让角色暂时撤退"
+        assert session.telemetry_events[-1].agent == "user"
+        assert session.telemetry_events[-1].span_kind.value == "user"
+        assert session.telemetry_events[-1].trace_id == session.trace_id
+        assert session.telemetry_events[-1].parent_event_id == "evt-before"
+        assert session.telemetry_events[-1].payload["instruction"] == "让角色暂时撤退"
+
+        queued = []
+        while not session.token_queue.empty():
+            queued.append(session.token_queue.get_nowait())
+        assert any(
+            item["type"] == "telemetry"
+            and item["data"]["agent"] == "user"
+            and item["data"]["parent_event_id"] == "evt-before"
+            for item in queued
+        )
 
 
 class TestTelemetryPipeline:
@@ -227,6 +330,9 @@ class TestTelemetryPipeline:
                     "agent": "director",
                     "stage": "world_initialized",
                     "level": "info",
+                    "trace_id": "trace-test",
+                    "request_id": "req-test",
+                    "span_kind": "llm",
                     "message": "世界骨架初始化完成",
                     "payload": {"characters": 2},
                 }
@@ -243,6 +349,8 @@ class TestTelemetryPipeline:
         assert len(session.telemetry_events) >= 2
         assert session.telemetry_events[0].agent == "director"
         assert session.telemetry_events[0].stage == "world_initialized"
+        assert session.telemetry_events[0].trace_id == "trace-test"
+        assert session.telemetry_events[0].request_id == "req-test"
         queued = []
         while not session.token_queue.empty():
             queued.append(session.token_queue.get_nowait())
@@ -264,12 +372,19 @@ class TestSessionRecovery:
                 {
                     "event_id": "evt-1",
                     "sim_id": "recover-1",
+                    "trace_id": "trace-1",
+                    "request_id": "req-1",
+                    "parent_event_id": None,
                     "tick": 1,
                     "agent": "actor",
                     "stage": "proposal_generated",
                     "level": "info",
+                    "span_kind": "llm",
                     "message": "生成了新的候选事件",
                     "payload": {"preview": "事件预览"},
+                    "provider": "openai",
+                    "model": "gpt-4.1-mini",
+                    "duration_ms": 88,
                     "ts": "2026-01-01T00:00:00+00:00",
                 }
             ],
@@ -283,3 +398,4 @@ class TestSessionRecovery:
         assert recovered["error"] == "Server restarted during simulation"
         assert len(recovered["telemetry_events"]) == 1
         assert recovered["telemetry_events"][0]["event_id"] == "evt-1"
+        assert recovered["telemetry_events"][0]["trace_id"] == "trace-1"

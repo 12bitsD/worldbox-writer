@@ -19,6 +19,8 @@ from worldbox_writer.core.models import (
     Relationship,
     RelationshipLabel,
     StoryNode,
+    TelemetryEvent,
+    TelemetrySpanKind,
     WorldState,
 )
 
@@ -162,6 +164,24 @@ class TestStoryNode:
         node = StoryNode(title="Intro", description="The world begins.")
         assert node.is_rendered is False
         assert node.rendered_text is None
+
+
+class TestTelemetryEvent:
+    def test_telemetry_event_defaults_correlation_fields(self):
+        event = TelemetryEvent(
+            event_id="evt-1",
+            sim_id="sim-1",
+            tick=1,
+            agent="actor",
+            stage="proposal_generated",
+            message="生成了候选事件",
+            ts="2026-01-01T00:00:00+00:00",
+        )
+
+        assert event.trace_id == ""
+        assert event.request_id is None
+        assert event.parent_event_id is None
+        assert event.span_kind == TelemetrySpanKind.EVENT
 
 
 # ---------------------------------------------------------------------------

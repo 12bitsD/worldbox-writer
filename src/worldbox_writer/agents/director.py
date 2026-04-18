@@ -16,7 +16,7 @@ machine-actionable structures that all downstream agents can operate on.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from worldbox_writer.core.models import (
     Character,
@@ -27,7 +27,7 @@ from worldbox_writer.core.models import (
     StoryNode,
     WorldState,
 )
-from worldbox_writer.utils.llm import chat_completion
+from worldbox_writer.utils.llm import chat_completion, get_last_llm_call_metadata
 
 # ---------------------------------------------------------------------------
 # Prompt templates
@@ -115,9 +115,10 @@ class DirectorAgent:
 
     def __init__(self, llm: Any = None) -> None:
         self.llm = llm
+        self.last_call_metadata: Optional[Dict[str, Any]] = None
 
     def initialize_world(
-        self, user_premise: str, world: WorldState = None
+        self, user_premise: str, world: Optional[WorldState] = None
     ) -> WorldState:
         """Create a fully initialised WorldState from a user's premise."""
         raw = self._call_llm_for_init(user_premise)
@@ -144,8 +145,17 @@ class DirectorAgent:
         """Unified LLM call: uses injected llm or falls back to chat_completion."""
         if self.llm is not None:
             response = self.llm.invoke(messages)
-            return response.content
-        return chat_completion(messages, role="director", **kwargs)
+            self.last_call_metadata = {
+                "request_id": "injected-director-call",
+                "provider": "injected",
+                "model": "injected",
+                "role": "director",
+                "status": "completed",
+            }
+            return cast(str, response.content)
+        content = chat_completion(messages, role="director", **kwargs)
+        self.last_call_metadata = get_last_llm_call_metadata()
+        return content
 
     def _call_llm_for_init(self, premise: str) -> Dict[str, Any]:
         messages = [
@@ -173,7 +183,7 @@ class DirectorAgent:
                 else "\n".join(lines[1:])
             )
         try:
-            return json.loads(text)
+            return cast(Dict[str, Any], json.loads(text))
         except json.JSONDecodeError:
             # Try to extract JSON object from anywhere in the response
             start = text.find("{")
@@ -188,13 +198,13 @@ class DirectorAgent:
                     depth -= 1
                     if depth == 0:
                         try:
-                            return json.loads(text[start : i + 1])
+                            return cast(Dict[str, Any], json.loads(text[start : i + 1]))
                         except json.JSONDecodeError:
                             break
             return {}
 
     def _build_world_state(
-        self, data: Dict[str, Any], existing_world: WorldState = None
+        self, data: Dict[str, Any], existing_world: Optional[WorldState] = None
     ) -> WorldState:
         world = existing_world or WorldState()
         world.title = data.get("title", "无名世界")

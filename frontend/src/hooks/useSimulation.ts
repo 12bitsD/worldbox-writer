@@ -10,6 +10,12 @@ import {
   createEventStream,
   listSessions,
 } from "../utils/api";
+import {
+  appendStreamingToken,
+  mergeSimulationSnapshot,
+  mergeTelemetryEvents,
+  upsertNode,
+} from "./simulationState";
 
 const LAST_SIM_ID_KEY = "worldbox:last-sim-id";
 
@@ -57,7 +63,7 @@ export function useSimulation() {
       pollRef.current = setInterval(async () => {
         try {
           const s = await getSimulation(id);
-          setState(s);
+          setState((prev) => mergeSimulationSnapshot(prev, s));
           if (s.status === "complete" || s.status === "error") {
             stopAll();
           }
@@ -83,14 +89,16 @@ export function useSimulation() {
 
           if (type === "node") {
             const node = event.data as Record<string, unknown>;
+            const nextWorld = (event.world as SimulationState["world"]) ?? null;
             setState((prev) => {
               if (!prev) return prev;
-              // Avoid duplicate nodes
-              const exists = prev.nodes.some((n) => n.id === node.id);
-              if (exists) return prev;
               return {
                 ...prev,
-                nodes: [...prev.nodes, node as unknown as SimulationState["nodes"][0]],
+                world: nextWorld ?? prev.world,
+                nodes: upsertNode(
+                  prev.nodes,
+                  node as unknown as SimulationState["nodes"][0]
+                ),
               };
             });
           } else if (type === "narrator_start") {
@@ -98,27 +106,23 @@ export function useSimulation() {
             if (!node) return;
             setState((prev) => {
               if (!prev) return prev;
-              const exists = prev.nodes.some((n) => n.id === node.id);
-              if (exists) return prev;
               return {
                 ...prev,
-                nodes: [
-                  ...prev.nodes,
-                  node as unknown as SimulationState["nodes"][0],
-                ],
+                nodes: upsertNode(
+                  prev.nodes,
+                  node as unknown as SimulationState["nodes"][0]
+                ),
               };
             });
           } else if (type === "token") {
             const content = event.content as string;
+            const nodeId = event.node_id as string | undefined;
             setState((prev) => {
               if (!prev || prev.nodes.length === 0) return prev;
-              const nodes = [...prev.nodes];
-              const lastIdx = nodes.length - 1;
-              const lastNode = { ...nodes[lastIdx] };
-              lastNode.streaming_text =
-                (lastNode.streaming_text || "") + content;
-              nodes[lastIdx] = lastNode;
-              return { ...prev, nodes };
+              return {
+                ...prev,
+                nodes: appendStreamingToken(prev.nodes, content, nodeId),
+              };
             });
           } else if (type === "narrator_end") {
             // Streaming done; the next "node" event will carry final rendered_text
@@ -126,13 +130,9 @@ export function useSimulation() {
             const telemetry = event.data as SimulationState["telemetry"][0];
             setState((prev) => {
               if (!prev) return prev;
-              const exists = prev.telemetry.some(
-                (item) => item.event_id === telemetry.event_id
-              );
-              if (exists) return prev;
               return {
                 ...prev,
-                telemetry: [...prev.telemetry, telemetry],
+                telemetry: mergeTelemetryEvents(prev.telemetry, [telemetry]),
               };
             });
           } else if (type === "intervention") {
@@ -179,7 +179,7 @@ export function useSimulation() {
       try {
         const nextState = await getSimulation(id);
         setSimId(id);
-        setState(nextState);
+        setState((prev) => mergeSimulationSnapshot(prev, nextState));
         window.sessionStorage.setItem(LAST_SIM_ID_KEY, id);
         void refreshRecentSessions();
 
@@ -204,7 +204,7 @@ export function useSimulation() {
     if (!simId) return;
     try {
       const nextState = await getSimulation(simId);
-      setState(nextState);
+      setState((prev) => mergeSimulationSnapshot(prev, nextState));
     } catch (e) {
       setError(String(e));
     }
@@ -224,7 +224,7 @@ export function useSimulation() {
         void refreshRecentSessions();
         // Initial fetch for immediate state
         const s = await getSimulation(res.sim_id);
-        setState(s);
+        setState((prev) => mergeSimulationSnapshot(prev, s));
         // Start SSE for real-time updates
         startSSE(res.sim_id);
       } catch (e) {
