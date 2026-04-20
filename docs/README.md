@@ -1,7 +1,7 @@
 # 文档导航
 
 **文档状态**：Active (v0.6.0+)  
-**最后更新**：2026-04-19
+**最后更新**：2026-04-21
 
 本文档用于整理仓库内的文档入口，避免信息分散在多个目录中难以查找。
 
@@ -32,6 +32,7 @@
 ## 4. 产品与规划
 
 - [产品演进规划](product/PRODUCT_PLANNING.md)
+- [产品演进规划 v2（双循环推演引擎）](product/PRODUCT_PLANNING_V2.md)
 - [产品评审报告](product/PRODUCT_REVIEW.md)
 - [长期路线图](product/FUTURE_ROADMAP.md)
 - [用户故事与 Backlog](product/USER_STORIES.md)
@@ -49,6 +50,8 @@
 - [Sprint 8.5 计划](sprints/SPRINT_8_5_PLAN.md)
 - [Sprint 8.5 任务拆解](sprints/SPRINT_8_5_TASK_BREAKDOWN.md)
 - [Sprint 9 任务拆解](sprints/SPRINT_9_TASK_BREAKDOWN.md)
+- [Sprint 10 计划](sprints/SPRINT_10.md)
+- [Sprint 11 计划](sprints/SPRINT_11.md)
 
 ## 6. 实验与模板
 

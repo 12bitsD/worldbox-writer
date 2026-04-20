@@ -485,6 +485,27 @@ class TestCreativeWorkspace:
         assert body["memory"]["vector_backend"] in {"chromadb", "simple"}
         assert body["llm"]["total_calls"] == 1
         assert body["llm"]["routes"][0]["route_group"] == "creative"
+        assert body["dual_loop"]["contract_version"] == "dual-loop-v1"
+        assert body["dual_loop"]["adapter_mode"] == "legacy-compatibility-v1"
+        assert (
+            body["dual_loop"]["scene_plan"]["source_node_id"]
+            == session.world.current_node_id
+        )
+        assert (
+            body["dual_loop"]["scene_script"]["source_node_id"]
+            == session.world.current_node_id
+        )
+
+    def test_get_simulation_includes_dual_loop_feature_flag(
+        self, client, waiting_session, monkeypatch
+    ):
+        sim_id, _ = waiting_session
+        monkeypatch.setenv("FEATURE_DUAL_LOOP_ENABLED", "0")
+
+        res = client.get(f"/api/simulate/{sim_id}")
+
+        assert res.status_code == 200
+        assert res.json()["features"]["dual_loop_enabled"] is False
 
     def test_export_returns_bundle_with_markdown_and_html(
         self, client, complete_session

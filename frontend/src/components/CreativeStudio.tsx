@@ -486,6 +486,12 @@ export function CreativeStudio({
                   ["LLM 调用", diagnostics.llm.total_calls],
                   ["提示词估算", diagnostics.llm.estimated_prompt_tokens],
                   ["向量后端", diagnostics.memory.vector_backend ?? "simple"],
+                  [
+                    "双循环开关",
+                    diagnostics.dual_loop.enabled ? "enabled" : "disabled",
+                  ],
+                  ["契约版本", diagnostics.dual_loop.contract_version],
+                  ["适配模式", diagnostics.dual_loop.adapter_mode],
                 ].map(([label, value]) => (
                   <div
                     key={String(label)}
@@ -523,6 +529,35 @@ export function CreativeStudio({
                     </div>
                   </div>
                 ))}
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div className="label">Dual-Loop Snapshot</div>
+                <div
+                  style={{
+                    border: "1px solid var(--color-border-light)",
+                    padding: 12,
+                    background: "var(--color-bg)",
+                    display: "grid",
+                    gap: 8,
+                  }}
+                >
+                  <div style={{ fontSize: 12, fontWeight: 600 }}>
+                    {diagnostics.dual_loop.scene_plan?.title ?? "尚未生成 ScenePlan"}
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--color-text-muted)" }}>
+                    pressure=
+                    {diagnostics.dual_loop.scene_plan?.narrative_pressure ?? "balanced"} ·
+                    spotlight=
+                    {diagnostics.dual_loop.scene_plan?.spotlight_character_ids.length ?? 0} ·
+                    intents={diagnostics.dual_loop.action_intents.length}
+                  </div>
+                  {diagnostics.dual_loop.scene_script?.summary && (
+                    <div style={{ fontSize: 12 }}>
+                      {diagnostics.dual_loop.scene_script.summary}
+                    </div>
+                  )}
+                </div>
               </div>
             </>
           )}

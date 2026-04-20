@@ -60,7 +60,7 @@ function buildState(overrides: Partial<SimulationState> = {}): SimulationState {
     telemetry: [],
     intervention_context: null,
     error: null,
-    features: { branching_enabled: true },
+    features: { branching_enabled: true, dual_loop_enabled: true },
     ...overrides,
   };
 }

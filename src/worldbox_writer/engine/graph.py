@@ -6,6 +6,8 @@ WorldBox Writer — Simulation Engine (LangGraph StateGraph).
      ↓
   director_node      (首次：解析前提，初始化世界骨架)
      ↓
+  scene_director_node(每幕：生成 Scene Plan / spotlight / pressure)
+     ↓
   actor_node         (角色决策，生成候选事件)
      ↓
   gate_keeper_node   (校验约束，过滤非法事件)
@@ -30,6 +32,7 @@ from worldbox_writer.agents.director import DirectorAgent
 from worldbox_writer.agents.gate_keeper import GateKeeperAgent
 from worldbox_writer.agents.node_detector import NodeDetector
 from worldbox_writer.agents.world_builder import WorldBuilderAgent
+from worldbox_writer.core.dual_loop import ScenePlan
 from worldbox_writer.core.models import (
     NodeType,
     RelationshipLabel,
@@ -49,6 +52,7 @@ class SimulationState(TypedDict):
 
     world: WorldState
     memory: MemoryManager
+    scene_plan: Optional[ScenePlan]
     candidate_event: str
     validation_passed: bool
     needs_intervention: bool
@@ -397,6 +401,34 @@ def director_node(state: SimulationState) -> Dict[str, Any]:
     return {"world": updated_world, "initialized": True}
 
 
+def scene_director_node(state: SimulationState) -> Dict[str, Any]:
+    """Director Agent: plan the next scene before actor execution."""
+    world = state["world"]
+    memory: MemoryManager = state["memory"]
+    agent = DirectorAgent()
+    current_node = (
+        world.get_node(world.current_node_id) if world.current_node_id else None
+    )
+    query = current_node.description if current_node else world.premise
+    memory_context = memory.get_context_for_agent(query=query, max_entries=6)
+    scene_plan = agent.plan_scene(world, memory_context=memory_context)
+    _emit_telemetry(
+        state,
+        tick=world.tick,
+        agent="director",
+        stage="scene_planned",
+        message="Director 已生成下一幕 Scene Plan",
+        payload={
+            "scene_id": scene_plan.scene_id,
+            "title": scene_plan.title,
+            "objective": scene_plan.objective,
+            "narrative_pressure": scene_plan.narrative_pressure,
+            "spotlight_character_ids": list(scene_plan.spotlight_character_ids),
+        },
+    )
+    return {"world": world, "scene_plan": scene_plan}
+
+
 def world_builder_node(state: SimulationState) -> Dict[str, Any]:
     """WorldBuilder Agent: expand world settings (first tick only)."""
     if state.get("world_built"):
@@ -426,25 +458,40 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
     """Actor Agent: generate next candidate story event based on world state."""
     world = state["world"]
     memory: MemoryManager = state["memory"]
+    scene_plan = state.get("scene_plan")
 
     alive_chars = [c for c in world.characters.values() if c.status.value == "alive"]
     if not alive_chars:
         return {"candidate_event": "世界陷入了沉寂，没有角色继续行动。"}
 
+    spotlight_chars = []
+    if scene_plan is not None:
+        for character_id in scene_plan.spotlight_character_ids:
+            character = world.get_character(character_id)
+            if character and character.status.value == "alive":
+                spotlight_chars.append(character)
+    active_chars = spotlight_chars or alive_chars
+
     chars_summary = "\n".join(
         [
             f"- {c.name}（{c.personality}）目标：{', '.join(c.goals[:2])}；"
             f"记忆：{c.memory[-1] if c.memory else '无'}"
-            for c in alive_chars[:4]
+            for c in active_chars[:4]
         ]
     )
 
-    memory_context = memory.get_context_for_agent(query=world.premise, max_entries=6)
+    memory_query = scene_plan.objective if scene_plan else world.premise
+    memory_context = memory.get_context_for_agent(query=memory_query, max_entries=6)
 
     active_constraints = world.active_constraints()
-    constraints_text = "\n".join(
-        [f"- [{c.severity.value}] {c.rule}" for c in active_constraints[:5]]
-    )
+    if scene_plan and scene_plan.constraints:
+        constraints_text = "\n".join(
+            [f"- [scene] {constraint}" for constraint in scene_plan.constraints[:5]]
+        )
+    else:
+        constraints_text = "\n".join(
+            [f"- [{c.severity.value}] {c.rule}" for c in active_constraints[:5]]
+        )
 
     factions_text = (
         "、".join([f.get("name", "") for f in world.factions[:3]])
@@ -456,7 +503,29 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
         if world.locations
         else "无"
     )
-    pacing = _resolve_branch_pacing(world)
+    pacing = (
+        scene_plan.narrative_pressure if scene_plan else _resolve_branch_pacing(world)
+    )
+    pressure_guidance = ""
+    scene_plan_context = ""
+    if scene_plan is not None:
+        spotlight_names = "、".join([c.name for c in active_chars[:3]]) or "无"
+        pressure_guidance = str(
+            scene_plan.metadata.get("pressure_guidance", "")
+        ).strip()
+        plan_lines = [
+            f"当前场景计划：{scene_plan.title}",
+            f"场景目标：{scene_plan.objective}",
+            f"场景公开信息：{scene_plan.public_summary}",
+            f"聚光灯角色：{spotlight_names}",
+            f"叙事压力：{scene_plan.narrative_pressure}",
+        ]
+        if scene_plan.setting:
+            plan_lines.append(f"场景设定：{scene_plan.setting}")
+        if pressure_guidance:
+            plan_lines.append(f"导演提示：{pressure_guidance}")
+        scene_plan_context = "\n".join(plan_lines)
+    scene_plan_section = f"{scene_plan_context}\n\n" if scene_plan_context else ""
 
     messages = [
         {
@@ -466,8 +535,9 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
                 "要求：\n"
                 "1. 事件必须符合世界规则和角色性格\n"
                 "2. 事件要推动故事发展，制造冲突或转折\n"
-                "3. 用一段简洁的描述（50-100字）描述这个事件\n"
-                "4. 只输出事件描述，不要有其他内容"
+                "3. 如果提供了 Scene Plan，必须优先服从 Director 的场景目标、聚光灯和叙事压力\n"
+                "4. 用一段简洁的描述（50-100字）描述这个事件\n"
+                "5. 只输出事件描述，不要有其他内容"
             ),
         },
         {
@@ -476,6 +546,7 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
                 f"世界背景：{world.premise}\n\n"
                 f"主要势力：{factions_text}\n"
                 f"主要地点：{locations_text}\n\n"
+                f"{scene_plan_section}"
                 f"当前角色状态：\n{chars_summary}\n\n"
                 f"故事记忆（按时间排序）：\n{memory_context}\n\n"
                 f"世界约束：\n{constraints_text}\n\n"
@@ -496,7 +567,16 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
         agent="actor",
         stage="proposal_generated",
         message="生成了新的候选事件",
-        payload={"preview": candidate.strip()[:80], "pacing": pacing},
+        payload={
+            "preview": candidate.strip()[:80],
+            "pacing": pacing,
+            "scene_id": scene_plan.scene_id if scene_plan else None,
+            "spotlight_count": (
+                len(scene_plan.spotlight_character_ids)
+                if scene_plan
+                else len(active_chars[:3])
+            ),
+        },
         **llm_fields,
     )
     return {"candidate_event": candidate.strip()}
@@ -611,6 +691,7 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
     """Node Detector: commit candidate event as StoryNode, detect intervention need."""
     world = state["world"]
     memory: MemoryManager = state["memory"]
+    scene_plan = state.get("scene_plan")
     candidate = state.get("candidate_event", "")
     validation_passed = state.get("validation_passed", False)
 
@@ -648,7 +729,11 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
     )
 
     new_node = StoryNode(
-        title=f"第{world.tick + 1}幕",
+        title=(
+            scene_plan.title
+            if scene_plan is not None and scene_plan.title
+            else f"第{world.tick + 1}幕"
+        ),
         description=candidate,
         node_type=node_type,
         parent_ids=parent_ids,
@@ -665,6 +750,10 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
     world.current_node_id = str(new_node.id)
     world.advance_tick()
     new_node.metadata["tick"] = world.tick
+    if scene_plan is not None:
+        scene_plan_payload = scene_plan.model_dump(mode="json")
+        new_node.metadata["scene_plan"] = scene_plan_payload
+        world.metadata["last_committed_scene_plan"] = scene_plan_payload
     relationships_changed = _apply_relationship_updates(
         world,
         relationship_character_ids,
@@ -682,6 +771,7 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
             "node_type": new_node.node_type.value,
             "title": new_node.title,
             "characters": involved_character_ids,
+            "scene_id": scene_plan.scene_id if scene_plan else None,
         },
     )
     if relationships_changed:
@@ -726,7 +816,12 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
     if node_type == NodeType.RESOLUTION or world.tick >= state.get("max_ticks", 10):
         world.is_complete = True
 
-    return {"world": world, "memory": memory, "needs_intervention": needs_intervention}
+    return {
+        "world": world,
+        "memory": memory,
+        "needs_intervention": needs_intervention,
+        "scene_plan": scene_plan,
+    }
 
 
 def narrator_node(state: SimulationState) -> Dict[str, Any]:
@@ -853,7 +948,7 @@ def should_continue(
 
 def after_narrator(
     state: SimulationState,
-) -> Literal["world_builder_node", "actor_node", "__end__"]:
+) -> Literal["world_builder_node", "scene_director_node", "__end__"]:
     """After narrator: optionally enrich the world, then continue or end."""
     world = state["world"]
     needs_intervention = state.get("needs_intervention", False)
@@ -867,12 +962,12 @@ def after_narrator(
     if world.is_complete:
         return "__end__"
 
-    return "actor_node"
+    return "scene_director_node"
 
 
 def after_world_builder(
     state: SimulationState,
-) -> Literal["actor_node", "__end__"]:
+) -> Literal["scene_director_node", "__end__"]:
     """After deferred world enrichment: continue or finish."""
     world = state["world"]
     needs_intervention = state.get("needs_intervention", False)
@@ -880,7 +975,7 @@ def after_world_builder(
     if needs_intervention or world.is_complete:
         return "__end__"
 
-    return "actor_node"
+    return "scene_director_node"
 
 
 # ---------------------------------------------------------------------------
@@ -893,6 +988,7 @@ def build_simulation_graph():
     graph = StateGraph(SimulationState)
 
     graph.add_node("director_node", director_node)
+    graph.add_node("scene_director_node", scene_director_node)
     graph.add_node("world_builder_node", world_builder_node)
     graph.add_node("actor_node", actor_node)
     graph.add_node("gate_keeper_node", gate_keeper_node)
@@ -900,7 +996,8 @@ def build_simulation_graph():
     graph.add_node("narrator_node", narrator_node)
 
     graph.add_edge(START, "director_node")
-    graph.add_edge("director_node", "actor_node")
+    graph.add_edge("director_node", "scene_director_node")
+    graph.add_edge("scene_director_node", "actor_node")
     graph.add_edge("actor_node", "gate_keeper_node")
     graph.add_edge("gate_keeper_node", "node_detector_node")
     graph.add_conditional_edges(
@@ -913,14 +1010,14 @@ def build_simulation_graph():
         after_narrator,
         {
             "world_builder_node": "world_builder_node",
-            "actor_node": "actor_node",
+            "scene_director_node": "scene_director_node",
             "__end__": END,
         },
     )
     graph.add_conditional_edges(
         "world_builder_node",
         after_world_builder,
-        {"actor_node": "actor_node", "__end__": END},
+        {"scene_director_node": "scene_director_node", "__end__": END},
     )
 
     return graph.compile()
@@ -976,6 +1073,7 @@ def run_simulation(
     initial_state: SimulationState = {
         "world": world,
         "memory": memory,
+        "scene_plan": None,
         "candidate_event": "",
         "validation_passed": False,
         "needs_intervention": False,

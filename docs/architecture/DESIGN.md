@@ -113,6 +113,23 @@ Sprint 9 的首要任务不是立刻接入新的向量数据库，而是先把 *
 
 这样做的原因是：如果 Durable Memory / Routing 的契约都还不稳定，那么无论接 ChromaDB、做更复杂的工作流编辑器还是上更重的 CI 评估矩阵，后续都会反复返工。
 
+#### Sprint 11 补充：先让 Director 成为 Scene Planner，再做角色隔离运行时
+
+在双循环路线里，最容易犯的错误是过早把主图直接切成“多 Actor 并发”，但 Director 还没有稳定地产出场景级真相源。
+
+Sprint 11 的架构决策因此是：
+
+- **先补 Scene Planner**：Director 不再只负责初始化世界，而是每一幕都要输出 `ScenePlan`，显式决定 scene objective、spotlight cast、public summary 与 narrative pressure。
+- **先补 graph state contract**：`ScenePlan` 必须进入 LangGraph shared state，并写回 `world.metadata["current_scene_plan"]`，作为后续 compatibility snapshot、diagnostics 与下一轮 Actor runtime 的共同来源。
+- **Actor 先消费，不先隔离**：本 Sprint 允许 legacy `actor_node` 读取 `ScenePlan` 来收敛目标和聚光灯，但不提前做 fan-out / fan-in，也不在本 Sprint 引入 Critic / GM。
+- **世界细化仍保持异步补全定位**：`WorldBuilder` 继续作为首幕可见后的延迟步骤存在，不重新塞回逻辑主链前端。
+
+这样切的原因很直接：
+
+- 没有稳定 `ScenePlan`，Sprint 12 的 isolated actors 会缺少统一的导演输入。
+- 没有 graph-state 持久化，Sprint 10 做出来的 dual-loop contract 只会停留在 compatibility 层，无法进入真实运行时。
+- 先让 Actor 在单链路上消费 `ScenePlan`，可以在不放大爆炸半径的前提下验证“Director 场控”是否真的改善失焦和流水账问题。
+
 ### 4.3 大语言模型接入 (LLM Integration)
 - **云端 API**：OpenAI (GPT-4o), Anthropic (Claude 3.5 Sonnet)。
   - *用途*：用于复杂的逻辑推理、边界校验和高质量文本渲染。

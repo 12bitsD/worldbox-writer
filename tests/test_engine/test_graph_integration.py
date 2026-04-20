@@ -32,6 +32,7 @@ class TestBuildGraph:
         initial_state: SimulationState = {
             "world": world,
             "memory": memory,
+            "scene_plan": None,
             "candidate_event": "",
             "validation_passed": False,
             "needs_intervention": False,

@@ -263,7 +263,7 @@ export function useSimulation() {
           telemetry: [],
           intervention_context: null,
           error: null,
-          features: { branching_enabled: false },
+          features: { branching_enabled: false, dual_loop_enabled: false },
         });
 
         // Start SSE first so early telemetry and narrator tokens are not gated

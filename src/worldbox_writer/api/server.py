@@ -41,6 +41,12 @@ from worldbox_writer.core.models import (
     TelemetrySpanKind,
     WorldState,
 )
+from worldbox_writer.engine.dual_loop import (
+    DUAL_LOOP_ADAPTER_MODE,
+    DUAL_LOOP_CONTRACT_VERSION,
+    build_dual_loop_snapshot,
+    dual_loop_enabled,
+)
 from worldbox_writer.engine.graph import run_simulation
 from worldbox_writer.exporting import build_export_bundle
 from worldbox_writer.exporting.story_export import render_export_artifact
@@ -108,6 +114,13 @@ def _branching_enabled() -> bool:
 
 def _branching_feature_payload() -> Dict[str, bool]:
     return {"branching_enabled": _branching_enabled()}
+
+
+def _feature_payload() -> Dict[str, bool]:
+    return {
+        **_branching_feature_payload(),
+        "dual_loop_enabled": dual_loop_enabled(),
+    }
 
 
 def _default_branch_meta() -> Dict[str, Any]:
@@ -317,7 +330,7 @@ def _build_simulation_payload(
             "telemetry": _serialize_telemetry(telemetry_events),
             "intervention_context": intervention_context,
             "error": error,
-            "features": _branching_feature_payload(),
+            "features": _feature_payload(),
         }
 
     world.branches = _normalize_branch_registry(world.branches)
@@ -339,7 +352,7 @@ def _build_simulation_payload(
         ),
         "intervention_context": intervention_context,
         "error": error,
-        "features": _branching_feature_payload(),
+        "features": _feature_payload(),
     }
 
 
@@ -1293,6 +1306,7 @@ async def get_simulation_diagnostics(sim_id: str):
     if not session:
         raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
 
+    runtime_memory: Optional[MemoryManager] = None
     memory_entries = (
         load_memory_entries_for_world(sim_id, session.world, include_archived=True)
         if session.world
@@ -1309,6 +1323,12 @@ async def get_simulation_diagnostics(sim_id: str):
             "vector_backend_fallback_reason": runtime_memory.vector_backend_fallback_reason,
         }
 
+    dual_loop_snapshot = (
+        build_dual_loop_snapshot(session.world, memory=runtime_memory)
+        if session.world
+        else None
+    )
+
     return {
         "sim_id": session.sim_id,
         "status": session.status,
@@ -1321,6 +1341,41 @@ async def get_simulation_diagnostics(sim_id: str):
             "latest_tick": latest_memory_tick,
         },
         "llm": _collect_llm_diagnostics(session.telemetry_events),
+        "dual_loop": {
+            "enabled": dual_loop_enabled(),
+            "contract_version": DUAL_LOOP_CONTRACT_VERSION,
+            "adapter_mode": (
+                dual_loop_snapshot.adapter_mode
+                if dual_loop_snapshot
+                else DUAL_LOOP_ADAPTER_MODE
+            ),
+            "scene_plan": (
+                dual_loop_snapshot.scene_plan.model_dump(mode="json")
+                if dual_loop_snapshot
+                else None
+            ),
+            "action_intents": (
+                [
+                    intent.model_dump(mode="json")
+                    for intent in dual_loop_snapshot.action_intents
+                ]
+                if dual_loop_snapshot
+                else []
+            ),
+            "scene_script": (
+                dual_loop_snapshot.scene_script.model_dump(mode="json")
+                if dual_loop_snapshot
+                else None
+            ),
+            "prompt_traces": (
+                [
+                    trace.model_dump(mode="json")
+                    for trace in dual_loop_snapshot.prompt_traces
+                ]
+                if dual_loop_snapshot
+                else []
+            ),
+        },
     }
 
 

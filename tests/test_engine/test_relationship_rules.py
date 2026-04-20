@@ -123,6 +123,7 @@ class TestRelationshipRules:
         state: graph_module.SimulationState = {
             "world": world,
             "memory": MemoryManager(),
+            "scene_plan": None,
             "candidate_event": "阿璃与白夜在断桥边和解，并决定联手前行。",
             "validation_passed": True,
             "needs_intervention": False,
@@ -163,6 +164,7 @@ class TestRelationshipRules:
         state: graph_module.SimulationState = {
             "world": world,
             "memory": MemoryManager(),
+            "scene_plan": None,
             "candidate_event": "他们在雨夜中和解，但谁也没有说出名字。",
             "validation_passed": True,
             "needs_intervention": False,
@@ -222,6 +224,7 @@ class TestRelationshipRules:
         state: graph_module.SimulationState = {
             "world": world,
             "memory": MemoryManager(),
+            "scene_plan": None,
             "candidate_event": "阿璃决定立刻毁灭整座城。",
             "validation_passed": False,
             "needs_intervention": False,

@@ -105,6 +105,87 @@ export interface BranchCompareSummary {
 
 export interface SimulationFeatures {
   branching_enabled: boolean;
+  dual_loop_enabled: boolean;
+}
+
+export interface MemoryRecallTrace {
+  trace_id: string;
+  character_id: string | null;
+  query: string;
+  working_memory: string[];
+  episodic_memory_snippets: string[];
+  reflective_memory: string[];
+  metadata: Record<string, unknown>;
+}
+
+export interface PromptTrace {
+  trace_id: string;
+  agent: string;
+  scene_id: string;
+  character_id: string | null;
+  system_prompt: string;
+  user_prompt: string;
+  assembled_prompt: string;
+  narrative_pressure: string;
+  visible_character_ids: string[];
+  memory_trace: MemoryRecallTrace | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface ActionIntent {
+  intent_id: string;
+  scene_id: string;
+  actor_id: string;
+  actor_name: string;
+  action_type: string;
+  summary: string;
+  rationale: string;
+  target_ids: string[];
+  confidence: number;
+  prompt_trace_id: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface SceneBeat {
+  beat_id: string;
+  actor_id: string | null;
+  actor_name: string | null;
+  summary: string;
+  outcome: string;
+  visibility: string;
+  source_intent_id: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface ScenePlan {
+  scene_id: string;
+  branch_id: string;
+  tick: number;
+  title: string;
+  objective: string;
+  setting: string;
+  public_summary: string;
+  spotlight_character_ids: string[];
+  narrative_pressure: string;
+  constraints: string[];
+  source_node_id: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface SceneScript {
+  script_id: string;
+  scene_id: string;
+  branch_id: string;
+  tick: number;
+  title: string;
+  summary: string;
+  public_facts: string[];
+  participating_character_ids: string[];
+  accepted_intent_ids: string[];
+  rejected_intent_ids: string[];
+  beats: SceneBeat[];
+  source_node_id: string | null;
+  metadata: Record<string, unknown>;
 }
 
 export interface WorldData {
@@ -221,6 +302,15 @@ export interface SimulationDiagnostics {
     estimated_completion_tokens: number;
     estimated_cost_usd: number | null;
     routes: RouteDiagnostics[];
+  };
+  dual_loop: {
+    enabled: boolean;
+    contract_version: string;
+    adapter_mode: string;
+    scene_plan: ScenePlan | null;
+    action_intents: ActionIntent[];
+    scene_script: SceneScript | null;
+    prompt_traces: PromptTrace[];
   };
 }
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional, cast
 
+from worldbox_writer.core.dual_loop import ScenePlan
 from worldbox_writer.core.models import (
     Character,
     Constraint,
@@ -137,6 +138,71 @@ class DirectorAgent:
         world.resolve_intervention(instruction)
         return world
 
+    def plan_scene(
+        self,
+        world: WorldState,
+        *,
+        memory_context: str = "",
+        max_spotlight_characters: int = 3,
+    ) -> ScenePlan:
+        """Build a deterministic scene plan for the next runtime tick."""
+        current_node = (
+            world.get_node(world.current_node_id) if world.current_node_id else None
+        )
+        spotlight_character_ids = self._select_spotlight_character_ids(
+            world,
+            current_node=current_node,
+            max_spotlight_characters=max_spotlight_characters,
+        )
+        narrative_pressure = self._resolve_narrative_pressure(world)
+        title = self._derive_scene_title(
+            world,
+            current_node=current_node,
+            spotlight_character_ids=spotlight_character_ids,
+            narrative_pressure=narrative_pressure,
+        )
+        setting = self._derive_scene_setting(world)
+        objective = self._derive_scene_objective(
+            world,
+            current_node=current_node,
+            spotlight_character_ids=spotlight_character_ids,
+            narrative_pressure=narrative_pressure,
+        )
+        public_summary = self._derive_public_summary(
+            world,
+            current_node=current_node,
+            spotlight_character_ids=spotlight_character_ids,
+            setting=setting,
+        )
+        pressure_guidance = self._pressure_guidance(narrative_pressure)
+        scene_plan = ScenePlan(
+            branch_id=world.active_branch_id or "main",
+            tick=world.tick,
+            title=title,
+            objective=objective,
+            setting=setting,
+            public_summary=public_summary,
+            spotlight_character_ids=spotlight_character_ids,
+            narrative_pressure=narrative_pressure,
+            constraints=[
+                constraint.rule for constraint in world.active_constraints()[:5]
+            ],
+            source_node_id=str(current_node.id) if current_node else None,
+            metadata={
+                "planning_mode": "heuristic-scene-planner-v1",
+                "pressure_guidance": pressure_guidance,
+                "spotlight_names": self._spotlight_names(
+                    world, spotlight_character_ids
+                ),
+                "world_builder_completed": bool(
+                    world.metadata.get("world_builder_completed")
+                ),
+                "memory_context_preview": self._memory_context_preview(memory_context),
+            },
+        )
+        world.metadata["current_scene_plan"] = scene_plan.model_dump(mode="json")
+        return scene_plan
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
@@ -253,3 +319,139 @@ class DirectorAgent:
             severity=ConstraintSeverity(data.get("severity", "hard")),
             rule=data.get("rule", ""),
         )
+
+    def _select_spotlight_character_ids(
+        self,
+        world: WorldState,
+        *,
+        current_node: Optional[StoryNode],
+        max_spotlight_characters: int,
+    ) -> List[str]:
+        if current_node and current_node.character_ids:
+            return list(dict.fromkeys(current_node.character_ids))[
+                :max_spotlight_characters
+            ]
+
+        alive_ids = [
+            character_id
+            for character_id, character in world.characters.items()
+            if character.status.value == "alive"
+        ]
+        if alive_ids:
+            return alive_ids[:max_spotlight_characters]
+
+        return list(world.characters.keys())[:max_spotlight_characters]
+
+    def _spotlight_names(
+        self, world: WorldState, spotlight_character_ids: List[str]
+    ) -> List[str]:
+        names: List[str] = []
+        for character_id in spotlight_character_ids:
+            character = world.get_character(character_id)
+            if character:
+                names.append(character.name)
+        return names
+
+    def _resolve_narrative_pressure(self, world: WorldState) -> str:
+        branch_meta = world.branches.get(world.active_branch_id or "main", {})
+        pacing = str(branch_meta.get("pacing", "balanced")).strip().lower()
+        if pacing in {"calm", "balanced", "intense"}:
+            return pacing
+        return "balanced"
+
+    def _derive_scene_title(
+        self,
+        world: WorldState,
+        *,
+        current_node: Optional[StoryNode],
+        spotlight_character_ids: List[str],
+        narrative_pressure: str,
+    ) -> str:
+        spotlight_names = self._spotlight_names(world, spotlight_character_ids)
+        focus = "、".join(spotlight_names[:2]) if spotlight_names else "局势"
+        pressure_label = {
+            "calm": "余波铺陈",
+            "balanced": "局势推进",
+            "intense": "高压对峙",
+        }.get(narrative_pressure, "局势推进")
+
+        if current_node and current_node.title:
+            return f"第{world.tick + 1}幕：{focus}的{pressure_label}"
+        return f"第{world.tick + 1}幕：{pressure_label}"
+
+    def _derive_scene_objective(
+        self,
+        world: WorldState,
+        *,
+        current_node: Optional[StoryNode],
+        spotlight_character_ids: List[str],
+        narrative_pressure: str,
+    ) -> str:
+        spotlight_names = self._spotlight_names(world, spotlight_character_ids)
+        focus = "、".join(spotlight_names) if spotlight_names else "主要角色"
+
+        if current_node and current_node.description:
+            if narrative_pressure == "calm":
+                return (
+                    f"围绕{focus}消化上一幕余波，推进关系、调查或准备，"
+                    f"承接线索：{current_node.description}"
+                )
+            if narrative_pressure == "intense":
+                return (
+                    f"围绕{focus}把局势推向更高风险的冲突、揭露或正面碰撞，"
+                    f"承接线索：{current_node.description}"
+                )
+            return (
+                f"围绕{focus}承接上一幕并制造新的选择、阻力或推进，"
+                f"承接线索：{current_node.description}"
+            )
+
+        if world.premise:
+            return f"围绕{focus}继续推进主线前提：{world.premise}"
+
+        return f"围绕{focus}推进下一幕，并保持人物目标与世界约束一致。"
+
+    def _derive_scene_setting(self, world: WorldState) -> str:
+        location_names = [
+            str(location.get("name", "")) for location in world.locations[:2]
+        ]
+        faction_names = [str(faction.get("name", "")) for faction in world.factions[:2]]
+
+        parts: List[str] = []
+        if any(location_names):
+            parts.append("地点：" + "、".join(filter(None, location_names)))
+        if any(faction_names):
+            parts.append("势力：" + "、".join(filter(None, faction_names)))
+        return "；".join(parts)
+
+    def _derive_public_summary(
+        self,
+        world: WorldState,
+        *,
+        current_node: Optional[StoryNode],
+        spotlight_character_ids: List[str],
+        setting: str,
+    ) -> str:
+        parts: List[str] = []
+        if current_node and current_node.description:
+            parts.append(f"上一幕已发生：{current_node.description}")
+        spotlight_names = self._spotlight_names(world, spotlight_character_ids)
+        if spotlight_names:
+            parts.append("当前聚焦角色：" + "、".join(spotlight_names))
+        if setting:
+            parts.append(setting)
+        return "；".join(parts) if parts else world.premise
+
+    def _pressure_guidance(self, narrative_pressure: str) -> str:
+        if narrative_pressure == "calm":
+            return "优先铺垫、关系推进和信息回收，避免无准备的高压升级。"
+        if narrative_pressure == "intense":
+            return "优先制造高风险冲突、揭露和局势升级，但不能越过角色认知与世界约束。"
+        return "在铺垫和冲突之间保持均衡，确保故事继续向主线推进。"
+
+    def _memory_context_preview(self, memory_context: str) -> List[str]:
+        if not memory_context or memory_context == "（暂无记忆）":
+            return []
+        return [line.strip() for line in memory_context.splitlines() if line.strip()][
+            -2:
+        ]
