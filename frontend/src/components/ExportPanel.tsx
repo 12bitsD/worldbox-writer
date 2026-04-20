@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ExportData } from "../types";
+import { downloadExportArtifact } from "../utils/api";
 
 interface ExportPanelProps {
   simId: string;
@@ -9,7 +10,9 @@ interface ExportPanelProps {
 export function ExportPanel({ simId, onExport }: ExportPanelProps) {
   const [data, setData] = useState<ExportData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<"novel" | "settings" | "timeline">("novel");
+  const [activeTab, setActiveTab] = useState<"novel" | "print" | "settings" | "timeline">(
+    "novel"
+  );
 
   const handleExport = async () => {
     setLoading(true);
@@ -18,8 +21,8 @@ export function ExportPanel({ simId, onExport }: ExportPanelProps) {
     setLoading(false);
   };
 
-  const downloadText = (content: string, filename: string) => {
-    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const downloadText = (content: string, filename: string, mimeType: string) => {
+    const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -27,6 +30,9 @@ export function ExportPanel({ simId, onExport }: ExportPanelProps) {
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  const bundleFilename = (kind: string, fallback: string) =>
+    data?.manifest.files.find((file) => file.kind === kind)?.filename ?? fallback;
 
   const downloadJSON = (content: object, filename: string) => {
     const blob = new Blob([JSON.stringify(content, null, 2)], {
@@ -47,7 +53,8 @@ export function ExportPanel({ simId, onExport }: ExportPanelProps) {
           故事已完成
         </div>
         <p style={{ color: "var(--color-text-secondary)", fontSize: 13, marginBottom: 20 }}>
-          导出完整小说文本、世界设定集和故事时间线
+          导出正文 TXT、Markdown、HTML、DOCX、PDF，以及世界设定集、时间线和
+          manifest 清单
         </p>
         <button
           className="btn btn-primary"
@@ -63,6 +70,7 @@ export function ExportPanel({ simId, onExport }: ExportPanelProps) {
 
   const tabs: Array<{ key: typeof activeTab; label: string }> = [
     { key: "novel", label: "小说正文" },
+    { key: "print", label: "排版稿" },
     { key: "settings", label: "世界设定" },
     { key: "timeline", label: "故事时间线" },
   ];
@@ -95,19 +103,80 @@ export function ExportPanel({ simId, onExport }: ExportPanelProps) {
         ))}
         <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
           {activeTab === "novel" && (
-            <button
-              className="btn"
-              style={{ fontSize: 11, padding: "4px 10px" }}
-              onClick={() => downloadText(data.novel, `worldbox-${simId}-novel.txt`)}
-            >
-              下载 TXT
-            </button>
+            <>
+              <button
+                className="btn"
+                style={{ fontSize: 11, padding: "4px 10px" }}
+                onClick={() =>
+                  downloadText(
+                    data.novel,
+                    bundleFilename("novel_txt", `worldbox-${simId}-novel.txt`),
+                    "text/plain;charset=utf-8"
+                  )
+                }
+              >
+                下载 TXT
+              </button>
+              <button
+                className="btn"
+                style={{ fontSize: 11, padding: "4px 10px" }}
+                onClick={() =>
+                  downloadText(
+                    data.markdown,
+                    bundleFilename("novel_markdown", `worldbox-${simId}-novel.md`),
+                    "text/markdown;charset=utf-8"
+                  )
+                }
+              >
+                下载 Markdown
+              </button>
+            </>
+          )}
+          {activeTab === "print" && (
+            <>
+              <button
+                className="btn"
+                style={{ fontSize: 11, padding: "4px 10px" }}
+                onClick={() =>
+                  downloadText(
+                    data.html,
+                    bundleFilename("novel_html", `worldbox-${simId}-novel.html`),
+                    "text/html;charset=utf-8"
+                  )
+                }
+              >
+                下载 HTML
+              </button>
+              <button
+                className="btn"
+                style={{ fontSize: 11, padding: "4px 10px" }}
+                onClick={() =>
+                  void downloadExportArtifact(simId, "novel_docx", data.branch_id)
+                }
+              >
+                下载 DOCX
+              </button>
+              <button
+                className="btn"
+                style={{ fontSize: 11, padding: "4px 10px" }}
+                onClick={() =>
+                  void downloadExportArtifact(simId, "novel_pdf", data.branch_id)
+                }
+              >
+                下载 PDF
+              </button>
+            </>
           )}
           {activeTab === "settings" && (
             <button
               className="btn"
               style={{ fontSize: 11, padding: "4px 10px" }}
-              onClick={() => downloadJSON(data.world_settings, `worldbox-${simId}-settings.json`)}
+              onClick={() =>
+                downloadJSON(
+                  data.world_settings,
+                  bundleFilename("world_settings_json", `worldbox-${simId}-settings.json`)
+                )
+              }
             >
               下载 JSON
             </button>
@@ -116,16 +185,50 @@ export function ExportPanel({ simId, onExport }: ExportPanelProps) {
             <button
               className="btn"
               style={{ fontSize: 11, padding: "4px 10px" }}
-              onClick={() => downloadJSON(data.timeline, `worldbox-${simId}-timeline.json`)}
+              onClick={() =>
+                downloadJSON(
+                  data.timeline,
+                  bundleFilename("timeline_json", `worldbox-${simId}-timeline.json`)
+                )
+              }
             >
               下载 JSON
             </button>
           )}
+          <button
+            className="btn"
+            style={{ fontSize: 11, padding: "4px 10px" }}
+            onClick={() =>
+              downloadJSON(
+                data.manifest,
+                bundleFilename("manifest_json", `worldbox-${simId}-manifest.json`)
+              )
+            }
+          >
+            下载清单
+          </button>
         </div>
       </div>
 
       {/* Content */}
       <div style={{ padding: 20, maxHeight: 500, overflowY: "auto" }}>
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 12,
+            marginBottom: 16,
+            fontSize: 11,
+            color: "var(--color-text-muted)",
+          }}
+        >
+          <span>分支：{data.branch_id}</span>
+          <span>节点：{data.summary.node_count}</span>
+          <span>角色：{data.summary.character_count}</span>
+          <span>规则：{data.summary.rule_count}</span>
+          <span>生成时间：{new Date(data.generated_at).toLocaleString()}</span>
+        </div>
+
         {activeTab === "novel" && (
           <pre
             style={{
@@ -138,6 +241,19 @@ export function ExportPanel({ simId, onExport }: ExportPanelProps) {
           >
             {data.novel}
           </pre>
+        )}
+
+        {activeTab === "print" && (
+          <iframe
+            title="导出排版稿预览"
+            srcDoc={data.html}
+            style={{
+              width: "100%",
+              minHeight: 420,
+              border: "1px solid var(--color-border)",
+              background: "#fff",
+            }}
+          />
         )}
 
         {activeTab === "settings" && (
@@ -165,6 +281,19 @@ export function ExportPanel({ simId, onExport }: ExportPanelProps) {
                   </div>
                   <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: 4 }}>
                     目标：{c.goals.join(" / ")}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div>
+              <div className="label" style={{ marginBottom: 8 }}>
+                势力与地点
+              </div>
+              {[...data.world_settings.factions, ...data.world_settings.locations].map((item, i) => (
+                <div key={`${item.name}-${i}`} className="card card-sm" style={{ marginBottom: 8 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 4 }}>{item.name}</div>
+                  <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
+                    {item.description || "暂无描述"}
                   </div>
                 </div>
               ))}

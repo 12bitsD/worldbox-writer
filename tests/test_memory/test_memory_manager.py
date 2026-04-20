@@ -14,7 +14,9 @@ from worldbox_writer.memory.memory_manager import (
     MemoryEntry,
     MemoryManager,
     SimpleVectorStore,
+    load_memory_entries_for_world,
 )
+from worldbox_writer.storage.db import init_db, save_session
 
 # ---------------------------------------------------------------------------
 # SimpleVectorStore tests — pure logic, no LLM
@@ -113,6 +115,14 @@ def sample_node(world):
     )
 
 
+@pytest.fixture
+def memory_db(tmp_path, monkeypatch):
+    path = str(tmp_path / "memory.db")
+    monkeypatch.setenv("DB_PATH", path)
+    init_db(path)
+    return path
+
+
 class TestMemoryManagerPureLogic:
     """Tests that do not require LLM calls."""
 
@@ -184,6 +194,161 @@ class TestMemoryManagerPureLogic:
         arc = mm.get_character_arc(char)
         assert "李凌" in arc
         assert "尚无记录" in arc
+
+    def test_chromadb_backend_falls_back_without_dependency(self, world, monkeypatch):
+        monkeypatch.setenv("MEMORY_VECTOR_BACKEND", "chromadb")
+        real_import = __import__
+
+        def blocked_import(name, *args, **kwargs):
+            if name == "chromadb":
+                raise ImportError("chromadb unavailable in test")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.__import__", blocked_import)
+        mm = MemoryManager()
+
+        node = StoryNode(
+            title="回退测试",
+            description="验证 chromadb 缺失时仍能记录记忆",
+            node_type=NodeType.DEVELOPMENT,
+        )
+        world.tick = 1
+        mm.record_event(node, world, importance=0.8)
+
+        stats = mm.get_stats()
+        assert stats["vector_backend_requested"] == "chromadb"
+        assert stats["vector_backend"] == "simple"
+        assert "chromadb" in str(stats["vector_backend_fallback_reason"])
+
+    def test_auto_backend_prefers_chromadb_when_installed(self, world):
+        mm = MemoryManager()
+        node = StoryNode(
+            title="王城密令",
+            description="主角在王城收到新的密令",
+            node_type=NodeType.DEVELOPMENT,
+        )
+        world.tick = 1
+        mm.record_event(node, world, importance=0.8)
+
+        stats = mm.get_stats()
+        assert stats["vector_backend_requested"] == "auto"
+        assert stats["vector_backend"] in {"chromadb", "simple"}
+        if stats["vector_backend"] == "chromadb":
+            context = mm.get_context_for_agent(query="王城")
+            assert "王城密令" in context
+
+
+class TestMemoryManagerPersistence:
+    def test_record_event_persists_entries(self, world, sample_node, memory_db):
+        save_session(
+            "sim-memory", world.premise, 5, "running", world, [], db_path=memory_db
+        )
+        mm = MemoryManager(sim_id="sim-memory")
+        world.tick = 1
+        mm.record_event(sample_node, world, importance=0.8)
+
+        entries = load_memory_entries_for_world("sim-memory", world)
+        assert len(entries) == 1
+        assert entries[0].content.startswith("第1幕:")
+        assert entries[0].branch_id == "main"
+
+    def test_archives_old_entries_into_summary(self, world, memory_db):
+        save_session(
+            "sim-archive", world.premise, 5, "running", world, [], db_path=memory_db
+        )
+        mm = MemoryManager(
+            sim_id="sim-archive",
+            archive_threshold=3,
+            archive_keep_recent=1,
+        )
+        char_id = list(world.characters.keys())[0]
+
+        for index in range(4):
+            node = StoryNode(
+                title=f"第{index + 1}幕",
+                description=f"旧事件{index}",
+                node_type=NodeType.DEVELOPMENT,
+                character_ids=[char_id],
+            )
+            world.tick = index + 1
+            mm.record_event(node, world, importance=0.4 + index * 0.1)
+
+        stats = mm.get_stats()
+        assert stats["summary_entries"] == 1
+        assert stats["active_entries"] == 2
+
+        persisted = load_memory_entries_for_world(
+            "sim-archive", world, include_archived=True
+        )
+        archived_entries = [entry for entry in persisted if entry.archived]
+        summary_entries = [
+            entry for entry in persisted if entry.entry_kind == "summary"
+        ]
+
+        assert len(archived_entries) == 3
+        assert len(summary_entries) == 1
+        assert "归档" in summary_entries[0].content
+
+    def test_branch_lineage_filters_future_main_entries(self, world, memory_db):
+        save_session(
+            "sim-branch", world.premise, 5, "running", world, [], db_path=memory_db
+        )
+        world.branches = {
+            "main": {
+                "label": "Main Timeline",
+                "forked_from_node": None,
+                "source_branch_id": None,
+                "created_at_tick": 0,
+            },
+            "branch_a": {
+                "label": "Branch A",
+                "forked_from_node": "node-main-2",
+                "source_branch_id": "main",
+                "created_at_tick": 2,
+            },
+        }
+        world.active_branch_id = "branch_a"
+
+        mm = MemoryManager(sim_id="sim-branch")
+        char_id = list(world.characters.keys())[0]
+
+        main_entry = StoryNode(
+            title="主线节点",
+            description="主线第二步事件",
+            node_type=NodeType.DEVELOPMENT,
+            character_ids=[char_id],
+            branch_id="main",
+        )
+        world.active_branch_id = "main"
+        world.tick = 2
+        mm.record_event(main_entry, world, importance=0.5)
+
+        future_main_entry = StoryNode(
+            title="主线后续",
+            description="主线第四步事件",
+            node_type=NodeType.DEVELOPMENT,
+            character_ids=[char_id],
+            branch_id="main",
+        )
+        world.tick = 4
+        mm.record_event(future_main_entry, world, importance=0.5)
+
+        branch_entry = StoryNode(
+            title="支线节点",
+            description="支线第三步事件",
+            node_type=NodeType.DEVELOPMENT,
+            character_ids=[char_id],
+            branch_id="branch_a",
+        )
+        world.active_branch_id = "branch_a"
+        world.tick = 3
+        mm.record_event(branch_entry, world, importance=0.5)
+
+        filtered = load_memory_entries_for_world("sim-branch", world)
+        ids = {entry.content for entry in filtered}
+        assert "主线节点: 主线第二步事件" in ids
+        assert "支线节点: 支线第三步事件" in ids
+        assert "主线后续: 主线第四步事件" not in ids
 
 
 @pytest.mark.integration

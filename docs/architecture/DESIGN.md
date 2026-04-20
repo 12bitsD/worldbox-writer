@@ -103,6 +103,16 @@
 
 这项决策的重点是先验证：在不新增队列、缓存和跨进程状态同步复杂度的前提下，仅靠关键路径裁剪和更早暴露进度，是否已经足够改善首次推演体验。
 
+#### Sprint 9 补充：先冻结 Durable Memory / Routing Contract，再谈外部向量库
+
+Sprint 9 的首要任务不是立刻接入新的向量数据库，而是先把 **记忆持久化契约** 和 **模型路由契约** 固化下来：
+
+- **Durable Memory**：`memory_entries` 继续复用 SQLite，但升级为 branch-aware、可归档的持久化表；旧事件可被摘要压缩为 summary entry，而不是只停留在内存窗口里。
+- **Routing Contract**：LLM 调用支持 `logic / creative / role` 三级覆盖，先解决“不同链路可配置、可诊断、可 fallback”的问题。
+- **Eval / Perf Guard**：模型评估与容量门禁优先作为手动工作流落地，不直接塞入默认 PR gate。
+
+这样做的原因是：如果 Durable Memory / Routing 的契约都还不稳定，那么无论接 ChromaDB、做更复杂的工作流编辑器还是上更重的 CI 评估矩阵，后续都会反复返工。
+
 ### 4.3 大语言模型接入 (LLM Integration)
 - **云端 API**：OpenAI (GPT-4o), Anthropic (Claude 3.5 Sonnet)。
   - *用途*：用于复杂的逻辑推理、边界校验和高质量文本渲染。

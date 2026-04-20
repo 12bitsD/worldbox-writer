@@ -55,6 +55,7 @@ export interface TelemetryEvent {
 export interface Character {
   id: string;
   name: string;
+  description?: string;
   personality: string;
   goals: string[];
   status: string;
@@ -63,10 +64,13 @@ export interface Character {
 }
 
 export interface Constraint {
+  id?: string;
   name: string;
+  description?: string;
   rule: string;
   severity: string;
   type: string;
+  is_active?: boolean;
 }
 
 export interface BranchMeta {
@@ -124,6 +128,7 @@ export interface StoryNode {
   description: string;
   node_type: NodeType;
   rendered_text: string | null;
+  editor_html?: string | null;
   tick: number;
   requires_intervention: boolean;
   intervention_instruction?: string;
@@ -152,8 +157,111 @@ export interface BranchCompareResponse {
   branches: Record<string, BranchCompareSummary>;
 }
 
+export interface WikiIssue {
+  level: "warning" | "error";
+  path: string;
+  message: string;
+}
+
+export interface WikiEntityInput {
+  name: string;
+  description: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface WikiCharacterInput {
+  id?: string;
+  name: string;
+  description: string;
+  personality: string;
+  goals: string[];
+  status: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface WikiSaveResponse {
+  message: string;
+  issues: WikiIssue[];
+  world: WorldData;
+}
+
+export interface RouteDiagnostics {
+  route_group: string;
+  provider: string;
+  model: string;
+  calls: number;
+  agents: string[];
+  duration_ms: number;
+  estimated_prompt_tokens: number;
+  estimated_completion_tokens: number;
+  estimated_cost_usd: number | null;
+  fallbacks: number;
+}
+
+export interface SimulationDiagnostics {
+  sim_id: string;
+  status: SimStatus;
+  active_branch_id: string;
+  routing: Record<string, unknown>;
+  memory: {
+    total_entries: number;
+    active_entries: number;
+    archived_entries: number;
+    summary_entries: number;
+    event_entries: number;
+    latest_tick: number;
+    vector_backend?: string;
+    vector_backend_requested?: string;
+    vector_backend_fallback_reason?: string | null;
+  };
+  llm: {
+    total_calls: number;
+    total_duration_ms: number;
+    estimated_prompt_tokens: number;
+    estimated_completion_tokens: number;
+    estimated_cost_usd: number | null;
+    routes: RouteDiagnostics[];
+  };
+}
+
+export type ExportArtifactKind =
+  | "novel_txt"
+  | "novel_markdown"
+  | "novel_html"
+  | "novel_docx"
+  | "novel_pdf"
+  | "world_settings_json"
+  | "timeline_json"
+  | "manifest_json";
+
+export interface ExportManifestFile {
+  kind: ExportArtifactKind;
+  filename: string;
+  mime_type: string;
+}
+
 export interface ExportData {
+  sim_id: string;
+  branch_id: string;
+  generated_at: string;
+  summary: {
+    node_count: number;
+    rendered_node_count: number;
+    character_count: number;
+    rule_count: number;
+    faction_count: number;
+    location_count: number;
+  };
+  manifest: {
+    bundle_name: string;
+    generated_at: string;
+    sim_id: string;
+    branch_id: string;
+    files: ExportManifestFile[];
+  };
   novel: string;
+  markdown: string;
+  html: string;
   world_settings: {
     title: string;
     premise: string;
@@ -173,5 +281,6 @@ export interface ExportData {
     type: string;
     description: string;
     intervention?: string;
+    branch_id?: string;
   }>;
 }

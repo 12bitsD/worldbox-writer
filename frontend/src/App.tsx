@@ -12,6 +12,7 @@ import { RelationshipPanel } from "./components/RelationshipPanel";
 import { TelemetryPanel } from "./components/TelemetryPanel";
 import { BranchPanel } from "./components/BranchPanel";
 import { ProgressPanel } from "./components/ProgressPanel";
+import { CreativeStudio } from "./components/CreativeStudio";
 
 export default function App() {
   const {
@@ -206,6 +207,13 @@ export default function App() {
               <div style={{ marginTop: 16 }}>
                 <ExportPanel simId={simId} onExport={doExport} />
               </div>
+            )}
+            {!isRunning && simId && state?.world && (
+              <CreativeStudio
+                simId={simId}
+                state={state}
+                onRefresh={refresh}
+              />
             )}
           </div>
 

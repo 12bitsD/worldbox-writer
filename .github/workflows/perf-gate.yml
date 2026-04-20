@@ -1,0 +1,34 @@
+name: Capacity Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      session_count:
+        description: "How many synthetic sessions to execute"
+        required: false
+        default: "6"
+
+jobs:
+  perf-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run capacity gate
+        env:
+          PERF_SESSION_COUNT: ${{ inputs.session_count }}
+          PERF_GATE_OUTPUT: artifacts/perf/report.json
+        run: INSTALL_DEPS=1 PYTHON_BIN=python sh scripts/ci/perf-gate.sh
+
+      - name: Upload performance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-gate-report
+          path: artifacts/perf
+          if-no-files-found: ignore

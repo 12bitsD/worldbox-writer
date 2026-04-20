@@ -17,7 +17,12 @@ from worldbox_writer.api.server import (
     app,
 )
 from worldbox_writer.core.models import Character, StoryNode, WorldState
-from worldbox_writer.storage.db import BranchSeedNotFoundError, init_db
+from worldbox_writer.storage.db import (
+    BranchSeedNotFoundError,
+    archive_memory_entries,
+    init_db,
+    save_memory_entry,
+)
 
 
 def _rendered_node_payload(
@@ -29,6 +34,7 @@ def _rendered_node_payload(
         "description": node.description,
         "node_type": node.node_type.value,
         "rendered_text": rendered_text,
+        "editor_html": node.metadata.get("editor_html"),
         "tick": tick,
         "requires_intervention": node.requires_intervention,
         "intervention_instruction": node.intervention_instruction,
@@ -81,6 +87,43 @@ def running_session():
     session.world = world
     _sessions[sim_id] = session
     return sim_id
+
+
+@pytest.fixture
+def complete_session():
+    sim_id = "test-complete"
+    world = WorldState(title="已完成世界", premise="测试前提")
+    char = Character(name="角色B", personality="谨慎", goals=["写成史诗"])
+    world.add_character(char)
+    node = StoryNode(
+        title="终章",
+        description="故事迎来暂时的结尾",
+        character_ids=[str(char.id)],
+    )
+    node.is_rendered = True
+    node.rendered_text = "旧正文"
+    node.metadata["editor_html"] = "<p>旧正文</p>"
+    node.metadata["tick"] = 1
+    world.add_node(node)
+    world.current_node_id = str(node.id)
+    world.tick = 1
+    world.is_complete = True
+
+    session = SimulationSession(sim_id=sim_id, premise="测试前提", max_ticks=3)
+    session.status = "complete"
+    session.world = world
+    session.nodes_rendered = [_rendered_node_payload(node, 1, node.rendered_text)]
+    server_module.db_save_session(
+        sim_id=sim_id,
+        premise="测试前提",
+        max_ticks=3,
+        status="complete",
+        world=world,
+        nodes_json=session.nodes_rendered,
+        telemetry_events=[],
+    )
+    _sessions[sim_id] = session
+    return sim_id, str(char.id), str(node.id)
 
 
 @pytest.fixture
@@ -316,6 +359,169 @@ class TestAddConstraint:
             },
         )
         assert res.status_code == 400
+
+
+class TestCreativeWorkspace:
+    def test_complete_session_can_save_wiki(self, client, complete_session):
+        sim_id, char_id, _ = complete_session
+        res = client.put(
+            f"/api/simulate/{sim_id}/wiki",
+            json={
+                "title": "新的作品标题",
+                "premise": "测试前提",
+                "world_rules": ["规则一", "规则二"],
+                "factions": [{"name": "北境军", "description": "守护边境"}],
+                "locations": [{"name": "王城", "description": "故事主舞台"}],
+                "characters": [
+                    {
+                        "id": char_id,
+                        "name": "角色B",
+                        "description": "写作者",
+                        "personality": "谨慎",
+                        "goals": ["写成史诗"],
+                        "status": "alive",
+                    }
+                ],
+            },
+        )
+
+        assert res.status_code == 200
+        body = res.json()
+        assert body["world"]["title"] == "新的作品标题"
+        assert body["world"]["factions"][0]["name"] == "北境军"
+
+    def test_wiki_rejects_removing_referenced_character(self, client, complete_session):
+        sim_id, _, _ = complete_session
+        res = client.put(
+            f"/api/simulate/{sim_id}/wiki",
+            json={
+                "title": "新的作品标题",
+                "premise": "测试前提",
+                "world_rules": [],
+                "factions": [],
+                "locations": [],
+                "characters": [],
+            },
+        )
+
+        assert res.status_code == 400
+        detail = res.json()["detail"]
+        assert "Wiki 校验失败" in detail["message"]
+        assert detail["issues"][0]["path"] == "characters"
+
+    def test_complete_session_can_update_rendered_text(self, client, complete_session):
+        sim_id, _, node_id = complete_session
+        res = client.patch(
+            f"/api/simulate/{sim_id}/nodes/{node_id}/rendered-text",
+            json={
+                "rendered_text": "新的正文版本",
+                "rendered_html": "<p><strong>新的正文版本</strong></p>",
+            },
+        )
+
+        assert res.status_code == 200
+        body = res.json()
+        assert body["node"]["rendered_text"] == "新的正文版本"
+        assert body["node"]["editor_html"] == "<p><strong>新的正文版本</strong></p>"
+        assert _sessions[sim_id].world.get_node(node_id).rendered_text == "新的正文版本"
+
+    def test_diagnostics_summarize_memory_and_routes(self, client, complete_session):
+        sim_id, char_id, _ = complete_session
+        session = _sessions[sim_id]
+        save_memory_entry(
+            sim_id=sim_id,
+            entry_id="mem-1",
+            content="主角在王城完成了第一章润色",
+            character_ids=[char_id],
+            tick=1,
+            branch_id="main",
+            importance=0.8,
+        )
+        save_memory_entry(
+            sim_id=sim_id,
+            entry_id="mem-summary",
+            content="归档摘要：主角完成了第一轮创作整理",
+            character_ids=[char_id],
+            tick=1,
+            branch_id="main",
+            importance=0.9,
+            entry_kind="summary",
+            source_entry_ids=["mem-1"],
+            tags=["summary_archive"],
+        )
+        archive_memory_entries(sim_id, ["mem-1"])
+        session.telemetry_events.append(
+            server_module.TelemetryEvent(
+                event_id="evt-llm",
+                sim_id=sim_id,
+                trace_id="trace-1",
+                request_id="req-llm",
+                tick=1,
+                agent="narrator",
+                stage="completed",
+                level=server_module.TelemetryLevel.INFO,
+                span_kind=server_module.TelemetrySpanKind.LLM,
+                message="Narrator 完成润色",
+                payload={
+                    "route_group": "creative",
+                    "estimated_prompt_tokens": 120,
+                    "estimated_completion_tokens": 200,
+                    "estimated_cost_usd": 0.0012,
+                },
+                provider="openai",
+                model="gpt-4.1-mini",
+                duration_ms=180,
+                ts="2026-01-01T00:00:00+00:00",
+            )
+        )
+
+        res = client.get(f"/api/simulate/{sim_id}/diagnostics")
+
+        assert res.status_code == 200
+        body = res.json()
+        assert body["memory"]["summary_entries"] == 1
+        assert body["memory"]["archived_entries"] == 1
+        assert body["memory"]["vector_backend_requested"] == "auto"
+        assert body["memory"]["vector_backend"] in {"chromadb", "simple"}
+        assert body["llm"]["total_calls"] == 1
+        assert body["llm"]["routes"][0]["route_group"] == "creative"
+
+    def test_export_returns_bundle_with_markdown_and_html(
+        self, client, complete_session
+    ):
+        sim_id, _, _ = complete_session
+
+        res = client.get(f"/api/simulate/{sim_id}/export")
+
+        assert res.status_code == 200
+        body = res.json()
+        assert body["sim_id"] == sim_id
+        assert body["branch_id"] == "main"
+        assert body["summary"]["node_count"] == 1
+        assert body["markdown"].startswith("# 已完成世界")
+        assert "<html" in body["html"].lower()
+        assert body["manifest"]["files"][0]["kind"] == "novel_txt"
+
+    def test_export_file_returns_docx_download(self, client, complete_session):
+        sim_id, _, _ = complete_session
+
+        res = client.get(f"/api/simulate/{sim_id}/export/file?kind=novel_docx")
+
+        assert res.status_code == 200
+        assert res.headers["content-type"].startswith(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+        assert "attachment;" in res.headers["content-disposition"]
+        assert res.content[:2] == b"PK"
+
+    def test_export_file_returns_pdf_download(self, client, complete_session):
+        sim_id, _, _ = complete_session
+
+        res = client.get(f"/api/simulate/{sim_id}/export/file?kind=novel_pdf")
+
+        assert res.status_code == 200
+        assert res.headers["content-type"].startswith("application/pdf")
+        assert res.content.startswith(b"%PDF")
 
 
 class TestHealthCheck:

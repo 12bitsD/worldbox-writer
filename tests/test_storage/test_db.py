@@ -23,6 +23,7 @@ from worldbox_writer.core.models import (
 )
 from worldbox_writer.storage.db import (
     BranchSeedNotFoundError,
+    archive_memory_entries,
     delete_session,
     init_db,
     list_sessions,
@@ -400,9 +401,52 @@ class TestMemoryEntries:
         assert entries[0]["character_ids"] == ["char1", "char2"]
         assert entries[0]["importance"] == 0.8
         assert entries[0]["tags"] == ["冲突", "发展"]
+        assert entries[0]["branch_id"] == "main"
+        assert entries[0]["entry_kind"] == "event"
+        assert entries[0]["archived"] is False
 
     def test_empty_memory(self, db_path):
         """Session with no memories should return empty list."""
         save_session("sim2", "premise", 3, "running", None, [], db_path=db_path)
         entries = load_memory_entries("sim2", db_path)
         assert entries == []
+
+    def test_archive_memory_entries_roundtrip(self, db_path):
+        """Archived entries should be hidden by default but remain queryable."""
+        save_session("sim3", "premise", 3, "running", None, [], db_path=db_path)
+        save_memory_entry(
+            sim_id="sim3",
+            entry_id="entry-archived",
+            content="旧记忆",
+            character_ids=["char1"],
+            tick=1,
+            branch_id="main",
+            importance=0.5,
+            entry_kind="event",
+            db_path=db_path,
+        )
+        save_memory_entry(
+            sim_id="sim3",
+            entry_id="summary-1",
+            content="归档摘要：主角离开宗门",
+            character_ids=["char1"],
+            tick=1,
+            branch_id="main",
+            importance=0.9,
+            entry_kind="summary",
+            source_entry_ids=["entry-archived"],
+            tags=["summary_archive"],
+            db_path=db_path,
+        )
+
+        archive_memory_entries("sim3", ["entry-archived"], db_path=db_path)
+
+        active_entries = load_memory_entries("sim3", db_path)
+        all_entries = load_memory_entries("sim3", db_path, include_archived=True)
+
+        assert [entry["entry_id"] for entry in active_entries] == ["summary-1"]
+        assert len(all_entries) == 2
+        archived_entry = next(
+            entry for entry in all_entries if entry["entry_id"] == "entry-archived"
+        )
+        assert archived_entry["archived"] is True

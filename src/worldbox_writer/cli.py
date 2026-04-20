@@ -15,13 +15,16 @@ WorldBox Writer — 命令行 Demo 入口
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 from pathlib import Path
 
 from worldbox_writer.core.models import WorldState
 from worldbox_writer.engine.graph import run_simulation
+from worldbox_writer.exporting.story_export import (
+    build_export_bundle,
+    render_export_artifact,
+)
 from worldbox_writer.utils.llm import get_provider_info
 
 # ---------------------------------------------------------------------------
@@ -141,64 +144,45 @@ def intervention_prompt(context: str) -> str:
 
 def export_results(world: WorldState, output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    # 导出小说正文
-    novel_path = output_dir / "novel.txt"
-    with open(novel_path, "w", encoding="utf-8") as f:
-        f.write(f"{world.title}\n")
-        f.write("=" * 40 + "\n\n")
-        f.write(f"前提：{world.premise}\n\n")
-        f.write("=" * 40 + "\n\n")
-        for node in world.nodes.values():
-            if node.rendered_text:
-                f.write(f"【{node.title}】\n\n")
-                f.write(node.rendered_text)
-                f.write("\n\n" + "-" * 40 + "\n\n")
-
-    # 导出世界设定
-    settings_path = output_dir / "world_settings.json"
-    settings = {
-        "title": world.title,
-        "premise": world.premise,
-        "world_rules": world.world_rules,
-        "factions": world.factions,
-        "locations": world.locations,
-        "characters": [
+    ordered_nodes = sorted(
+        world.nodes.values(),
+        key=lambda node: int(node.metadata.get("tick", 0)),
+    )
+    bundle = build_export_bundle(
+        sim_id="cli",
+        branch_id=world.active_branch_id or "main",
+        world=world,
+        nodes=[
             {
-                "name": c.name,
-                "personality": c.personality,
-                "goals": c.goals,
-                "status": c.status.value,
-                "memory_count": len(c.memory),
+                "tick": int(node.metadata.get("tick", index)),
+                "title": node.title,
+                "node_type": node.node_type.value,
+                "description": node.description,
+                "rendered_text": node.rendered_text,
+                "editor_html": node.metadata.get("editor_html"),
+                "branch_id": node.branch_id,
+                "intervention_instruction": node.intervention_instruction,
             }
-            for c in world.characters.values()
+            for index, node in enumerate(ordered_nodes, start=1)
         ],
-        "constraints": [
-            {
-                "name": c.name,
-                "rule": c.rule,
-                "severity": c.severity.value,
-                "type": c.constraint_type.value,
-            }
-            for c in world.constraints
-        ],
-    }
-    with open(settings_path, "w", encoding="utf-8") as f:
-        json.dump(settings, f, ensure_ascii=False, indent=2)
+    )
+    artifact_kinds = [
+        "novel_txt",
+        "novel_markdown",
+        "novel_html",
+        "novel_docx",
+        "novel_pdf",
+        "world_settings_json",
+        "timeline_json",
+        "manifest_json",
+    ]
 
-    # 导出故事时间线
-    timeline_path = output_dir / "timeline.md"
-    with open(timeline_path, "w", encoding="utf-8") as f:
-        f.write(f"# {world.title} — 故事时间线\n\n")
-        for i, node in enumerate(world.nodes.values(), 1):
-            f.write(f"## 第{i}幕：{node.title} `[{node.node_type.value}]`\n\n")
-            f.write(f"{node.description}\n\n")
-            if node.intervention_instruction:
-                f.write(f"> 用户干预：{node.intervention_instruction}\n\n")
-
-    print(_c(f"\n  ✓ 小说正文  → {novel_path}", GREEN))
-    print(_c(f"  ✓ 世界设定  → {settings_path}", GREEN))
-    print(_c(f"  ✓ 故事时间线 → {timeline_path}", GREEN))
+    for kind in artifact_kinds:
+        filename, _media_type, payload = render_export_artifact(bundle, kind)
+        path = output_dir / filename
+        with open(path, "wb") as handle:
+            handle.write(payload)
+        print(_c(f"  ✓ {kind} → {path}", GREEN))
 
 
 # ---------------------------------------------------------------------------

@@ -3,7 +3,7 @@ BOOTSTRAP_PYTHON ?= python3
 PNPM_VERSION ?= 9.15.9
 MODEL_EVAL_PROVIDERS ?= all
 
-.PHONY: help setup setup-backend setup-frontend fmt lint lint-backend lint-frontend typecheck test test-backend test-frontend check integration model-eval dev-api dev-web clean-reports
+.PHONY: help setup setup-backend setup-frontend fmt lint lint-backend lint-frontend typecheck test test-backend test-frontend check integration model-eval perf dev-api dev-web clean-reports
 
 help:
 	@printf '%s\n' \
@@ -15,7 +15,8 @@ help:
 		'  test             Run backend L1 tests and frontend tests/build' \
 		'  check            Run lint + typecheck + test' \
 		'  integration      Run pytest integration tests locally' \
-		'  model-eval       Run the placeholder multi-model evaluation flow' \
+		'  model-eval       Run the Sprint 9 multi-model evaluation flow' \
+		'  perf             Run the Sprint 9 capacity gate' \
 		'  dev-api          Start the FastAPI server' \
 		'  dev-web          Start the Vite dev server'
 
@@ -59,6 +60,9 @@ integration:
 
 model-eval:
 	MODEL_EVAL_PROVIDERS=$(MODEL_EVAL_PROVIDERS) PYTHON_BIN=$(PYTHON) ./scripts/ci/model-eval.sh
+
+perf:
+	PYTHON_BIN=$(PYTHON) ./scripts/ci/perf-gate.sh
 
 dev-api:
 	$(PYTHON) -m uvicorn worldbox_writer.api.server:app --host 0.0.0.0 --port 8000

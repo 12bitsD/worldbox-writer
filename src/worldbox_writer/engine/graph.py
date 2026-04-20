@@ -96,6 +96,7 @@ def _emit_telemetry(
     message: str,
     level: str = "info",
     payload: Optional[Dict[str, Any]] = None,
+    llm_payload: Optional[Dict[str, Any]] = None,
     trace_id: Optional[str] = None,
     request_id: Optional[str] = None,
     parent_event_id: Optional[str] = None,
@@ -109,6 +110,7 @@ def _emit_telemetry(
     on_telemetry = callbacks.get("on_telemetry")
     if on_telemetry:
         branch_context = _resolve_branch_context(state.get("world"))
+        merged_payload = {**(payload or {}), **(llm_payload or {})}
         on_telemetry(
             {
                 "tick": tick,
@@ -116,7 +118,7 @@ def _emit_telemetry(
                 "stage": stage,
                 "level": level,
                 "message": message,
-                "payload": payload or {},
+                "payload": merged_payload,
                 "trace_id": trace_id or state.get("trace_id", ""),
                 "request_id": request_id,
                 "parent_event_id": parent_event_id,
@@ -142,6 +144,16 @@ def _llm_telemetry_fields(metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         "provider": metadata.get("provider"),
         "model": metadata.get("model"),
         "duration_ms": metadata.get("duration_ms"),
+        "llm_payload": {
+            "route_group": metadata.get("route_group"),
+            "route_fallback_applied": metadata.get("fallback_applied", False),
+            "route_fallback_reason": metadata.get("fallback_reason"),
+            "benchmark_score": metadata.get("benchmark_score"),
+            "benchmark_threshold": metadata.get("benchmark_threshold"),
+            "estimated_prompt_tokens": metadata.get("estimated_prompt_tokens"),
+            "estimated_completion_tokens": metadata.get("estimated_completion_tokens"),
+            "estimated_cost_usd": metadata.get("estimated_cost_usd"),
+        },
     }
 
 
@@ -198,24 +210,17 @@ def _ordered_lineage_nodes(world: WorldState) -> list[StoryNode]:
 
 
 def rebuild_memory_from_world(
-    world: WorldState, *, short_term_limit: int = 15
+    world: WorldState,
+    *,
+    sim_id: str = "",
+    short_term_limit: int = 15,
 ) -> MemoryManager:
-    """Rebuild a lightweight memory context from the current branch lineage."""
-    memory = MemoryManager(short_term_limit=short_term_limit)
-    lineage = _ordered_lineage_nodes(world)
-
-    for index, node in enumerate(lineage, start=1):
-        importance = 0.5
-        if node.node_type in (NodeType.CLIMAX, NodeType.BRANCH):
-            importance = 0.9
-        elif node.node_type == NodeType.SETUP:
-            importance = 0.8
-
-        replay_world = world.model_copy(deep=False)
-        replay_world.tick = index
-        memory.record_event(node, replay_world, importance=importance)
-
-    return memory
+    """Rebuild durable memory from persisted entries or current branch lineage."""
+    return MemoryManager.from_world(
+        world,
+        sim_id=sim_id or None,
+        short_term_limit=short_term_limit,
+    )
 
 
 def _select_character_ids_for_event(
@@ -957,11 +962,11 @@ def run_simulation(
     """
     if initial_world is not None:
         world = initial_world.model_copy(deep=True)
-        memory = initial_memory or rebuild_memory_from_world(world)
+        memory = initial_memory or rebuild_memory_from_world(world, sim_id=sim_id)
         world_builder_completed = bool(world.metadata.get("world_builder_completed"))
     else:
         world = WorldState(premise=premise, title=f"《{premise[:20]}》")
-        memory = MemoryManager(short_term_limit=15)
+        memory = MemoryManager(short_term_limit=15, sim_id=sim_id or None)
         world_builder_completed = False
 
     if world.pending_intervention and intervention_callback:

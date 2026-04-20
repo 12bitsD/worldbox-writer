@@ -27,9 +27,17 @@ jobs:
 
       - name: Run model evaluation placeholder
         env:
-          MODEL_EVAL_PROVIDERS: ${{ inputs.provider }}
           LLM_PROVIDER: ${{ inputs.provider }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
           LLM_MODEL: ${{ vars.LLM_MODEL }}
+          MODEL_EVAL_OUTPUT: artifacts/model-eval/report.json
         run: INSTALL_DEPS=1 PYTHON_BIN=python sh scripts/ci/model-eval.sh
+
+      - name: Upload model evaluation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-eval-report
+          path: artifacts/model-eval
+          if-no-files-found: ignore

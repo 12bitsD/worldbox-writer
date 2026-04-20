@@ -2,8 +2,13 @@
 
 import type {
   BranchCompareResponse,
+  ExportArtifactKind,
   ExportData,
+  SimulationDiagnostics,
   SimulationState,
+  WikiCharacterInput,
+  WikiEntityInput,
+  WikiSaveResponse,
 } from "../types";
 
 const BASE = "/api";
@@ -51,6 +56,31 @@ export async function exportSimulation(
   const res = await fetch(`${BASE}/simulate/${simId}/export${query}`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
+}
+
+export async function downloadExportArtifact(
+  simId: string,
+  kind: ExportArtifactKind,
+  branchId?: string
+): Promise<void> {
+  const query = new URLSearchParams({ kind });
+  if (branchId) query.set("branch", branchId);
+
+  const res = await fetch(`${BASE}/simulate/${simId}/export/file?${query.toString()}`);
+  if (!res.ok) throw new Error(await res.text());
+
+  const blob = await res.blob();
+  const disposition = res.headers.get("Content-Disposition");
+  const encodedName = disposition?.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  const fallbackName = `${simId}-${kind}`;
+  const filename = encodedName ? decodeURIComponent(encodedName) : fallbackName;
+
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 export async function createBranch(
@@ -170,6 +200,51 @@ export async function addConstraint(
     body: JSON.stringify(constraint),
   });
   if (!res.ok) throw new Error(await res.text());
+}
+
+export async function saveWiki(
+  simId: string,
+  payload: {
+    title: string;
+    premise: string;
+    world_rules: string[];
+    factions: WikiEntityInput[];
+    locations: WikiEntityInput[];
+    characters: WikiCharacterInput[];
+  }
+): Promise<WikiSaveResponse> {
+  const res = await fetch(`${BASE}/simulate/${simId}/wiki`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function updateRenderedText(
+  simId: string,
+  nodeId: string,
+  payload: {
+    rendered_text: string;
+    rendered_html?: string | null;
+  }
+): Promise<{ message: string; node: SimulationState["nodes"][0] }> {
+  const res = await fetch(`${BASE}/simulate/${simId}/nodes/${nodeId}/rendered-text`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getDiagnostics(
+  simId: string
+): Promise<SimulationDiagnostics> {
+  const res = await fetch(`${BASE}/simulate/${simId}/diagnostics`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
 }
 
 export function createEventStream(

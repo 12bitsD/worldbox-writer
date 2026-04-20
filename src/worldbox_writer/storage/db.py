@@ -90,8 +90,12 @@ CREATE TABLE IF NOT EXISTS memory_entries (
     content        TEXT NOT NULL,
     character_ids  TEXT NOT NULL DEFAULT '[]',
     tick           INTEGER NOT NULL,
+    branch_id      TEXT NOT NULL DEFAULT 'main',
     importance     REAL NOT NULL,
     embedding      TEXT,
+    entry_kind     TEXT NOT NULL DEFAULT 'event',
+    source_entry_ids_json TEXT NOT NULL DEFAULT '[]',
+    archived       INTEGER NOT NULL DEFAULT 0,
     tags           TEXT NOT NULL DEFAULT '[]',
     created_at     TEXT NOT NULL,
     FOREIGN KEY (sim_id) REFERENCES sessions(sim_id)
@@ -99,6 +103,8 @@ CREATE TABLE IF NOT EXISTS memory_entries (
 
 CREATE INDEX IF NOT EXISTS idx_memory_sim ON memory_entries(sim_id);
 CREATE INDEX IF NOT EXISTS idx_memory_tick ON memory_entries(sim_id, tick);
+CREATE INDEX IF NOT EXISTS idx_memory_branch ON memory_entries(sim_id, branch_id);
+CREATE INDEX IF NOT EXISTS idx_memory_archived ON memory_entries(sim_id, archived);
 CREATE INDEX IF NOT EXISTS idx_branch_seed_sim ON branch_seed_snapshots(sim_id);
 CREATE INDEX IF NOT EXISTS idx_branch_seed_tick ON branch_seed_snapshots(sim_id, tick);
 """
@@ -143,6 +149,32 @@ def init_db(db_path: Optional[str] = None) -> None:
             conn.execute(
                 "ALTER TABLE sessions ADD COLUMN active_branch_id TEXT NOT NULL DEFAULT 'main'"
             )
+        memory_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(memory_entries)").fetchall()
+        }
+        if "branch_id" not in memory_columns:
+            conn.execute(
+                "ALTER TABLE memory_entries ADD COLUMN branch_id TEXT NOT NULL DEFAULT 'main'"
+            )
+        if "entry_kind" not in memory_columns:
+            conn.execute(
+                "ALTER TABLE memory_entries ADD COLUMN entry_kind TEXT NOT NULL DEFAULT 'event'"
+            )
+        if "source_entry_ids_json" not in memory_columns:
+            conn.execute(
+                "ALTER TABLE memory_entries ADD COLUMN source_entry_ids_json TEXT NOT NULL DEFAULT '[]'"
+            )
+        if "archived" not in memory_columns:
+            conn.execute(
+                "ALTER TABLE memory_entries ADD COLUMN archived INTEGER NOT NULL DEFAULT 0"
+            )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_memory_branch ON memory_entries(sim_id, branch_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_memory_archived ON memory_entries(sim_id, archived)"
+        )
         conn.commit()
     finally:
         conn.close()
@@ -412,7 +444,11 @@ def save_memory_entry(
     character_ids: List[str],
     tick: int,
     importance: float,
+    branch_id: str = "main",
     embedding: Optional[List[float]] = None,
+    entry_kind: str = "event",
+    source_entry_ids: Optional[List[str]] = None,
+    archived: bool = False,
     tags: Optional[List[str]] = None,
     db_path: Optional[str] = None,
 ) -> None:
@@ -421,11 +457,15 @@ def save_memory_entry(
     conn = _get_conn(db_path)
     try:
         conn.execute(
-            """INSERT INTO memory_entries (entry_id, sim_id, content, character_ids, tick, importance, embedding, tags, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """INSERT INTO memory_entries (entry_id, sim_id, content, character_ids, tick, branch_id, importance, embedding, entry_kind, source_entry_ids_json, archived, tags, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(entry_id) DO UPDATE SET
                  content=excluded.content, character_ids=excluded.character_ids,
+                 tick=excluded.tick, branch_id=excluded.branch_id,
                  importance=excluded.importance, embedding=excluded.embedding,
+                 entry_kind=excluded.entry_kind,
+                 source_entry_ids_json=excluded.source_entry_ids_json,
+                 archived=excluded.archived,
                  tags=excluded.tags""",
             (
                 entry_id,
@@ -433,8 +473,12 @@ def save_memory_entry(
                 content,
                 json.dumps(character_ids, ensure_ascii=False),
                 tick,
+                branch_id,
                 importance,
                 json.dumps(embedding) if embedding else None,
+                entry_kind,
+                json.dumps(source_entry_ids or [], ensure_ascii=False),
+                1 if archived else 0,
                 json.dumps(tags or [], ensure_ascii=False),
                 now,
             ),
@@ -445,26 +489,75 @@ def save_memory_entry(
 
 
 def load_memory_entries(
-    sim_id: str, db_path: Optional[str] = None
+    sim_id: str,
+    db_path: Optional[str] = None,
+    *,
+    include_archived: bool = False,
 ) -> List[Dict[str, Any]]:
     """Load all memory entries for a session, ordered by tick."""
     conn = _get_conn(db_path)
     try:
-        rows = conn.execute(
-            "SELECT * FROM memory_entries WHERE sim_id=? ORDER BY tick",
-            (sim_id,),
-        ).fetchall()
+        if include_archived:
+            rows = conn.execute(
+                "SELECT * FROM memory_entries WHERE sim_id=? ORDER BY tick, created_at",
+                (sim_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT * FROM memory_entries
+                   WHERE sim_id=? AND archived=0
+                   ORDER BY tick, created_at""",
+                (sim_id,),
+            ).fetchall()
         return [
             {
                 "entry_id": r["entry_id"],
                 "content": r["content"],
                 "character_ids": json.loads(r["character_ids"]),
                 "tick": r["tick"],
+                "branch_id": r["branch_id"] if "branch_id" in r.keys() else "main",
                 "importance": r["importance"],
                 "embedding": json.loads(r["embedding"]) if r["embedding"] else None,
+                "entry_kind": (
+                    r["entry_kind"] if "entry_kind" in r.keys() else "event"
+                ),
+                "source_entry_ids": json.loads(
+                    r["source_entry_ids_json"]
+                    if "source_entry_ids_json" in r.keys()
+                    else "[]"
+                ),
+                "archived": bool(r["archived"]) if "archived" in r.keys() else False,
                 "tags": json.loads(r["tags"]),
             }
             for r in rows
         ]
+    finally:
+        conn.close()
+
+
+def archive_memory_entries(
+    sim_id: str,
+    entry_ids: List[str],
+    *,
+    archived: bool = True,
+    db_path: Optional[str] = None,
+) -> None:
+    """Mark a set of memory entries as archived/unarchived."""
+    if not entry_ids:
+        return
+
+    placeholders = ",".join("?" for _ in entry_ids)
+    params: List[Any] = [1 if archived else 0, sim_id]
+    params.extend(entry_ids)
+
+    conn = _get_conn(db_path)
+    try:
+        conn.execute(
+            f"""UPDATE memory_entries
+                SET archived=?
+                WHERE sim_id=? AND entry_id IN ({placeholders})""",
+            params,
+        )
+        conn.commit()
     finally:
         conn.close()

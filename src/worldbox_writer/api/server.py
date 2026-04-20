@@ -21,13 +21,18 @@ import os
 import queue
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, List, Optional
+from contextlib import asynccontextmanager
+from typing import Any, Dict, List, Optional, Sequence
+from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.responses import Response
+from pydantic import BaseModel, Field
 
 from worldbox_writer.core.models import (
+    Character,
+    CharacterStatus,
     Constraint,
     ConstraintSeverity,
     ConstraintType,
@@ -37,6 +42,13 @@ from worldbox_writer.core.models import (
     WorldState,
 )
 from worldbox_writer.engine.graph import run_simulation
+from worldbox_writer.exporting import build_export_bundle
+from worldbox_writer.exporting.story_export import render_export_artifact
+from worldbox_writer.memory.memory_manager import (
+    MemoryManager,
+    load_memory_entries_for_world,
+    summarize_memory_footprint,
+)
 from worldbox_writer.storage.db import (
     BranchSeedNotFoundError,
     init_db,
@@ -53,10 +65,19 @@ from worldbox_writer.utils.llm import get_provider_info
 # App setup
 # ---------------------------------------------------------------------------
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    _recover_sessions()
+    yield
+
+
 app = FastAPI(
     title="WorldBox Writer API",
     description="Agent 集群驱动的沙盒小说创作系统",
     version="0.5.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -68,17 +89,6 @@ app.add_middleware(
 )
 
 # ---------------------------------------------------------------------------
-# Database init
-# ---------------------------------------------------------------------------
-
-
-@app.on_event("startup")
-async def startup():
-    init_db()
-    _recover_sessions()
-
-
-# ---------------------------------------------------------------------------
 # In-memory simulation store
 # ---------------------------------------------------------------------------
 
@@ -88,6 +98,7 @@ _executor = ThreadPoolExecutor(max_workers=4)
 _sessions: Dict[str, "SimulationSession"] = {}
 _BRANCHING_FEATURE_ENV = "FEATURE_BRANCHING_ENABLED"
 _VALID_PACING_VALUES = {"calm", "balanced", "intense"}
+_WORKSPACE_MUTABLE_STATUSES = {"waiting", "complete", "error"}
 
 
 def _branching_enabled() -> bool:
@@ -357,16 +368,18 @@ def _serialize_world(world: WorldState) -> Dict[str, Any]:
         ],
         "factions": world.factions,
         "locations": world.locations,
-        "world_rules": world.world_rules[:5],
+        "world_rules": world.world_rules,
         "branches": world.branches,
         "active_branch_id": world.active_branch_id,
         "constraints": [
             {
                 "id": str(c.id),
                 "name": c.name,
+                "description": c.description,
                 "rule": c.rule,
                 "severity": c.severity.value,
                 "type": c.constraint_type.value,
+                "is_active": c.is_active,
             }
             for c in world.constraints
         ],
@@ -386,6 +399,7 @@ def _serialize_node(node: Any, world: WorldState) -> Dict[str, Any]:
         "parent_ids": node.parent_ids,
         "branch_id": node.branch_id,
         "merged_from_ids": node.merged_from_ids,
+        "editor_html": node.metadata.get("editor_html"),
     }
 
 
@@ -396,6 +410,7 @@ def _serialize_nodes(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "parent_ids": node.get("parent_ids", []),
             "branch_id": node.get("branch_id", "main"),
             "merged_from_ids": node.get("merged_from_ids", []),
+            "editor_html": node.get("editor_html"),
         }
         for node in nodes
     ]
@@ -535,6 +550,18 @@ def _ensure_branching_enabled() -> None:
             detail=(
                 "分支功能当前已关闭。请设置 FEATURE_BRANCHING_ENABLED=1 后再试，"
                 "关闭后系统仅保留单主线安全行为。"
+            ),
+        )
+
+
+def _ensure_workspace_mutable(session: "SimulationSession", action_label: str) -> None:
+    if session.status not in _WORKSPACE_MUTABLE_STATUSES:
+        allowed = ", ".join(sorted(_WORKSPACE_MUTABLE_STATUSES))
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"当前状态为 {session.status}，只能在干预暂停或已完成等创作阶段（{allowed}）"
+                f"下{action_label}，运行中的推演不能修改创作工作台内容。"
             ),
         )
 
@@ -707,6 +734,36 @@ class AddConstraintRequest(BaseModel):
     rule: str
 
 
+class WikiEntityPayload(BaseModel):
+    name: str
+    description: str = ""
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class WikiCharacterPayload(BaseModel):
+    id: Optional[str] = None
+    name: str
+    description: str = ""
+    personality: str = ""
+    goals: List[str] = Field(default_factory=list)
+    status: str = "alive"
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class SaveWikiRequest(BaseModel):
+    title: str
+    premise: str
+    world_rules: List[str] = Field(default_factory=list)
+    factions: List[WikiEntityPayload] = Field(default_factory=list)
+    locations: List[WikiEntityPayload] = Field(default_factory=list)
+    characters: List[WikiCharacterPayload] = Field(default_factory=list)
+
+
+class UpdateNodeRenderedTextRequest(BaseModel):
+    rendered_text: str
+    rendered_html: Optional[str] = None
+
+
 class CreateBranchRequest(BaseModel):
     source_node_id: str
     label: Optional[str] = None
@@ -722,6 +779,267 @@ class SwitchBranchRequest(BaseModel):
 class UpdateBranchPacingRequest(BaseModel):
     branch_id: str
     pacing: str
+
+
+# ---------------------------------------------------------------------------
+# Workspace helpers
+# ---------------------------------------------------------------------------
+
+
+def _wiki_issue(level: str, path: str, message: str) -> Dict[str, str]:
+    return {"level": level, "path": path, "message": message}
+
+
+def _validate_wiki_request(
+    session: "SimulationSession", request: SaveWikiRequest
+) -> List[Dict[str, str]]:
+    issues: List[Dict[str, str]] = []
+
+    if not request.title.strip():
+        issues.append(_wiki_issue("error", "title", "作品标题不能为空"))
+    if not request.premise.strip():
+        issues.append(_wiki_issue("error", "premise", "故事前提不能为空"))
+
+    for index, rule in enumerate(request.world_rules):
+        if not rule.strip():
+            issues.append(
+                _wiki_issue("error", f"world_rules[{index}]", "世界规则不能是空字符串")
+            )
+
+    def validate_unique_names(
+        items: Sequence[WikiEntityPayload | WikiCharacterPayload],
+        path: str,
+        label: str,
+    ) -> None:
+        seen: Dict[str, int] = {}
+        for index, item in enumerate(items):
+            name = item.name.strip()
+            if not name:
+                issues.append(
+                    _wiki_issue(
+                        "error", f"{path}[{index}].name", f"{label}名称不能为空"
+                    )
+                )
+                continue
+            if name in seen:
+                first_index = seen[name]
+                issues.append(
+                    _wiki_issue(
+                        "error",
+                        f"{path}[{index}].name",
+                        f"{label}名称重复：与 {path}[{first_index}] 冲突",
+                    )
+                )
+            else:
+                seen[name] = index
+
+    validate_unique_names(request.characters, "characters", "角色")
+    validate_unique_names(request.factions, "factions", "势力")
+    validate_unique_names(request.locations, "locations", "地点")
+
+    assert session.world is not None
+    referenced_character_ids = {
+        character_id
+        for node in session.world.nodes.values()
+        for character_id in node.character_ids
+    }
+    provided_character_ids = {
+        character.id for character in request.characters if character.id is not None
+    }
+    missing_character_ids = sorted(referenced_character_ids - provided_character_ids)
+    if missing_character_ids:
+        issues.append(
+            _wiki_issue(
+                "error",
+                "characters",
+                "不能删除已被历史节点引用的角色；请保留其 ID 后再编辑设定。",
+            )
+        )
+
+    for index, item in enumerate(request.factions):
+        if not item.description.strip():
+            issues.append(
+                _wiki_issue(
+                    "warning",
+                    f"factions[{index}].description",
+                    "建议为势力补充说明，避免后续检索召回过弱。",
+                )
+            )
+    for index, item in enumerate(request.locations):
+        if not item.description.strip():
+            issues.append(
+                _wiki_issue(
+                    "warning",
+                    f"locations[{index}].description",
+                    "建议为地点补充说明，方便世界设定检索。",
+                )
+            )
+
+    return issues
+
+
+def _materialize_character(
+    payload: WikiCharacterPayload, existing: Optional[Character]
+) -> Character:
+    try:
+        status = CharacterStatus(payload.status)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail=f"无效的角色状态: {payload.status}"
+        ) from exc
+
+    character_id = payload.id or (str(existing.id) if existing else None)
+    kwargs: Dict[str, Any] = {
+        "name": payload.name.strip(),
+        "description": payload.description.strip(),
+        "personality": payload.personality.strip(),
+        "goals": [goal.strip() for goal in payload.goals if goal.strip()],
+        "status": status,
+        "relationships": existing.relationships if existing else {},
+        "memory": existing.memory if existing else [],
+        "metadata": {**(existing.metadata if existing else {}), **payload.metadata},
+    }
+    if character_id:
+        kwargs["id"] = character_id
+    return Character(**kwargs)
+
+
+def _apply_wiki_request(session: "SimulationSession", request: SaveWikiRequest) -> None:
+    existing_world = session.world
+    assert existing_world is not None
+    existing_characters = existing_world.characters
+    next_characters: Dict[str, Character] = {}
+    for payload in request.characters:
+        existing = existing_characters.get(payload.id or "")
+        character = _materialize_character(payload, existing)
+        next_characters[str(character.id)] = character
+
+    existing_world.title = request.title.strip()
+    existing_world.premise = request.premise.strip()
+    existing_world.world_rules = [
+        rule.strip() for rule in request.world_rules if rule.strip()
+    ]
+    existing_world.factions = [
+        {
+            "name": item.name.strip(),
+            "description": item.description.strip(),
+            **item.metadata,
+        }
+        for item in request.factions
+    ]
+    existing_world.locations = [
+        {
+            "name": item.name.strip(),
+            "description": item.description.strip(),
+            **item.metadata,
+        }
+        for item in request.locations
+    ]
+    existing_world.characters = next_characters
+
+
+def _collect_llm_diagnostics(events: List[TelemetryEvent]) -> Dict[str, Any]:
+    summary: Dict[str, Any] = {
+        "total_calls": 0,
+        "total_duration_ms": 0,
+        "estimated_prompt_tokens": 0,
+        "estimated_completion_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "routes": [],
+    }
+    routes: Dict[tuple[str, str, str], Dict[str, Any]] = {}
+    has_cost = False
+
+    for event in events:
+        if not event.provider and not event.model:
+            continue
+
+        payload = event.payload or {}
+        route_group = str(payload.get("route_group") or "default")
+        provider = event.provider or "unknown"
+        model = event.model or "unknown"
+        route_key = (route_group, provider, model)
+        route = routes.setdefault(
+            route_key,
+            {
+                "route_group": route_group,
+                "provider": provider,
+                "model": model,
+                "calls": 0,
+                "agents": set(),
+                "duration_ms": 0,
+                "estimated_prompt_tokens": 0,
+                "estimated_completion_tokens": 0,
+                "estimated_cost_usd": 0.0,
+                "fallbacks": 0,
+            },
+        )
+
+        prompt_tokens = int(payload.get("estimated_prompt_tokens") or 0)
+        completion_tokens = int(payload.get("estimated_completion_tokens") or 0)
+        estimated_cost = payload.get("estimated_cost_usd")
+
+        route["calls"] += 1
+        route["agents"].add(event.agent)
+        route["duration_ms"] += event.duration_ms or 0
+        route["estimated_prompt_tokens"] += prompt_tokens
+        route["estimated_completion_tokens"] += completion_tokens
+        if estimated_cost is not None:
+            route["estimated_cost_usd"] += float(estimated_cost)
+            has_cost = True
+        if payload.get("route_fallback_applied"):
+            route["fallbacks"] += 1
+
+        summary["total_calls"] += 1
+        summary["total_duration_ms"] += event.duration_ms or 0
+        summary["estimated_prompt_tokens"] += prompt_tokens
+        summary["estimated_completion_tokens"] += completion_tokens
+        if estimated_cost is not None:
+            summary["estimated_cost_usd"] += float(estimated_cost)
+
+    summary["routes"] = [
+        {
+            **route,
+            "agents": sorted(route["agents"]),
+            "estimated_cost_usd": (
+                round(route["estimated_cost_usd"], 8) if has_cost else None
+            ),
+        }
+        for route in sorted(
+            routes.values(), key=lambda item: item["calls"], reverse=True
+        )
+    ]
+    summary["estimated_cost_usd"] = (
+        round(summary["estimated_cost_usd"], 8) if has_cost else None
+    )
+    return summary
+
+
+def _build_export_bundle_for_session(
+    sim_id: str, branch: Optional[str] = None
+) -> Dict[str, Any]:
+    session = _sessions.get(sim_id)
+    world = session.world if session else None
+    nodes_rendered = session.nodes_rendered if session else None
+
+    if not world:
+        data = db_load_session(sim_id)
+        if not data:
+            raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
+        world = data["world"]
+        nodes_rendered = data["nodes_rendered"]
+
+    if not world:
+        raise HTTPException(status_code=400, detail="推演尚未产生世界数据")
+
+    selected_branch = branch or world.active_branch_id or "main"
+    restored_world = _restore_branch_world(sim_id, world, selected_branch)
+    filtered_nodes = _filter_nodes_for_branch(
+        nodes_rendered or [],
+        restored_world.branches,
+        selected_branch,
+    )
+    return build_export_bundle(sim_id, selected_branch, restored_world, filtered_nodes)
 
 
 # ---------------------------------------------------------------------------
@@ -969,6 +1287,43 @@ async def get_simulation(sim_id: str, branch: Optional[str] = None):
     )
 
 
+@app.get("/api/simulate/{sim_id}/diagnostics")
+async def get_simulation_diagnostics(sim_id: str):
+    session = _load_session_into_memory(sim_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
+
+    memory_entries = (
+        load_memory_entries_for_world(sim_id, session.world, include_archived=True)
+        if session.world
+        else []
+    )
+    memory_summary: Dict[str, Any] = summarize_memory_footprint(memory_entries)
+    latest_memory_tick = max((entry.tick for entry in memory_entries), default=0)
+    if session.world:
+        runtime_memory = MemoryManager.from_world(session.world, sim_id=sim_id)
+        memory_summary = {
+            **memory_summary,
+            "vector_backend": runtime_memory.vector_backend,
+            "vector_backend_requested": runtime_memory.vector_backend_requested,
+            "vector_backend_fallback_reason": runtime_memory.vector_backend_fallback_reason,
+        }
+
+    return {
+        "sim_id": session.sim_id,
+        "status": session.status,
+        "active_branch_id": (
+            session.world.active_branch_id if session.world else "main"
+        ),
+        "routing": get_provider_info().get("routing", {}),
+        "memory": {
+            **memory_summary,
+            "latest_tick": latest_memory_tick,
+        },
+        "llm": _collect_llm_diagnostics(session.telemetry_events),
+    }
+
+
 @app.post("/api/simulate/{sim_id}/branch")
 async def create_branch(sim_id: str, request: CreateBranchRequest):
     _ensure_branching_enabled()
@@ -1200,68 +1555,28 @@ async def intervene(sim_id: str, request: InterveneRequest):
 
 @app.get("/api/simulate/{sim_id}/export")
 async def export_simulation(sim_id: str, branch: Optional[str] = None):
-    # Check in-memory first, then DB
-    session = _sessions.get(sim_id)
-    world = session.world if session else None
-    nodes_rendered = session.nodes_rendered if session else None
+    return _build_export_bundle_for_session(sim_id, branch)
 
-    if not world:
-        data = db_load_session(sim_id)
-        if not data:
-            raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
-        world = data["world"]
-        nodes_rendered = data["nodes_rendered"]
 
-    if not world:
-        raise HTTPException(status_code=400, detail="推演尚未产生世界数据")
+@app.get("/api/simulate/{sim_id}/export/file")
+async def export_simulation_file(
+    sim_id: str,
+    kind: str,
+    branch: Optional[str] = None,
+):
+    bundle = _build_export_bundle_for_session(sim_id, branch)
+    try:
+        filename, media_type, payload = render_export_artifact(bundle, kind)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    selected_branch = branch or world.active_branch_id or "main"
-    world = _restore_branch_world(sim_id, world, selected_branch)
-    filtered_nodes = _filter_nodes_for_branch(
-        nodes_rendered or [],
-        world.branches,
-        selected_branch,
-    )
-
-    novel_parts = []
-    for node_dict in filtered_nodes:
-        if node_dict.get("rendered_text"):
-            novel_parts.append(
-                f"【{node_dict['title']}】\n\n{node_dict['rendered_text']}"
-            )
-
-    novel_text = f"{world.title}\n{'=' * 40}\n\n前提：{world.premise}\n\n{'=' * 40}\n\n"
-    novel_text += "\n\n" + ("-" * 40 + "\n\n").join(novel_parts)
-
-    return {
-        "novel": novel_text,
-        "world_settings": {
-            "title": world.title,
-            "premise": world.premise,
-            "world_rules": world.world_rules,
-            "factions": world.factions,
-            "locations": world.locations,
-            "characters": [
-                {
-                    "name": c.name,
-                    "personality": c.personality,
-                    "goals": c.goals,
-                    "status": c.status.value,
-                }
-                for c in world.characters.values()
-            ],
+    return Response(
+        content=payload,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": (f"attachment; filename*=UTF-8''{quote(filename)}")
         },
-        "timeline": [
-            {
-                "tick": n["tick"],
-                "title": n["title"],
-                "type": n["node_type"],
-                "description": n["description"],
-                "intervention": n.get("intervention_instruction"),
-            }
-            for n in filtered_nodes
-        ],
-    }
+    )
 
 
 @app.get("/api/simulate/{sim_id}/stream")
@@ -1342,15 +1657,11 @@ async def list_sessions():
 async def update_character(
     sim_id: str, character_id: str, request: UpdateCharacterRequest
 ):
-    """Update a character's fields. Only allowed when status is 'waiting'."""
-    session = _sessions.get(sim_id)
+    """Update a character's fields when the simulation is no longer running."""
+    session = _load_session_into_memory(sim_id)
     if not session:
         raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
-    if session.status != "waiting":
-        raise HTTPException(
-            status_code=400,
-            detail="只能在干预暂停时编辑角色",
-        )
+    _ensure_workspace_mutable(session, "编辑角色")
     if not session.world:
         raise HTTPException(status_code=400, detail="世界尚未初始化")
 
@@ -1367,8 +1678,6 @@ async def update_character(
     if request.goals is not None:
         char.goals = request.goals
     if request.status is not None:
-        from worldbox_writer.core.models import CharacterStatus
-
         try:
             char.status = CharacterStatus(request.status)
         except ValueError:
@@ -1394,15 +1703,11 @@ async def update_character(
 
 @app.patch("/api/simulate/{sim_id}/world")
 async def update_world(sim_id: str, request: UpdateWorldRequest):
-    """Update world-level fields. Only allowed when status is 'waiting'."""
-    session = _sessions.get(sim_id)
+    """Update top-level world fields when the workspace is mutable."""
+    session = _load_session_into_memory(sim_id)
     if not session:
         raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
-    if session.status != "waiting":
-        raise HTTPException(
-            status_code=400,
-            detail="只能在干预暂停时编辑世界设定",
-        )
+    _ensure_workspace_mutable(session, "编辑世界设定")
     if not session.world:
         raise HTTPException(status_code=400, detail="世界尚未初始化")
 
@@ -1427,15 +1732,11 @@ async def update_world(sim_id: str, request: UpdateWorldRequest):
 
 @app.post("/api/simulate/{sim_id}/constraints")
 async def add_constraint(sim_id: str, request: AddConstraintRequest):
-    """Add a new constraint. Only allowed when status is 'waiting'."""
-    session = _sessions.get(sim_id)
+    """Add a new constraint while the workspace is editable."""
+    session = _load_session_into_memory(sim_id)
     if not session:
         raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
-    if session.status != "waiting":
-        raise HTTPException(
-            status_code=400,
-            detail="只能在干预暂停时添加约束",
-        )
+    _ensure_workspace_mutable(session, "添加约束")
     if not session.world:
         raise HTTPException(status_code=400, detail="世界尚未初始化")
 
@@ -1471,4 +1772,96 @@ async def add_constraint(sim_id: str, request: AddConstraintRequest):
             "severity": constraint.severity.value,
             "type": constraint.constraint_type.value,
         },
+    }
+
+
+@app.put("/api/simulate/{sim_id}/wiki")
+async def save_wiki(sim_id: str, request: SaveWikiRequest):
+    """Persist an editable Wiki snapshot for the current world."""
+    session = _load_session_into_memory(sim_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
+    _ensure_workspace_mutable(session, "保存 Wiki 设定")
+    if not session.world:
+        raise HTTPException(status_code=400, detail="世界尚未初始化")
+
+    issues = _validate_wiki_request(session, request)
+    blocking_errors = [issue for issue in issues if issue["level"] == "error"]
+    if blocking_errors:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Wiki 校验失败，请先修正错误项。",
+                "issues": blocking_errors,
+            },
+        )
+
+    _apply_wiki_request(session, request)
+    _append_telemetry_event(
+        session,
+        {
+            "tick": session.world.tick,
+            "agent": "user",
+            "stage": "wiki_saved",
+            "span_kind": "user",
+            "message": "设定 Wiki 已保存",
+            "payload": {
+                "characters": len(session.world.characters),
+                "factions": len(session.world.factions),
+                "locations": len(session.world.locations),
+                "issues": issues,
+            },
+        },
+    )
+    _persist_session(session)
+    return {
+        "message": "Wiki 已保存",
+        "issues": issues,
+        "world": _serialize_world(session.world),
+    }
+
+
+@app.patch("/api/simulate/{sim_id}/nodes/{node_id}/rendered-text")
+async def update_rendered_text(
+    sim_id: str,
+    node_id: str,
+    request: UpdateNodeRenderedTextRequest,
+):
+    """Persist editor changes back into the rendered story node."""
+    session = _load_session_into_memory(sim_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
+    _ensure_workspace_mutable(session, "保存正文润色")
+    if not session.world:
+        raise HTTPException(status_code=400, detail="世界尚未初始化")
+
+    node = session.world.get_node(node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail=f"节点 {node_id} 不存在")
+
+    node.rendered_text = request.rendered_text
+    node.is_rendered = True
+    if request.rendered_html is not None:
+        node.metadata["editor_html"] = request.rendered_html
+    session.world.nodes[node_id] = node
+
+    node_payload = _serialize_node(node, session.world)
+    _upsert_rendered_node(session, node_payload)
+    _append_telemetry_event(
+        session,
+        {
+            "tick": session.world.tick,
+            "agent": "user",
+            "stage": "rendered_text_updated",
+            "span_kind": "user",
+            "message": "正文润色稿已保存",
+            "payload": {"node_id": node_id, "text_length": len(request.rendered_text)},
+            "branch_id": node.branch_id,
+        },
+    )
+    _persist_session(session)
+
+    return {
+        "message": "正文润色稿已保存",
+        "node": node_payload,
     }

@@ -27,6 +27,11 @@
      │ (手动触发,     │
      │  Sprint 9+)    │
      └────────────────┘
+             │
+     ┌───────┴────────┐
+     │   perf-gate    │
+     │ (手动触发)     │
+     └────────────────┘
 ```
 
 ## 3. CI Workflow 文件
@@ -37,13 +42,15 @@ Workflow 文件位于 `.github/workflows/ci.yml`，包含以下 Job：
 |---|---|---|---|
 | `backend-quality` | 每次 push / PR | `black --check` + `isort --check-only` + `pytest -m "not integration"` + coverage/junit | ~1-2min |
 | `frontend-quality` | 每次 push / PR | `eslint` + `vitest` + `pnpm build` | ~1min |
-| `model-eval` | 手动 `workflow_dispatch` | 多模型评估基准（Sprint 9+ 实现） | ~10min |
+| `model-eval` | 手动 `workflow_dispatch` | 多模型评估基准，产出路由 report artifact | ~10min |
+| `perf-gate` | 手动 `workflow_dispatch` | 合成推演容量门禁，产出 perf report artifact | ~1min |
 
 这些 workflow 不直接把命令写死在 YAML 中，而是调用仓库内统一脚本：
 
 - `scripts/ci/backend-quality.sh`
 - `scripts/ci/frontend-quality.sh`
 - `scripts/ci/model-eval.sh`
+- `scripts/ci/perf-gate.sh`
 
 这样本地开发、GitHub Actions 和后续任意 CI 平台都复用同一套命令入口。
 
@@ -75,6 +82,20 @@ make integration
 
 `model-eval` Job 通过 `workflow_dispatch` 手动触发，避免每次 PR 都消耗 API 额度。在 GitHub Actions 页面点击 "Run workflow" 并选择 provider 即可触发。
 
+产物：
+
+- `artifacts/model-eval/report.json`
+- GitHub Actions artifact: `model-eval-report`
+
+### 3.4 关于容量门禁
+
+`perf-gate` 通过 `workflow_dispatch` 手动触发，运行一组无外部依赖的合成推演，用于确认 API orchestration 与持久化路径没有出现明显性能回退。
+
+产物：
+
+- `artifacts/perf/report.json`
+- GitHub Actions artifact: `perf-gate-report`
+
 需要在仓库 `Settings → Secrets and variables → Actions` 中配置：
 
 - Secret: `LLM_API_KEY`
@@ -94,6 +115,10 @@ make setup
 # 复制环境变量模板并配置 LLM 密钥
 cp .env.example .env
 # 编辑 .env，填入你的 LLM API 密钥
+
+# 可选：配置 ChromaDB 索引目录
+# MEMORY_VECTOR_BACKEND=auto
+# MEMORY_VECTOR_PATH=./artifacts/chromadb
 
 # 运行常规质量检查
 make lint

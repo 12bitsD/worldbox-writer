@@ -27,6 +27,7 @@ make test
 make check
 make integration
 make model-eval
+make perf
 make dev-api
 make dev-web
 ```
@@ -38,6 +39,7 @@ make dev-web
 - `scripts/ci/backend-quality.sh`
 - `scripts/ci/frontend-quality.sh`
 - `scripts/ci/model-eval.sh`
+- `scripts/ci/perf-gate.sh`
 
 ## 3. 日常开发流程
 
@@ -62,7 +64,7 @@ make dev-web
 
 - Python 3.11+
 - 默认使用仓库内 `.venv`
-- `make setup` 会自动创建虚拟环境并安装 `.[dev]`
+- `make setup` 会自动创建虚拟环境并安装 `.[dev]`，其中已包含 `chromadb`、`python-docx`、`reportlab`
 
 ### 4.2 前端
 
@@ -84,6 +86,8 @@ cp .env.example .env
 - `LLM_API_KEY`
 - 可选 `LLM_BASE_URL`
 - 可选 `LLM_MODEL`
+- 可选 `MEMORY_VECTOR_BACKEND`（默认 `auto`，优先使用 ChromaDB）
+- 可选 `MEMORY_VECTOR_PATH`（用于持久化 ChromaDB 索引）
 
 ## 5. CI/CD 约定
 
@@ -135,5 +139,6 @@ make dev-web
 ## 7. 当前限制
 
 - `make typecheck` 目前不会全绿，这是已知历史问题，不是新流程引入的问题
-- `model-eval` 目前仍是占位脚本，等待 Sprint 9 的真实评估矩阵
+- `model-eval` 现为手动评估流程，需要真实可达的 LLM Provider 才能输出有效报告
+- `perf` 使用合成推演基线做容量门禁，不替代真实线上压测
 - 默认 CI 仍以“快速反馈”优先，不承担长耗时 LLM 回归

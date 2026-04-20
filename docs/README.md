@@ -48,6 +48,7 @@
 - [Sprint 8 任务拆解](sprints/SPRINT_8_TASK_BREAKDOWN.md)
 - [Sprint 8.5 计划](sprints/SPRINT_8_5_PLAN.md)
 - [Sprint 8.5 任务拆解](sprints/SPRINT_8_5_TASK_BREAKDOWN.md)
+- [Sprint 9 任务拆解](sprints/SPRINT_9_TASK_BREAKDOWN.md)
 
 ## 6. 实验与模板
 
