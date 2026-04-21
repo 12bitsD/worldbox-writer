@@ -64,6 +64,7 @@ def build_dual_loop_snapshot(
     stored_prompt_traces = _load_stored_prompt_traces(world, scene_plan)
     stored_action_intents = _load_stored_action_intents(world, scene_plan)
     stored_intent_critiques = _load_stored_intent_critiques(world, scene_plan)
+    stored_scene_script = _load_stored_scene_script(world, scene_plan)
     if stored_action_intents:
         prompt_traces = stored_prompt_traces
         action_intents = stored_action_intents
@@ -94,7 +95,7 @@ def build_dual_loop_snapshot(
             for intent in action_intents
         ]
 
-    scene_script = build_scene_script(
+    scene_script = stored_scene_script or build_scene_script(
         world,
         scene_plan,
         action_intents,
@@ -700,6 +701,32 @@ def _load_stored_intent_critiques(
         if critique.scene_id == scene_plan.scene_id:
             critiques.append(critique)
     return critiques
+
+
+def _load_stored_scene_script(
+    world: WorldState,
+    scene_plan: ScenePlan,
+) -> Optional[SceneScript]:
+    candidates: List[Any] = []
+    raw_latest = world.metadata.get("last_scene_script")
+    raw_committed = world.metadata.get("last_committed_scene_script")
+    candidates.extend([raw_latest, raw_committed])
+
+    if world.current_node_id:
+        current_node = world.get_node(world.current_node_id)
+        if current_node:
+            candidates.append(current_node.metadata.get("scene_script"))
+
+    for item in candidates:
+        if not isinstance(item, dict):
+            continue
+        try:
+            scene_script = SceneScript.model_validate(item)
+        except Exception:
+            continue
+        if scene_script.scene_id == scene_plan.scene_id:
+            return scene_script
+    return None
 
 
 def _visible_character_ids(

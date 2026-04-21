@@ -8,6 +8,7 @@ from worldbox_writer.core.dual_loop import (
     IntentCritique,
     PromptTrace,
     ScenePlan,
+    SceneScript,
 )
 from worldbox_writer.core.models import Character, WorldState
 from worldbox_writer.engine.dual_loop import (
@@ -18,6 +19,7 @@ from worldbox_writer.engine.graph import (
     actor_node,
     after_narrator,
     after_world_builder,
+    node_detector_node,
     scene_director_node,
     world_builder_node,
 )
@@ -243,6 +245,8 @@ def test_actor_node_uses_isolated_runtime_when_dual_loop_enabled(monkeypatch) ->
     )
     assert result["intent_critiques"][0].accepted is True
     assert result["world"].metadata["last_critic_verdicts"][0]["accepted"] is True
+    assert result["scene_script"].accepted_intent_ids == ["intent-1"]
+    assert result["world"].metadata["last_scene_script"]["scene_id"] == "scene-isolated"
     assert result["prompt_traces"][0].trace_id == "prompt-1"
 
 
@@ -338,6 +342,56 @@ def test_actor_node_excludes_rejected_intents_from_candidate(monkeypatch) -> Non
     assert "阿璃决定守住断桥入口" in result["candidate_event"]
     assert "施展魔法" not in result["candidate_event"]
     assert result["intent_critiques"][1].accepted is False
+    assert result["scene_script"].accepted_intent_ids == ["intent-accepted"]
+    assert result["scene_script"].rejected_intent_ids == ["intent-rejected"]
     assert result["world"].metadata["last_actor_accepted_intent_ids"] == [
         "intent-accepted"
     ]
+
+
+def test_node_detector_persists_scene_script_metadata(monkeypatch) -> None:
+    class FakeNodeDetector:
+        last_call_metadata = None
+
+        def detect(self, node, world):  # type: ignore[no-untyped-def]
+            return None
+
+    monkeypatch.setattr(graph_module, "NodeDetector", FakeNodeDetector)
+
+    world = WorldState(title="测试世界", premise="测试前提")
+    alice = Character(name="阿璃", personality="冷静", goals=["守住断桥"])
+    world.add_character(alice)
+    scene_plan = ScenePlan(
+        scene_id="scene-commit",
+        branch_id="branch-a",
+        title="第1幕：SceneScript 提交",
+        spotlight_character_ids=[str(alice.id)],
+    )
+    scene_script = SceneScript(
+        script_id="script-commit",
+        scene_id=scene_plan.scene_id,
+        branch_id="branch-a",
+        title="第1幕：SceneScript 提交",
+        summary="阿璃守住断桥入口。",
+        participating_character_ids=[str(alice.id)],
+        accepted_intent_ids=["intent-1"],
+        rejected_intent_ids=[],
+    )
+
+    result = node_detector_node(
+        _state(
+            world,
+            scene_plan=scene_plan,
+            scene_script=scene_script,
+            candidate_event=scene_script.summary,
+            validation_passed=True,
+        )
+    )
+
+    committed = result["world"].get_node(result["world"].current_node_id)
+    assert committed is not None
+    assert committed.metadata["scene_script"]["script_id"] == "script-commit"
+    assert result["world"].metadata["last_committed_scene_script"]["scene_id"] == (
+        "scene-commit"
+    )
+    assert committed.character_ids == [str(alice.id)]

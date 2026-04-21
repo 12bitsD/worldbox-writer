@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import json
 
-from worldbox_writer.core.dual_loop import ActionIntent, IntentCritique, ScenePlan
+from worldbox_writer.core.dual_loop import (
+    ActionIntent,
+    IntentCritique,
+    ScenePlan,
+    SceneScript,
+)
 from worldbox_writer.core.models import Character, StoryNode, WorldState
 from worldbox_writer.engine.dual_loop import (
     ISOLATED_ACTOR_RUNTIME_MODE,
@@ -75,6 +80,34 @@ def test_build_scene_plan_reuses_persisted_runtime_scene_plan() -> None:
 
     assert scene_plan.scene_id == "scene-persisted"
     assert scene_plan.objective == "围绕主角推进关键调查"
+
+
+def test_build_dual_loop_snapshot_reuses_persisted_scene_script() -> None:
+    world = WorldState(title="测试世界", premise="测试前提")
+    scene_plan = ScenePlan(scene_id="scene-script", title="已结算场景")
+    scene_script = SceneScript(
+        script_id="script-persisted",
+        scene_id=scene_plan.scene_id,
+        title="已结算场景",
+        summary="GM 已结算事实。",
+        accepted_intent_ids=["intent-1"],
+    )
+    world.metadata["current_scene_plan"] = scene_plan.model_dump(mode="json")
+    world.metadata["last_scene_script"] = scene_script.model_dump(mode="json")
+    world.metadata["last_actor_intents"] = [
+        ActionIntent(
+            intent_id="intent-1",
+            scene_id=scene_plan.scene_id,
+            actor_id="char-1",
+            actor_name="角色A",
+            summary="角色A 推进事实",
+        ).model_dump(mode="json")
+    ]
+
+    snapshot = build_dual_loop_snapshot(world)
+
+    assert snapshot.scene_script.script_id == "script-persisted"
+    assert snapshot.scene_script.summary == "GM 已结算事实。"
 
 
 def test_scene_script_marks_rejected_intents_from_critic_verdicts() -> None:

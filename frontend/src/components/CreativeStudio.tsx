@@ -561,7 +561,11 @@ export function CreativeStudio({
                       diagnostics.dual_loop.intent_critiques.filter(
                         (critique) => !critique.accepted
                       ).length
-                    }
+                    }{" "}
+                    · script=
+                    {diagnostics.dual_loop.scene_script?.accepted_intent_ids.length ?? 0}
+                    /
+                    {diagnostics.dual_loop.scene_script?.rejected_intent_ids.length ?? 0}
                   </div>
                   {diagnostics.dual_loop.scene_script?.summary && (
                     <div style={{ fontSize: 12 }}>

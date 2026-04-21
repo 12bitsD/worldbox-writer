@@ -31,6 +31,7 @@ from typing_extensions import NotRequired, TypedDict
 from worldbox_writer.agents.critic import CriticAgent
 from worldbox_writer.agents.director import DirectorAgent
 from worldbox_writer.agents.gate_keeper import GateKeeperAgent
+from worldbox_writer.agents.gm import GMAgent
 from worldbox_writer.agents.node_detector import NodeDetector
 from worldbox_writer.agents.world_builder import WorldBuilderAgent
 from worldbox_writer.core.dual_loop import (
@@ -38,6 +39,7 @@ from worldbox_writer.core.dual_loop import (
     IntentCritique,
     PromptTrace,
     ScenePlan,
+    SceneScript,
 )
 from worldbox_writer.core.models import (
     NodeType,
@@ -49,7 +51,6 @@ from worldbox_writer.engine.dual_loop import (
     ISOLATED_ACTOR_RUNTIME_MODE,
     dual_loop_enabled,
     run_isolated_actor_runtime,
-    synthesize_candidate_event_from_intents,
 )
 from worldbox_writer.memory.memory_manager import MemoryManager
 from worldbox_writer.utils.llm import chat_completion, get_last_llm_call_metadata
@@ -68,6 +69,7 @@ class SimulationState(TypedDict):
     action_intents: NotRequired[list[ActionIntent]]
     intent_critiques: NotRequired[list[IntentCritique]]
     prompt_traces: NotRequired[list[PromptTrace]]
+    scene_script: NotRequired[Optional[SceneScript]]
     candidate_event: str
     validation_passed: bool
     needs_intervention: bool
@@ -482,6 +484,7 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
             "action_intents": [],
             "intent_critiques": [],
             "prompt_traces": [],
+            "scene_script": None,
         }
 
     if scene_plan is not None and dual_loop_enabled():
@@ -506,10 +509,14 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
             or critique_lookup[intent.intent_id].accepted
         ]
         accepted_intent_ids = {intent.intent_id for intent in accepted_intents}
-        candidate = synthesize_candidate_event_from_intents(
-            accepted_intents,
-            scene_plan=scene_plan,
+        gm = GMAgent()
+        scene_script = gm.settle_scene(
+            world,
+            scene_plan,
+            runtime_result.action_intents,
+            intent_critiques,
         )
+        candidate = scene_script.summary
         intent_payloads = [
             intent.model_dump(mode="json") for intent in runtime_result.action_intents
         ]
@@ -519,11 +526,13 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
         trace_payloads = [
             trace.model_dump(mode="json") for trace in runtime_result.prompt_traces
         ]
+        scene_script_payload = scene_script.model_dump(mode="json")
         world.metadata["last_actor_runtime_mode"] = ISOLATED_ACTOR_RUNTIME_MODE
         world.metadata["last_actor_intents"] = intent_payloads
         world.metadata["last_critic_verdicts"] = critique_payloads
         world.metadata["last_actor_accepted_intent_ids"] = sorted(accepted_intent_ids)
         world.metadata["last_prompt_traces"] = trace_payloads
+        world.metadata["last_scene_script"] = scene_script_payload
 
         _emit_telemetry(
             state,
@@ -578,12 +587,30 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
                 - len(accepted_intents),
             },
         )
+        _emit_telemetry(
+            state,
+            tick=world.tick,
+            agent="gm",
+            stage="scene_settled",
+            message="GM 已将合法角色意图结算为 Scene Script",
+            payload={
+                "scene_id": scene_plan.scene_id,
+                "script_id": scene_script.script_id,
+                "accepted_intent_count": len(scene_script.accepted_intent_ids),
+                "rejected_intent_count": len(scene_script.rejected_intent_ids),
+                "participating_character_ids": list(
+                    scene_script.participating_character_ids
+                ),
+                "settlement_mode": scene_script.metadata.get("settlement_mode"),
+            },
+        )
         return {
             "world": world,
             "candidate_event": candidate,
             "action_intents": runtime_result.action_intents,
             "intent_critiques": intent_critiques,
             "prompt_traces": runtime_result.prompt_traces,
+            "scene_script": scene_script,
         }
 
     spotlight_chars = []
@@ -706,6 +733,7 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
         "action_intents": [],
         "intent_critiques": [],
         "prompt_traces": [],
+        "scene_script": None,
     }
 
 
@@ -822,6 +850,7 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
     action_intents = state.get("action_intents", [])
     intent_critiques = state.get("intent_critiques", [])
     prompt_traces = state.get("prompt_traces", [])
+    scene_script = state.get("scene_script")
     candidate = state.get("candidate_event", "")
     validation_passed = state.get("validation_passed", False)
 
@@ -852,18 +881,21 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
 
     parent_ids = [world.current_node_id] if world.current_node_id else []
     involved_character_ids = _select_character_ids_for_event(world, candidate)
+    if scene_script and scene_script.participating_character_ids:
+        involved_character_ids = list(scene_script.participating_character_ids)
     relationship_character_ids = _select_character_ids_for_event(
         world,
         candidate,
         allow_alive_fallback=False,
     )
+    node_title = f"第{world.tick + 1}幕"
+    if scene_plan is not None and scene_plan.title:
+        node_title = scene_plan.title
+    if scene_script is not None and scene_script.title:
+        node_title = scene_script.title
 
     new_node = StoryNode(
-        title=(
-            scene_plan.title
-            if scene_plan is not None and scene_plan.title
-            else f"第{world.tick + 1}幕"
-        ),
+        title=node_title,
         description=candidate,
         node_type=node_type,
         parent_ids=parent_ids,
@@ -884,6 +916,10 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
         scene_plan_payload = scene_plan.model_dump(mode="json")
         new_node.metadata["scene_plan"] = scene_plan_payload
         world.metadata["last_committed_scene_plan"] = scene_plan_payload
+    if scene_script is not None:
+        scene_script_payload = scene_script.model_dump(mode="json")
+        new_node.metadata["scene_script"] = scene_script_payload
+        world.metadata["last_committed_scene_script"] = scene_script_payload
     if action_intents:
         new_node.metadata["action_intents"] = [
             intent.model_dump(mode="json") for intent in action_intents
@@ -1229,6 +1265,7 @@ def run_simulation(
         "action_intents": [],
         "intent_critiques": [],
         "prompt_traces": [],
+        "scene_script": None,
         "candidate_event": "",
         "validation_passed": False,
         "needs_intervention": False,

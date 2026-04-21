@@ -160,6 +160,21 @@ Sprint 13 的架构决策是：
 - 如果只审查合成后的候选事件，系统无法定位“是哪一个角色越界或偷看了不可见信息”。
 - 保留 GateKeeper 后置保护可以继续兜住合成文本层面的约束问题，降低双循环迁移风险。
 
+#### Sprint 14 补充：GM 结算成为 SceneScript 的主来源
+
+Sprint 14 的架构决策是：
+
+- **GM 接在 Critic 之后**：`GMAgent` 只消费 `ActionIntent` 与 `IntentCritique`，把通过审查的合法意图结算成唯一 `SceneScript`。
+- **SceneScript 先成为事实源，不立刻替换所有下游**：主链 candidate event 来自 `SceneScript.summary`，但 `GateKeeper`、`NodeDetector` 和 `Narrator` 继续保留现有执行职责。
+- **提交时保留 lineage**：`StoryNode.metadata["scene_script"]`、`accepted_intent_ids`、`rejected_intent_ids` 和 beats 一起持久化，后续 Inspector / export / rendering 都能追溯来源。
+- **diagnostics 优先读运行时脚本**：compatibility snapshot 先复用 `world.metadata["last_scene_script"]` 或已提交节点 metadata，再回退到兼容层合成脚本。
+
+这样切的原因是：
+
+- Sprint 17 前，Narrator 仍可消费单段事件文本，但这段文本必须已经来自场景级逻辑结算。
+- Sprint 15 的记忆写回需要稳定事实源，否则会把被拒绝的角色意图写入长期记忆。
+- 保留 legacy 提交链可以让 SceneScript 先落地并被验证，再逐步替换渲染和导出层。
+
 ### 4.3 大语言模型接入 (LLM Integration)
 - **云端 API**：OpenAI (GPT-4o), Anthropic (Claude 3.5 Sonnet)。
   - *用途*：用于复杂的逻辑推理、边界校验和高质量文本渲染。

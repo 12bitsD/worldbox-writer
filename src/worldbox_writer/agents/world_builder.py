@@ -90,7 +90,13 @@ class WorldBuilderAgent:
     def expand_world(self, world: WorldState) -> WorldState:
         """Generate detailed world lore from the initial premise."""
         raw = self._call_llm_for_expansion(world)
-        return self._apply_expansion(world, raw)
+        expanded = self._apply_expansion(world, raw)
+        if not expanded.factions and not expanded.locations:
+            expanded = self._apply_expansion(
+                expanded,
+                self._fallback_expansion_data(expanded),
+            )
+        return expanded
 
     def expand_location_on_demand(
         self, world: WorldState, location_hint: str
