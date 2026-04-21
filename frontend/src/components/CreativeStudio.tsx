@@ -550,11 +550,44 @@ export function CreativeStudio({
                     {diagnostics.dual_loop.scene_plan?.narrative_pressure ?? "balanced"} ·
                     spotlight=
                     {diagnostics.dual_loop.scene_plan?.spotlight_character_ids.length ?? 0} ·
-                    intents={diagnostics.dual_loop.action_intents.length}
+                    intents={diagnostics.dual_loop.action_intents.length} · critic=
+                    {
+                      diagnostics.dual_loop.intent_critiques.filter(
+                        (critique) => critique.accepted
+                      ).length
+                    }
+                    /
+                    {
+                      diagnostics.dual_loop.intent_critiques.filter(
+                        (critique) => !critique.accepted
+                      ).length
+                    }
                   </div>
                   {diagnostics.dual_loop.scene_script?.summary && (
                     <div style={{ fontSize: 12 }}>
                       {diagnostics.dual_loop.scene_script.summary}
+                    </div>
+                  )}
+                  {diagnostics.dual_loop.intent_critiques.some(
+                    (critique) => !critique.accepted
+                  ) && (
+                    <div
+                      style={{
+                        display: "grid",
+                        gap: 6,
+                        fontSize: 12,
+                        color: "var(--color-warning)",
+                      }}
+                    >
+                      {diagnostics.dual_loop.intent_critiques
+                        .filter((critique) => !critique.accepted)
+                        .map((critique) => (
+                          <div key={critique.critique_id}>
+                            {critique.actor_name || critique.actor_id}:{" "}
+                            {critique.reason_code}
+                            {critique.reason ? ` · ${critique.reason}` : ""}
+                          </div>
+                        ))}
                     </div>
                   )}
                 </div>

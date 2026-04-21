@@ -28,11 +28,17 @@ from typing import Any, Dict, Literal, Optional, cast
 from langgraph.graph import END, START, StateGraph
 from typing_extensions import NotRequired, TypedDict
 
+from worldbox_writer.agents.critic import CriticAgent
 from worldbox_writer.agents.director import DirectorAgent
 from worldbox_writer.agents.gate_keeper import GateKeeperAgent
 from worldbox_writer.agents.node_detector import NodeDetector
 from worldbox_writer.agents.world_builder import WorldBuilderAgent
-from worldbox_writer.core.dual_loop import ActionIntent, PromptTrace, ScenePlan
+from worldbox_writer.core.dual_loop import (
+    ActionIntent,
+    IntentCritique,
+    PromptTrace,
+    ScenePlan,
+)
 from worldbox_writer.core.models import (
     NodeType,
     RelationshipLabel,
@@ -60,6 +66,7 @@ class SimulationState(TypedDict):
     memory: MemoryManager
     scene_plan: Optional[ScenePlan]
     action_intents: NotRequired[list[ActionIntent]]
+    intent_critiques: NotRequired[list[IntentCritique]]
     prompt_traces: NotRequired[list[PromptTrace]]
     candidate_event: str
     validation_passed: bool
@@ -473,6 +480,7 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
         return {
             "candidate_event": "世界陷入了沉寂，没有角色继续行动。",
             "action_intents": [],
+            "intent_critiques": [],
             "prompt_traces": [],
         }
 
@@ -482,18 +490,39 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
             memory,
             scene_plan=scene_plan,
         )
-        candidate = synthesize_candidate_event_from_intents(
+        critic = CriticAgent()
+        intent_critiques = critic.review_batch(
+            world,
+            scene_plan,
             runtime_result.action_intents,
+        )
+        critique_lookup = {
+            critique.intent_id: critique for critique in intent_critiques
+        }
+        accepted_intents = [
+            intent
+            for intent in runtime_result.action_intents
+            if critique_lookup.get(intent.intent_id) is None
+            or critique_lookup[intent.intent_id].accepted
+        ]
+        accepted_intent_ids = {intent.intent_id for intent in accepted_intents}
+        candidate = synthesize_candidate_event_from_intents(
+            accepted_intents,
             scene_plan=scene_plan,
         )
         intent_payloads = [
             intent.model_dump(mode="json") for intent in runtime_result.action_intents
+        ]
+        critique_payloads = [
+            critique.model_dump(mode="json") for critique in intent_critiques
         ]
         trace_payloads = [
             trace.model_dump(mode="json") for trace in runtime_result.prompt_traces
         ]
         world.metadata["last_actor_runtime_mode"] = ISOLATED_ACTOR_RUNTIME_MODE
         world.metadata["last_actor_intents"] = intent_payloads
+        world.metadata["last_critic_verdicts"] = critique_payloads
+        world.metadata["last_actor_accepted_intent_ids"] = sorted(accepted_intent_ids)
         world.metadata["last_prompt_traces"] = trace_payloads
 
         _emit_telemetry(
@@ -515,6 +544,26 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
         _emit_telemetry(
             state,
             tick=world.tick,
+            agent="critic",
+            stage="intents_reviewed",
+            message="Critic 已完成角色意图审查",
+            payload={
+                "scene_id": scene_plan.scene_id,
+                "intent_count": len(runtime_result.action_intents),
+                "accepted_count": len(accepted_intents),
+                "rejected_count": len(runtime_result.action_intents)
+                - len(accepted_intents),
+                "rejected_reasons": [
+                    critique.reason_code
+                    for critique in intent_critiques
+                    if not critique.accepted
+                ],
+            },
+            **_llm_telemetry_fields(critic.last_call_metadata),
+        )
+        _emit_telemetry(
+            state,
+            tick=world.tick,
             agent="actor",
             stage="proposal_generated",
             message="隔离 Actor 意图已桥接为候选事件",
@@ -524,12 +573,16 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
                 "scene_id": scene_plan.scene_id,
                 "spotlight_count": len(scene_plan.spotlight_character_ids),
                 "runtime_mode": ISOLATED_ACTOR_RUNTIME_MODE,
+                "accepted_intent_count": len(accepted_intents),
+                "rejected_intent_count": len(runtime_result.action_intents)
+                - len(accepted_intents),
             },
         )
         return {
             "world": world,
             "candidate_event": candidate,
             "action_intents": runtime_result.action_intents,
+            "intent_critiques": intent_critiques,
             "prompt_traces": runtime_result.prompt_traces,
         }
 
@@ -651,6 +704,7 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
     return {
         "candidate_event": candidate.strip(),
         "action_intents": [],
+        "intent_critiques": [],
         "prompt_traces": [],
     }
 
@@ -766,6 +820,7 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
     memory: MemoryManager = state["memory"]
     scene_plan = state.get("scene_plan")
     action_intents = state.get("action_intents", [])
+    intent_critiques = state.get("intent_critiques", [])
     prompt_traces = state.get("prompt_traces", [])
     candidate = state.get("candidate_event", "")
     validation_passed = state.get("validation_passed", False)
@@ -833,6 +888,10 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
         new_node.metadata["action_intents"] = [
             intent.model_dump(mode="json") for intent in action_intents
         ]
+    if intent_critiques:
+        new_node.metadata["intent_critiques"] = [
+            critique.model_dump(mode="json") for critique in intent_critiques
+        ]
     if prompt_traces:
         new_node.metadata["prompt_traces"] = [
             trace.model_dump(mode="json") for trace in prompt_traces
@@ -856,6 +915,9 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
             "characters": involved_character_ids,
             "scene_id": scene_plan.scene_id if scene_plan else None,
             "actor_intent_count": len(action_intents),
+            "critic_rejected_count": len(
+                [critique for critique in intent_critiques if not critique.accepted]
+            ),
         },
     )
     if relationships_changed:
@@ -1165,6 +1227,7 @@ def run_simulation(
         "memory": memory,
         "scene_plan": None,
         "action_intents": [],
+        "intent_critiques": [],
         "prompt_traces": [],
         "candidate_event": "",
         "validation_passed": False,

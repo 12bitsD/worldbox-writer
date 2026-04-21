@@ -145,6 +145,21 @@ Sprint 12 的架构决策是：
 - 没有隔离 prompt trace，Sprint 16 的 Inspector 只能展示黑盒日志，不能定位“角色为什么知道了不该知道的信息”。
 - 保留 legacy bridge 可以把最大风险控制在 Actor 阶段，让 GateKeeper、NodeDetector、Narrator 的既有回归继续发挥保护作用。
 
+#### Sprint 13 补充：Critic 先审查单个 Intent，GateKeeper 继续守住节点边界
+
+Sprint 13 的架构决策是：
+
+- **Critic 前置到结算前**：`ActionIntent` 进入 legacy candidate bridge 前，必须先生成 `IntentCritique`，明确 accepted / rejected、原因码、严重级别和修正提示。
+- **职责拆分而不是替换 GateKeeper**：`CriticAgent` 聚焦单个角色意图的世界规则、角色状态、认知边界与荒诞行为；`GateKeeper` 继续校验合成后的候选事件是否违反节点级约束。
+- **只桥接合法意图**：被 Critic 拒绝的 intent 保留在 metadata / diagnostics 中，但不会进入当前 candidate event 合成。
+- **兼容层继续沉淀 SceneScript 映射**：compatibility snapshot 使用 Critic verdict 生成 `accepted_intent_ids` 和 `rejected_intent_ids`，但暂不接管 `NodeDetector` 的事实提交。
+
+这样切的原因很直接：
+
+- 没有逐 intent verdict，Sprint 14 的 GM 无法知道哪些角色意图可以参与结算。
+- 如果只审查合成后的候选事件，系统无法定位“是哪一个角色越界或偷看了不可见信息”。
+- 保留 GateKeeper 后置保护可以继续兜住合成文本层面的约束问题，降低双循环迁移风险。
+
 ### 4.3 大语言模型接入 (LLM Integration)
 - **云端 API**：OpenAI (GPT-4o), Anthropic (Claude 3.5 Sonnet)。
   - *用途*：用于复杂的逻辑推理、边界校验和高质量文本渲染。

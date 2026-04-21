@@ -1362,6 +1362,14 @@ async def get_simulation_diagnostics(sim_id: str):
                 if dual_loop_snapshot
                 else []
             ),
+            "intent_critiques": (
+                [
+                    critique.model_dump(mode="json")
+                    for critique in dual_loop_snapshot.intent_critiques
+                ]
+                if dual_loop_snapshot
+                else []
+            ),
             "scene_script": (
                 dual_loop_snapshot.scene_script.model_dump(mode="json")
                 if dual_loop_snapshot

@@ -65,6 +65,22 @@ class ActionIntent(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
+class IntentCritique(BaseModel):
+    """Critic verdict for one isolated actor intent."""
+
+    critique_id: str = Field(default_factory=lambda: _string_id("critique"))
+    scene_id: str
+    intent_id: str
+    actor_id: str
+    actor_name: str = ""
+    accepted: bool = True
+    reason_code: str = "accepted"
+    severity: str = "info"
+    reason: str = ""
+    revision_hint: str = ""
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
 class SceneBeat(BaseModel):
     """One factual beat inside a scene script."""
 
@@ -120,5 +136,6 @@ class DualLoopCompatibilitySnapshot(BaseModel):
     adapter_mode: str = DUAL_LOOP_ADAPTER_MODE
     scene_plan: ScenePlan
     action_intents: List[ActionIntent] = Field(default_factory=list)
+    intent_critiques: List[IntentCritique] = Field(default_factory=list)
     scene_script: SceneScript
     prompt_traces: List[PromptTrace] = Field(default_factory=list)

@@ -129,6 +129,21 @@ describe("CreativeStudio", () => {
           metadata: {},
         },
         action_intents: [],
+        intent_critiques: [
+          {
+            critique_id: "critique-1",
+            scene_id: "scene-1",
+            intent_id: "intent-1",
+            actor_id: "char-1",
+            actor_name: "角色A",
+            accepted: false,
+            reason_code: "world_rule_violation",
+            severity: "blocking",
+            reason: "违反世界规则",
+            revision_hint: "改写行动",
+            metadata: {},
+          },
+        ],
         scene_script: {
           script_id: "script-1",
           scene_id: "scene-1",
@@ -157,5 +172,6 @@ describe("CreativeStudio", () => {
     expect(await screen.findByText("dual-loop-v1")).toBeInTheDocument();
     expect(await screen.findByText("legacy-compatibility-v1")).toBeInTheDocument();
     expect(await screen.findByText("王城的局势正在升温")).toBeInTheDocument();
+    expect(await screen.findByText(/world_rule_violation/)).toBeInTheDocument();
   });
 });

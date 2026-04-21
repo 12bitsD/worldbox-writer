@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 
-from worldbox_writer.core.dual_loop import ScenePlan
+from worldbox_writer.core.dual_loop import ActionIntent, IntentCritique, ScenePlan
 from worldbox_writer.core.models import Character, StoryNode, WorldState
 from worldbox_writer.engine.dual_loop import (
     ISOLATED_ACTOR_RUNTIME_MODE,
     build_dual_loop_snapshot,
     build_prompt_trace,
     build_scene_plan,
+    build_scene_script,
     dual_loop_enabled,
     run_isolated_actor_runtime,
     synthesize_candidate_event_from_intents,
@@ -51,6 +52,7 @@ def test_build_dual_loop_snapshot_is_branch_aware(monkeypatch) -> None:
     assert snapshot.scene_plan.source_node_id == str(node.id)
     assert snapshot.scene_script.source_node_id == str(node.id)
     assert snapshot.action_intents[0].metadata["synthetic"] is True
+    assert snapshot.intent_critiques[0].accepted is True
     assert snapshot.prompt_traces[0].memory_trace is not None
     assert snapshot.prompt_traces[0].memory_trace.reflective_memory == [
         "经历背叛后变得更谨慎"
@@ -73,6 +75,53 @@ def test_build_scene_plan_reuses_persisted_runtime_scene_plan() -> None:
 
     assert scene_plan.scene_id == "scene-persisted"
     assert scene_plan.objective == "围绕主角推进关键调查"
+
+
+def test_scene_script_marks_rejected_intents_from_critic_verdicts() -> None:
+    world = WorldState(title="测试世界", premise="测试前提")
+    scene_plan = ScenePlan(scene_id="scene-review", title="审查场景")
+    accepted_intent = ActionIntent(
+        intent_id="intent-accepted",
+        scene_id=scene_plan.scene_id,
+        actor_id="char-1",
+        actor_name="阿璃",
+        summary="阿璃守住断桥入口",
+    )
+    rejected_intent = ActionIntent(
+        intent_id="intent-rejected",
+        scene_id=scene_plan.scene_id,
+        actor_id="char-2",
+        actor_name="白夜",
+        summary="白夜施展魔法逃离",
+    )
+
+    script = build_scene_script(
+        world,
+        scene_plan,
+        [accepted_intent, rejected_intent],
+        intent_critiques=[
+            IntentCritique(
+                scene_id=scene_plan.scene_id,
+                intent_id=accepted_intent.intent_id,
+                actor_id=accepted_intent.actor_id,
+                actor_name=accepted_intent.actor_name,
+                accepted=True,
+            ),
+            IntentCritique(
+                scene_id=scene_plan.scene_id,
+                intent_id=rejected_intent.intent_id,
+                actor_id=rejected_intent.actor_id,
+                actor_name=rejected_intent.actor_name,
+                accepted=False,
+                reason_code="world_rule_violation",
+                severity="blocking",
+            ),
+        ],
+    )
+
+    assert script.accepted_intent_ids == ["intent-accepted"]
+    assert script.rejected_intent_ids == ["intent-rejected"]
+    assert [beat.source_intent_id for beat in script.beats] == ["intent-accepted"]
 
 
 def test_prompt_trace_keeps_actor_private_memory_isolated() -> None:

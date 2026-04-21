@@ -20,6 +20,7 @@ from worldbox_writer.core.dual_loop import (
     DUAL_LOOP_CONTRACT_VERSION,
     ActionIntent,
     DualLoopCompatibilitySnapshot,
+    IntentCritique,
     MemoryRecallTrace,
     PromptTrace,
     SceneBeat,
@@ -58,12 +59,15 @@ def build_dual_loop_snapshot(
     )
     prompt_traces: List[PromptTrace] = []
     action_intents: List[ActionIntent] = []
+    intent_critiques: List[IntentCritique] = []
 
     stored_prompt_traces = _load_stored_prompt_traces(world, scene_plan)
     stored_action_intents = _load_stored_action_intents(world, scene_plan)
+    stored_intent_critiques = _load_stored_intent_critiques(world, scene_plan)
     if stored_action_intents:
         prompt_traces = stored_prompt_traces
         action_intents = stored_action_intents
+        intent_critiques = stored_intent_critiques
     else:
         for character_id in scene_plan.spotlight_character_ids:
             character = world.get_character(character_id)
@@ -79,13 +83,29 @@ def build_dual_loop_snapshot(
             action_intents.append(
                 build_compatibility_intent(character, world, scene_plan, prompt_trace)
             )
+        intent_critiques = [
+            build_accepted_intent_critique(scene_plan, intent)
+            for intent in action_intents
+        ]
 
-    scene_script = build_scene_script(world, scene_plan, action_intents)
+    if not intent_critiques:
+        intent_critiques = [
+            build_accepted_intent_critique(scene_plan, intent)
+            for intent in action_intents
+        ]
+
+    scene_script = build_scene_script(
+        world,
+        scene_plan,
+        action_intents,
+        intent_critiques=intent_critiques,
+    )
     return DualLoopCompatibilitySnapshot(
         contract_version=DUAL_LOOP_CONTRACT_VERSION,
         adapter_mode=DUAL_LOOP_ADAPTER_MODE,
         scene_plan=scene_plan,
         action_intents=action_intents,
+        intent_critiques=intent_critiques,
         scene_script=scene_script,
         prompt_traces=prompt_traces,
     )
@@ -356,12 +376,29 @@ def build_scene_script(
     world: WorldState,
     scene_plan: ScenePlan,
     action_intents: List[ActionIntent],
+    *,
+    intent_critiques: Optional[List[IntentCritique]] = None,
 ) -> SceneScript:
     current_node = (
         world.get_node(world.current_node_id) if world.current_node_id else None
     )
     summary = current_node.description if current_node else scene_plan.public_summary
     title = current_node.title if current_node else scene_plan.title
+    critique_lookup = {
+        critique.intent_id: critique for critique in intent_critiques or []
+    }
+    accepted_intents = [
+        intent
+        for intent in action_intents
+        if critique_lookup.get(intent.intent_id) is None
+        or critique_lookup[intent.intent_id].accepted
+    ]
+    rejected_intent_ids = [
+        intent.intent_id
+        for intent in action_intents
+        if critique_lookup.get(intent.intent_id) is not None
+        and not critique_lookup[intent.intent_id].accepted
+    ]
     beats = [
         SceneBeat(
             actor_id=intent.actor_id,
@@ -371,7 +408,7 @@ def build_scene_script(
             source_intent_id=intent.intent_id,
             metadata={"synthetic": True},
         )
-        for intent in action_intents
+        for intent in accepted_intents
     ]
 
     public_facts = [summary] if summary else []
@@ -386,13 +423,35 @@ def build_scene_script(
         summary=summary,
         public_facts=public_facts,
         participating_character_ids=list(scene_plan.spotlight_character_ids),
-        accepted_intent_ids=[intent.intent_id for intent in action_intents],
-        rejected_intent_ids=[],
+        accepted_intent_ids=[intent.intent_id for intent in accepted_intents],
+        rejected_intent_ids=rejected_intent_ids,
         beats=beats,
         source_node_id=scene_plan.source_node_id,
         metadata={
             "adapter_mode": DUAL_LOOP_ADAPTER_MODE,
             "runtime_mode": _resolve_runtime_mode(action_intents),
+            "critic_reviewed": bool(intent_critiques),
+        },
+    )
+
+
+def build_accepted_intent_critique(
+    scene_plan: ScenePlan,
+    intent: ActionIntent,
+) -> IntentCritique:
+    return IntentCritique(
+        scene_id=scene_plan.scene_id,
+        intent_id=intent.intent_id,
+        actor_id=intent.actor_id,
+        actor_name=intent.actor_name,
+        accepted=True,
+        reason_code="accepted",
+        severity="info",
+        metadata={
+            "synthetic": True,
+            "adapter_mode": DUAL_LOOP_ADAPTER_MODE,
+            "branch_id": scene_plan.branch_id,
+            "tick": scene_plan.tick,
         },
     )
 
@@ -621,6 +680,26 @@ def _load_stored_prompt_traces(
         if trace.scene_id == scene_plan.scene_id:
             traces.append(trace)
     return traces
+
+
+def _load_stored_intent_critiques(
+    world: WorldState,
+    scene_plan: ScenePlan,
+) -> List[IntentCritique]:
+    raw_critiques = world.metadata.get("last_critic_verdicts")
+    if not isinstance(raw_critiques, list):
+        return []
+    critiques: List[IntentCritique] = []
+    for item in raw_critiques:
+        if not isinstance(item, dict):
+            continue
+        try:
+            critique = IntentCritique.model_validate(item)
+        except Exception:
+            continue
+        if critique.scene_id == scene_plan.scene_id:
+            critiques.append(critique)
+    return critiques
 
 
 def _visible_character_ids(

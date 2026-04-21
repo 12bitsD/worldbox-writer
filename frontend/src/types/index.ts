@@ -146,6 +146,20 @@ export interface ActionIntent {
   metadata: Record<string, unknown>;
 }
 
+export interface IntentCritique {
+  critique_id: string;
+  scene_id: string;
+  intent_id: string;
+  actor_id: string;
+  actor_name: string;
+  accepted: boolean;
+  reason_code: string;
+  severity: string;
+  reason: string;
+  revision_hint: string;
+  metadata: Record<string, unknown>;
+}
+
 export interface SceneBeat {
   beat_id: string;
   actor_id: string | null;
@@ -309,6 +323,7 @@ export interface SimulationDiagnostics {
     adapter_mode: string;
     scene_plan: ScenePlan | null;
     action_intents: ActionIntent[];
+    intent_critiques: IntentCritique[];
     scene_script: SceneScript | null;
     prompt_traces: PromptTrace[];
   };

@@ -3,6 +3,7 @@ from worldbox_writer.core.dual_loop import (
     DUAL_LOOP_CONTRACT_VERSION,
     ActionIntent,
     DualLoopCompatibilitySnapshot,
+    IntentCritique,
     MemoryRecallTrace,
     PromptTrace,
     ScenePlan,
@@ -35,19 +36,28 @@ def test_prompt_trace_can_embed_memory_recall_trace() -> None:
 
 
 def test_dual_loop_snapshot_uses_frozen_contract_metadata() -> None:
+    action_intent = ActionIntent(
+        intent_id="intent-1",
+        scene_id="scene-1",
+        actor_id="char-1",
+        actor_name="角色A",
+        summary="角色A 选择先观察局势",
+    )
+    critique = IntentCritique(
+        scene_id="scene-1",
+        intent_id=action_intent.intent_id,
+        actor_id="char-1",
+        actor_name="角色A",
+    )
     snapshot = DualLoopCompatibilitySnapshot(
         scene_plan=ScenePlan(title="第一幕", objective="测试目标"),
-        action_intents=[
-            ActionIntent(
-                scene_id="scene-1",
-                actor_id="char-1",
-                actor_name="角色A",
-                summary="角色A 选择先观察局势",
-            )
-        ],
+        action_intents=[action_intent],
+        intent_critiques=[critique],
         scene_script=SceneScript(scene_id="scene-1", summary="局势暂时稳定"),
         prompt_traces=[],
     )
 
     assert snapshot.contract_version == DUAL_LOOP_CONTRACT_VERSION
     assert snapshot.adapter_mode == DUAL_LOOP_ADAPTER_MODE
+    assert snapshot.intent_critiques[0].accepted is True
+    assert snapshot.intent_critiques[0].reason_code == "accepted"

@@ -495,6 +495,7 @@ class TestCreativeWorkspace:
             body["dual_loop"]["scene_script"]["source_node_id"]
             == session.world.current_node_id
         )
+        assert body["dual_loop"]["intent_critiques"][0]["accepted"] is True
 
     def test_get_simulation_includes_dual_loop_feature_flag(
         self, client, waiting_session, monkeypatch
