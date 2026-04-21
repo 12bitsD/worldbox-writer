@@ -8,12 +8,13 @@ import {
 } from "react";
 import type {
   SimulationDiagnostics,
+  SimulationInspector,
   SimulationState,
   WikiCharacterInput,
   WikiEntityInput,
   WikiIssue,
 } from "../types";
-import { getDiagnostics, saveWiki } from "../utils/api";
+import { getDiagnostics, getInspector, saveWiki } from "../utils/api";
 
 const RichTextEditor = lazy(() => import("./RichTextEditor"));
 
@@ -58,6 +59,7 @@ export function CreativeStudio({
   const [status, setStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [diagnostics, setDiagnostics] = useState<SimulationDiagnostics | null>(null);
+  const [inspector, setInspector] = useState<SimulationInspector | null>(null);
   const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -104,10 +106,11 @@ export function CreativeStudio({
     if (activeTab !== "diagnostics") return;
     let cancelled = false;
     setDiagnosticsError(null);
-    void getDiagnostics(simId)
-      .then((nextDiagnostics) => {
+    void Promise.all([getDiagnostics(simId), getInspector(simId)])
+      .then(([nextDiagnostics, nextInspector]) => {
         if (!cancelled) {
           setDiagnostics(nextDiagnostics);
+          setInspector(nextInspector);
         }
       })
       .catch((error) => {
@@ -531,6 +534,51 @@ export function CreativeStudio({
                   </div>
                 ))}
               </div>
+
+              {inspector && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div className="label">Prompt Inspector</div>
+                  <div
+                    style={{
+                      border: "1px solid var(--color-border-light)",
+                      padding: 12,
+                      background: "var(--color-bg)",
+                      display: "grid",
+                      gap: 8,
+                    }}
+                  >
+                    <div style={{ fontSize: 12, fontWeight: 600 }}>
+                      {inspector.node_title ?? inspector.scene_plan.title}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--color-text-muted)" }}>
+                      prompts={inspector.summary.prompt_trace_count} · intents=
+                      {inspector.summary.action_intent_count} · critic rejected=
+                      {inspector.summary.critic_rejected_count}
+                    </div>
+                    {inspector.prompt_traces.slice(0, 2).map((trace) => (
+                      <div
+                        key={trace.trace_id}
+                        style={{
+                          borderTop: "1px solid var(--color-border-light)",
+                          paddingTop: 8,
+                          fontSize: 12,
+                        }}
+                      >
+                        <div style={{ fontWeight: 600 }}>
+                          {trace.agent} · {trace.character_id ?? "world"}
+                        </div>
+                        <div style={{ color: "var(--color-text-muted)" }}>
+                          pressure={trace.narrative_pressure} · visible=
+                          {trace.visible_character_ids.length} · working=
+                          {trace.memory_trace?.working_memory.length ?? 0} · episodic=
+                          {trace.memory_trace?.episodic_memory_snippets.length ?? 0} ·
+                          reflective={trace.memory_trace?.reflective_memory.length ?? 0}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <div className="label">Dual-Loop Snapshot</div>

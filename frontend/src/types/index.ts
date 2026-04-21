@@ -330,6 +330,24 @@ export interface SimulationDiagnostics {
   };
 }
 
+export interface SimulationInspector {
+  sim_id: string;
+  current_node_id: string | null;
+  node_title: string | null;
+  scene_plan: ScenePlan;
+  scene_script: SceneScript;
+  action_intents: ActionIntent[];
+  intent_critiques: IntentCritique[];
+  prompt_traces: PromptTrace[];
+  summary: {
+    prompt_trace_count: number;
+    action_intent_count: number;
+    critic_rejected_count: number;
+    accepted_intent_count: number;
+    rejected_intent_count: number;
+  };
+}
+
 export type ExportArtifactKind =
   | "novel_txt"
   | "novel_markdown"

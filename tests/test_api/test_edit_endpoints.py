@@ -509,6 +509,21 @@ class TestCreativeWorkspace:
         assert res.status_code == 200
         assert res.json()["features"]["dual_loop_enabled"] is False
 
+    def test_inspector_returns_prompt_and_settlement_traces(
+        self, client, complete_session
+    ):
+        sim_id, _, _ = complete_session
+
+        res = client.get(f"/api/simulate/{sim_id}/inspector")
+
+        assert res.status_code == 200
+        body = res.json()
+        assert body["sim_id"] == sim_id
+        assert body["scene_plan"]["scene_id"]
+        assert "scene_script" in body
+        assert isinstance(body["prompt_traces"], list)
+        assert body["summary"]["prompt_trace_count"] == len(body["prompt_traces"])
+
     def test_export_returns_bundle_with_markdown_and_html(
         self, client, complete_session
     ):

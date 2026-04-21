@@ -1387,6 +1387,50 @@ async def get_simulation_diagnostics(sim_id: str):
     }
 
 
+@app.get("/api/simulate/{sim_id}/inspector")
+async def get_simulation_inspector(sim_id: str):
+    session = _load_session_into_memory(sim_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
+    if not session.world:
+        raise HTTPException(status_code=400, detail="世界尚未初始化")
+
+    runtime_memory = MemoryManager.from_world(session.world, sim_id=sim_id)
+    snapshot = build_dual_loop_snapshot(session.world, memory=runtime_memory)
+    current_node = (
+        session.world.get_node(session.world.current_node_id)
+        if session.world.current_node_id
+        else None
+    )
+    prompt_traces = [trace.model_dump(mode="json") for trace in snapshot.prompt_traces]
+    action_intents = [
+        intent.model_dump(mode="json") for intent in snapshot.action_intents
+    ]
+    intent_critiques = [
+        critique.model_dump(mode="json") for critique in snapshot.intent_critiques
+    ]
+
+    return {
+        "sim_id": session.sim_id,
+        "current_node_id": session.world.current_node_id,
+        "node_title": current_node.title if current_node else None,
+        "scene_plan": snapshot.scene_plan.model_dump(mode="json"),
+        "scene_script": snapshot.scene_script.model_dump(mode="json"),
+        "action_intents": action_intents,
+        "intent_critiques": intent_critiques,
+        "prompt_traces": prompt_traces,
+        "summary": {
+            "prompt_trace_count": len(prompt_traces),
+            "action_intent_count": len(action_intents),
+            "critic_rejected_count": sum(
+                1 for critique in snapshot.intent_critiques if not critique.accepted
+            ),
+            "accepted_intent_count": len(snapshot.scene_script.accepted_intent_ids),
+            "rejected_intent_count": len(snapshot.scene_script.rejected_intent_ids),
+        },
+    }
+
+
 @app.post("/api/simulate/{sim_id}/branch")
 async def create_branch(sim_id: str, request: CreateBranchRequest):
     _ensure_branching_enabled()

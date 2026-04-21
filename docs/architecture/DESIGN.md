@@ -190,6 +190,21 @@ Sprint 15 的架构决策是：
 - 如果 Sprint 15 先做独立 memory schema，会放大存储迁移风险，并拖慢 Inspector / rendering 闭环。
 - 三层 trace 先稳定下来，Sprint 16 才能把“为什么召回这些记忆”做成可解释面板。
 
+#### Sprint 16 补充：Inspector 独立于 diagnostics，Prompt 模板文件化
+
+Sprint 16 的架构决策是：
+
+- **Inspector API 独立出来**：`/api/simulate/{sim_id}/inspector` 返回当前场景的 `ScenePlan`、`SceneScript`、`ActionIntent`、`IntentCritique` 和 `PromptTrace`，而 diagnostics 继续聚焦聚合计数。
+- **前端先展示关键链路，不做编辑器**：Creative Studio 的 Prompt Inspector 只展示 prompt 数、intent 数、critic rejected 数和三层记忆计数，避免提前引入模板编辑权限。
+- **Prompt registry 每次读文件**：Actor system prompt 从 packaged template 或 `PROMPT_TEMPLATE_DIR` 读取，默认不缓存，满足本地 hot reload contract v1。
+- **PromptTrace 仍是事实来源**：Inspector 不重新组装 prompt，而是展示运行时已经沉淀的 trace，避免 UI 与后端 prompt 逻辑出现第二套真相源。
+
+这样切的原因是：
+
+- PromptOps 的第一步不是在线编辑，而是可定位和可复现。
+- 独立 Inspector API 让后续分页、权限和历史节点查看有演进空间。
+- 模板文件化后，后续可以逐步加版本管理，而不需要再改 Agent prompt 入口。
+
 ### 4.3 大语言模型接入 (LLM Integration)
 - **云端 API**：OpenAI (GPT-4o), Anthropic (Claude 3.5 Sonnet)。
   - *用途*：用于复杂的逻辑推理、边界校验和高质量文本渲染。

@@ -5,6 +5,7 @@ import type {
   ExportArtifactKind,
   ExportData,
   SimulationDiagnostics,
+  SimulationInspector,
   SimulationState,
   WikiCharacterInput,
   WikiEntityInput,
@@ -243,6 +244,12 @@ export async function getDiagnostics(
   simId: string
 ): Promise<SimulationDiagnostics> {
   const res = await fetch(`${BASE}/simulate/${simId}/diagnostics`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getInspector(simId: string): Promise<SimulationInspector> {
+  const res = await fetch(`${BASE}/simulate/${simId}/inspector`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }

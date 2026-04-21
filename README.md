@@ -212,6 +212,7 @@ worldbox-writer/
 | Sprint 13 | Critic 审查链路 | ✅ 完成（intent-level verdict 已接入） |
 | Sprint 14 | GM 结算与 Scene Script 提交 | ✅ 完成（SceneScript 已成为逻辑事实源） |
 | Sprint 15 | 认知记忆流 v2 | ✅ 完成（三层记忆与反思写回已接入） |
+| Sprint 16 | Inspector 与 PromptOps | ✅ 完成（Prompt Inspector 与模板 registry 已接入） |
 
 **当前版本**：v0.5.0
 
@@ -224,6 +225,7 @@ worldbox-writer/
 - 已完成的 Sprint 13 交付：`IntentCritique` 契约、`CriticAgent` 意图级审查、accepted / rejected intent 诊断、Critic telemetry 和前端诊断摘要。
 - 已完成的 Sprint 14 交付：`GMAgent` 结算层、branch-aware `SceneScript`、StoryNode metadata 持久化、diagnostics 复用已结算场景脚本。
 - 已完成的 Sprint 15 交付：`reflection` 记忆层、SceneScript accepted beat 反思写回、三层 `MemoryRecallTrace` 诊断、Creative Studio 反思记忆计数。
+- 已完成的 Sprint 16 交付：Inspector API、Creative Studio Prompt Inspector、Actor prompt 模板外部化、Prompt registry hot reload contract。
 - 已完成的 Sprint 9 增量推进：真实 ChromaDB 向量检索已接线并成为默认 `auto` 路径；导出链路已升级为 TXT / Markdown / HTML / DOCX / PDF / JSON manifest bundle。
 - 已完成的 Sprint 10-11 交付：双循环契约冻结、compatibility adapter、diagnostics 暴露、Director scene planner、`ScenePlan` graph state 持久化和 legacy actor prompt 接入。
 - 已完成的 Sprint 12 交付：隔离 Actor runtime v1、spotlight actor fan-out / fan-in、私有 `PromptTrace` / `MemoryRecallTrace`、真实 `ActionIntent` 产出和 legacy candidate bridge。

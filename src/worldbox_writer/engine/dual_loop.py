@@ -34,6 +34,7 @@ from worldbox_writer.memory.memory_manager import (
     SUMMARY_ENTRY_KIND,
     MemoryManager,
 )
+from worldbox_writer.prompting.registry import load_prompt_template
 from worldbox_writer.utils.llm import chat_completion
 
 FEATURE_DUAL_LOOP_ENV = "FEATURE_DUAL_LOOP_ENABLED"
@@ -149,10 +150,13 @@ def build_prompt_trace(
         memory=memory,
     )
     visible_character_ids = _visible_character_ids(world, scene_plan, character)
-    system_prompt = (
-        "你是双循环推演引擎中的角色 Actor。"
-        "你只能基于当前场景的公开信息、你的私有记忆和你的目标做决定。"
-        "不要引用不可见角色、其他角色的私有记忆或全局剧本。"
+    system_prompt = load_prompt_template(
+        "actor_system",
+        default=(
+            "你是双循环推演引擎中的角色 Actor。"
+            "你只能基于当前场景的公开信息、你的私有记忆和你的目标做决定。"
+            "不要引用不可见角色、其他角色的私有记忆或全局剧本。"
+        ),
     )
     user_prompt = (
         f"场景目标：{scene_plan.objective}\n"

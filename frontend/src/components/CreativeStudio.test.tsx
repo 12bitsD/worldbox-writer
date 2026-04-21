@@ -5,10 +5,12 @@ import { CreativeStudio } from "./CreativeStudio";
 
 const saveWiki = vi.fn();
 const getDiagnostics = vi.fn();
+const getInspector = vi.fn();
 
 vi.mock("../utils/api", () => ({
   saveWiki: (...args: unknown[]) => saveWiki(...args),
   getDiagnostics: (...args: unknown[]) => getDiagnostics(...args),
+  getInspector: (...args: unknown[]) => getInspector(...args),
   updateRenderedText: vi.fn(),
 }));
 
@@ -86,6 +88,72 @@ describe("CreativeStudio", () => {
   });
 
   it("renders dual-loop diagnostics summary", async () => {
+    getInspector.mockResolvedValue({
+      sim_id: "sim-test",
+      current_node_id: "node-1",
+      node_title: "第一幕",
+      scene_plan: {
+        scene_id: "scene-1",
+        branch_id: "main",
+        tick: 1,
+        title: "第一幕",
+        objective: "测试目标",
+        setting: "地点：王城",
+        public_summary: "王城的局势正在升温",
+        spotlight_character_ids: ["char-1"],
+        narrative_pressure: "balanced",
+        constraints: [],
+        source_node_id: "node-1",
+        metadata: {},
+      },
+      scene_script: {
+        script_id: "script-1",
+        scene_id: "scene-1",
+        branch_id: "main",
+        tick: 1,
+        title: "第一幕",
+        summary: "王城的局势正在升温",
+        public_facts: ["王城的局势正在升温"],
+        participating_character_ids: ["char-1"],
+        accepted_intent_ids: [],
+        rejected_intent_ids: [],
+        beats: [],
+        source_node_id: "node-1",
+        metadata: {},
+      },
+      action_intents: [],
+      intent_critiques: [],
+      prompt_traces: [
+        {
+          trace_id: "prompt-1",
+          agent: "actor",
+          scene_id: "scene-1",
+          character_id: "char-1",
+          system_prompt: "actor prompt",
+          user_prompt: "user prompt",
+          assembled_prompt: "assembled",
+          narrative_pressure: "balanced",
+          visible_character_ids: ["char-1"],
+          memory_trace: {
+            trace_id: "memtrace-1",
+            character_id: "char-1",
+            query: "测试目标",
+            working_memory: ["工作记忆"],
+            episodic_memory_snippets: ["情景记忆"],
+            reflective_memory: ["反思记忆"],
+            metadata: {},
+          },
+          metadata: {},
+        },
+      ],
+      summary: {
+        prompt_trace_count: 1,
+        action_intent_count: 0,
+        critic_rejected_count: 0,
+        accepted_intent_count: 0,
+        rejected_intent_count: 0,
+      },
+    });
     getDiagnostics.mockResolvedValue({
       sim_id: "sim-test",
       status: "complete",
@@ -173,6 +241,8 @@ describe("CreativeStudio", () => {
     expect(await screen.findByText("dual-loop-v1")).toBeInTheDocument();
     expect(await screen.findByText("legacy-compatibility-v1")).toBeInTheDocument();
     expect(await screen.findByText("王城的局势正在升温")).toBeInTheDocument();
+    expect(await screen.findByText("Prompt Inspector")).toBeInTheDocument();
+    expect(await screen.findByText(/prompts=1/)).toBeInTheDocument();
     expect(await screen.findByText(/world_rule_violation/)).toBeInTheDocument();
   });
 });

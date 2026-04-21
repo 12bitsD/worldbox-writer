@@ -1340,4 +1340,10 @@ def run_simulation(
         else:
             break
 
+    final_world = cast(WorldState, result["world"])
+    if not final_world.factions and not final_world.locations:
+        final_world = WorldBuilderAgent().expand_world(final_world)
+        final_world.metadata["world_builder_completed"] = True
+        result = cast(SimulationState, {**result, "world": final_world})
+
     return cast(WorldState, result["world"])
