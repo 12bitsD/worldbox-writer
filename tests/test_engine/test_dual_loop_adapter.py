@@ -184,6 +184,37 @@ def test_prompt_trace_keeps_actor_private_memory_isolated() -> None:
     assert "真正幕后黑手" not in trace.assembled_prompt
 
 
+def test_prompt_trace_separates_episodic_and_reflective_memory_layers() -> None:
+    world = WorldState(title="测试世界", premise="测试前提")
+    alice = Character(name="阿璃", personality="谨慎", goals=["调查断桥"])
+    world.add_character(alice)
+    scene_plan = ScenePlan(
+        scene_id="scene-memory",
+        objective="追踪断桥线索",
+        spotlight_character_ids=[str(alice.id)],
+    )
+    memory = MemoryManager()
+    node = StoryNode(
+        title="断桥旧事",
+        description="阿璃在断桥发现脚印",
+        character_ids=[str(alice.id)],
+    )
+    world.tick = 1
+    memory.record_event(node, world, importance=0.8)
+    memory.record_reflection(
+        world,
+        character_id=str(alice.id),
+        content="阿璃意识到自己过于急躁。",
+    )
+
+    trace = build_prompt_trace(alice, world, scene_plan=scene_plan, memory=memory)
+
+    assert trace.memory_trace is not None
+    assert trace.memory_trace.episodic_memory_snippets
+    assert "阿璃意识到自己过于急躁" in trace.memory_trace.reflective_memory[0]
+    assert trace.memory_trace.metadata["layer_counts"]["reflective"] == 1
+
+
 def test_isolated_actor_runtime_generates_branch_aware_intents(monkeypatch) -> None:
     calls: list[list[dict]] = []
 

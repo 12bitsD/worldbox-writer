@@ -28,7 +28,12 @@ from worldbox_writer.core.dual_loop import (
     SceneScript,
 )
 from worldbox_writer.core.models import Character, StoryNode, WorldState
-from worldbox_writer.memory.memory_manager import MemoryManager
+from worldbox_writer.memory.memory_manager import (
+    EVENT_ENTRY_KIND,
+    REFLECTION_ENTRY_KIND,
+    SUMMARY_ENTRY_KIND,
+    MemoryManager,
+)
 from worldbox_writer.utils.llm import chat_completion
 
 FEATURE_DUAL_LOOP_ENV = "FEATURE_DUAL_LOOP_ENABLED"
@@ -482,14 +487,24 @@ def _build_memory_recall_trace(
             memory,
             character_id=str(character.id),
             max_entries=6,
+            entry_kinds={EVENT_ENTRY_KIND, SUMMARY_ENTRY_KIND},
         )
-    reflective_raw = character.metadata.get("reflection_notes", [])
-    if isinstance(reflective_raw, str):
-        reflective_memory = [reflective_raw]
-    elif isinstance(reflective_raw, list):
-        reflective_memory = [str(item) for item in reflective_raw if str(item).strip()]
+        reflective_memory = _private_memory_snippets(
+            memory,
+            character_id=str(character.id),
+            max_entries=4,
+            entry_kinds={REFLECTION_ENTRY_KIND},
+        )
     else:
         reflective_memory = []
+    reflective_raw = character.metadata.get("reflection_notes", [])
+    if isinstance(reflective_raw, str):
+        reflective_memory.append(reflective_raw)
+    elif isinstance(reflective_raw, list):
+        reflective_memory.extend(
+            str(item) for item in reflective_raw if str(item).strip()
+        )
+    reflective_memory = list(dict.fromkeys(reflective_memory))[-6:]
 
     return MemoryRecallTrace(
         character_id=str(character.id),
@@ -501,6 +516,14 @@ def _build_memory_recall_trace(
             "adapter_mode": DUAL_LOOP_ADAPTER_MODE,
             "branch_id": scene_plan.branch_id,
             "tick": scene_plan.tick,
+            "layer_counts": {
+                "working": len(working_memory),
+                "episodic": len(episodic_memory_snippets),
+                "reflective": len(reflective_memory),
+            },
+            "retrieval_backend": (
+                memory.vector_backend if memory is not None else "none"
+            ),
         },
     )
 
@@ -621,11 +644,16 @@ def _private_memory_snippets(
     *,
     character_id: str,
     max_entries: int,
+    entry_kinds: Optional[set[str]] = None,
 ) -> List[str]:
     private_entries = [
         entry
         for entry in memory.export_memory_log()
         if character_id in [str(item) for item in entry.get("character_ids", [])]
+        and (
+            entry_kinds is None
+            or str(entry.get("entry_kind", EVENT_ENTRY_KIND)) in entry_kinds
+        )
     ]
     private_entries = private_entries[-max_entries:]
     return [

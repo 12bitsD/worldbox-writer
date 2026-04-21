@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import pytest
 
+from worldbox_writer.core.dual_loop import SceneBeat, SceneScript
 from worldbox_writer.core.models import Character, NodeType, StoryNode, WorldState
 from worldbox_writer.memory.memory_manager import (
+    REFLECTION_ENTRY_KIND,
     MemoryEntry,
     MemoryManager,
     SimpleVectorStore,
@@ -187,6 +189,31 @@ class TestMemoryManagerPureLogic:
         assert len(log) == 1
         assert "content" in log[0]
         assert "tick" in log[0]
+
+    def test_scene_script_writes_reflective_memory(self, world):
+        mm = MemoryManager()
+        char_id = list(world.characters.keys())[0]
+        world.tick = 2
+        scene_script = SceneScript(
+            scene_id="scene-memory",
+            summary="李凌决定隐藏真实意图。",
+            beats=[
+                SceneBeat(
+                    actor_id=char_id,
+                    actor_name="李凌",
+                    summary="李凌决定隐藏真实意图",
+                    source_intent_id="intent-1",
+                )
+            ],
+        )
+
+        entries = mm.write_reflections_from_scene_script(world, scene_script)
+
+        assert len(entries) == 1
+        assert entries[0].entry_kind == REFLECTION_ENTRY_KIND
+        assert "李凌决定隐藏真实意图" in entries[0].content
+        assert world.get_character(char_id).metadata["reflection_notes"]
+        assert mm.get_stats()["reflection_entries"] == 1
 
     def test_get_character_arc_no_memory(self, world):
         mm = MemoryManager()

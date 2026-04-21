@@ -973,6 +973,29 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
     elif node_type == NodeType.SETUP:
         importance = 0.8
     memory.record_event(new_node, world, importance=importance)
+    reflection_entries = []
+    if scene_script is not None:
+        reflection_entries = memory.write_reflections_from_scene_script(
+            world,
+            scene_script,
+        )
+        if reflection_entries:
+            _emit_telemetry(
+                state,
+                tick=world.tick,
+                agent="memory",
+                stage="reflective_writeback",
+                message="认知记忆已写回角色反思层",
+                payload={
+                    "scene_id": scene_script.scene_id,
+                    "reflection_entries": len(reflection_entries),
+                    "character_ids": [
+                        entry.character_ids[0]
+                        for entry in reflection_entries
+                        if entry.character_ids
+                    ],
+                },
+            )
 
     # Detect intervention need — use detect(node, world)
     detector = NodeDetector()

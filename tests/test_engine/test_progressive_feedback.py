@@ -395,3 +395,53 @@ def test_node_detector_persists_scene_script_metadata(monkeypatch) -> None:
         "scene-commit"
     )
     assert committed.character_ids == [str(alice.id)]
+    assert result["memory"].get_stats()["reflection_entries"] == 0
+
+
+def test_node_detector_writes_reflections_from_scene_script(monkeypatch) -> None:
+    class FakeNodeDetector:
+        last_call_metadata = None
+
+        def detect(self, node, world):  # type: ignore[no-untyped-def]
+            return None
+
+    monkeypatch.setattr(graph_module, "NodeDetector", FakeNodeDetector)
+
+    world = WorldState(title="测试世界", premise="测试前提")
+    alice = Character(name="阿璃", personality="冷静", goals=["守住断桥"])
+    world.add_character(alice)
+    scene_plan = ScenePlan(
+        scene_id="scene-reflection",
+        title="反思写回",
+        spotlight_character_ids=[str(alice.id)],
+    )
+    scene_script = SceneScript(
+        scene_id=scene_plan.scene_id,
+        title="反思写回",
+        summary="阿璃守住断桥入口。",
+        participating_character_ids=[str(alice.id)],
+        beats=[
+            {
+                "actor_id": str(alice.id),
+                "actor_name": "阿璃",
+                "summary": "阿璃意识到守住入口比追击更重要",
+                "source_intent_id": "intent-1",
+            }
+        ],
+    )
+
+    result = node_detector_node(
+        _state(
+            world,
+            scene_plan=scene_plan,
+            scene_script=scene_script,
+            candidate_event=scene_script.summary,
+            validation_passed=True,
+        )
+    )
+
+    assert result["memory"].get_stats()["reflection_entries"] == 1
+    assert (
+        "守住入口比追击更重要"
+        in world.get_character(str(alice.id)).metadata["reflection_notes"][0]
+    )

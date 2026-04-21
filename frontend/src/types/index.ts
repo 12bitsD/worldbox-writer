@@ -304,6 +304,7 @@ export interface SimulationDiagnostics {
     archived_entries: number;
     summary_entries: number;
     event_entries: number;
+    reflection_entries: number;
     latest_tick: number;
     vector_backend?: string;
     vector_backend_requested?: string;

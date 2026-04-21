@@ -97,6 +97,7 @@ describe("CreativeStudio", () => {
         archived_entries: 1,
         summary_entries: 1,
         event_entries: 1,
+        reflection_entries: 0,
         latest_tick: 1,
         vector_backend: "simple",
         vector_backend_requested: "auto",

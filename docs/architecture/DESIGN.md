@@ -175,6 +175,21 @@ Sprint 14 的架构决策是：
 - Sprint 15 的记忆写回需要稳定事实源，否则会把被拒绝的角色意图写入长期记忆。
 - 保留 legacy 提交链可以让 SceneScript 先落地并被验证，再逐步替换渲染和导出层。
 
+#### Sprint 15 补充：SceneScript 驱动三层认知记忆
+
+Sprint 15 的架构决策是：
+
+- **不新增独立记忆表**：继续复用 `memory_entries`，通过 `entry_kind=reflection` 和 tags 表达反思层，避免破坏 Sprint 9 的 durable memory contract。
+- **SceneScript accepted beats 是反思写回来源**：只有 GM 结算后的 accepted beats 会写入角色反思，Critic 拒绝的 intent 不进入长期认知。
+- **PromptTrace 暴露三层召回诊断**：`MemoryRecallTrace` 继续承载 working / episodic / reflective 三层内容，并在 metadata 中记录 layer counts 与 retrieval backend。
+- **角色 metadata 保留轻量反思缓存**：`Character.metadata["reflection_notes"]` 作为下一轮 Actor prompt 的快速反思上下文，durable memory 作为持久来源。
+
+这样切的原因是：
+
+- 如果反思层直接从 raw intent 写回，会把被拒绝或荒诞的行动污染角色认知。
+- 如果 Sprint 15 先做独立 memory schema，会放大存储迁移风险，并拖慢 Inspector / rendering 闭环。
+- 三层 trace 先稳定下来，Sprint 16 才能把“为什么召回这些记忆”做成可解释面板。
+
 ### 4.3 大语言模型接入 (LLM Integration)
 - **云端 API**：OpenAI (GPT-4o), Anthropic (Claude 3.5 Sonnet)。
   - *用途*：用于复杂的逻辑推理、边界校验和高质量文本渲染。

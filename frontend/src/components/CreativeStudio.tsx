@@ -483,6 +483,7 @@ export function CreativeStudio({
                 {[
                   ["活跃记忆", diagnostics.memory.active_entries],
                   ["归档摘要", diagnostics.memory.summary_entries],
+                  ["反思记忆", diagnostics.memory.reflection_entries],
                   ["LLM 调用", diagnostics.llm.total_calls],
                   ["提示词估算", diagnostics.llm.estimated_prompt_tokens],
                   ["向量后端", diagnostics.memory.vector_backend ?? "simple"],

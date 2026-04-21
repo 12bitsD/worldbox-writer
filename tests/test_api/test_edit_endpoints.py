@@ -481,6 +481,7 @@ class TestCreativeWorkspace:
         body = res.json()
         assert body["memory"]["summary_entries"] == 1
         assert body["memory"]["archived_entries"] == 1
+        assert body["memory"]["reflection_entries"] == 0
         assert body["memory"]["vector_backend_requested"] == "auto"
         assert body["memory"]["vector_backend"] in {"chromadb", "simple"}
         assert body["llm"]["total_calls"] == 1

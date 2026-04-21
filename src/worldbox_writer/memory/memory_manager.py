@@ -26,6 +26,8 @@ from worldbox_writer.utils.llm import chat_completion
 SUMMARY_ARCHIVE_TAG = "summary_archive"
 SUMMARY_ENTRY_KIND = "summary"
 EVENT_ENTRY_KIND = "event"
+REFLECTION_ENTRY_KIND = "reflection"
+REFLECTION_TAG = "reflection"
 SIMPLE_VECTOR_BACKEND = "simple"
 AUTO_VECTOR_BACKEND = "auto"
 DEFAULT_VECTOR_BACKEND = AUTO_VECTOR_BACKEND
@@ -164,6 +166,11 @@ def summarize_memory_footprint(entries: Sequence[MemoryEntry]) -> Dict[str, int]
         ),
         "event_entries": sum(
             1 for entry in active_entries if entry.entry_kind == EVENT_ENTRY_KIND
+        ),
+        "reflection_entries": sum(
+            1
+            for entry in active_entries
+            if entry.entry_kind == REFLECTION_ENTRY_KIND or REFLECTION_TAG in entry.tags
         ),
     }
 
@@ -565,6 +572,74 @@ class MemoryManager:
         self._persist_entry(entry)
         self._archive_excess_entries(world, entry.branch_id)
         self._rehydrate_runtime_layers()
+
+    def record_reflection(
+        self,
+        world: WorldState,
+        *,
+        character_id: str,
+        content: str,
+        importance: float = 0.7,
+        source_entry_ids: Optional[Sequence[str]] = None,
+        tags: Optional[Sequence[str]] = None,
+    ) -> MemoryEntry:
+        """Record one character-facing reflective memory."""
+        entry = MemoryEntry(
+            entry_id=f"memref_{uuid4().hex[:12]}",
+            content=content,
+            character_ids=[character_id],
+            tick=world.tick,
+            importance=importance,
+            tags=list(dict.fromkeys([REFLECTION_TAG, *(tags or [])])),
+            branch_id=world.active_branch_id or "main",
+            entry_kind=REFLECTION_ENTRY_KIND,
+            source_entry_ids=list(source_entry_ids or []),
+        )
+        self._active_entries.append(entry)
+        self._active_entries.sort(key=lambda item: (item.tick, item.entry_id))
+        self._persist_entry(entry)
+        self._rehydrate_runtime_layers()
+        return entry
+
+    def write_reflections_from_scene_script(
+        self,
+        world: WorldState,
+        scene_script: Any,
+    ) -> List[MemoryEntry]:
+        """Write deterministic reflective notes from a committed SceneScript."""
+        created: List[MemoryEntry] = []
+        for beat in getattr(scene_script, "beats", []):
+            actor_id = getattr(beat, "actor_id", None)
+            if not actor_id:
+                continue
+            character = world.get_character(str(actor_id))
+            if not character:
+                continue
+            note = (f"第{world.tick}步反思：{getattr(beat, 'summary', '')}").strip()
+            if not note:
+                continue
+            reflection_notes = character.metadata.get("reflection_notes", [])
+            if isinstance(reflection_notes, str):
+                reflection_notes = [reflection_notes]
+            if not isinstance(reflection_notes, list):
+                reflection_notes = []
+            reflection_notes.append(note)
+            character.metadata["reflection_notes"] = [
+                str(item) for item in reflection_notes[-8:] if str(item).strip()
+            ]
+            source_intent_id = getattr(beat, "source_intent_id", None)
+            created.append(
+                self.record_reflection(
+                    world,
+                    character_id=str(actor_id),
+                    content=note,
+                    source_entry_ids=(
+                        [str(source_intent_id)] if source_intent_id else []
+                    ),
+                    tags=["scene_script", str(getattr(scene_script, "scene_id", ""))],
+                )
+            )
+        return created
 
     def get_context_for_agent(
         self,
