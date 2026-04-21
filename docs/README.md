@@ -20,6 +20,7 @@
 - [敏捷开发指南](development/AGILE_GUIDE.md)
 - [发布流程](development/RELEASE_PROCESS.md)
 - [运行手册](development/RUNBOOK.md)
+- [Dual-loop Rollout Runbook](development/DUAL_LOOP_ROLLOUT.md)
 - [Secrets Policy](development/SECRETS_POLICY.md)
 - [类型检查基线](development/TYPECHECK_BASELINE.md)
 
@@ -58,6 +59,7 @@
 - [Sprint 15 计划](sprints/SPRINT_15.md)
 - [Sprint 16 计划](sprints/SPRINT_16.md)
 - [Sprint 17 计划](sprints/SPRINT_17.md)
+- [Sprint 18 计划](sprints/SPRINT_18.md)
 
 ## 6. 实验与模板
 

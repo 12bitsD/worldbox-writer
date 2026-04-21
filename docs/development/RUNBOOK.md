@@ -1,7 +1,7 @@
 # 运行手册
 
 **文档状态**：Active (v0.6.0+)  
-**最后更新**：2026-04-18
+**最后更新**：2026-04-22
 
 本文档记录本地开发和联调中最常见的问题与处理方式。
 
@@ -118,6 +118,37 @@ export FEATURE_BRANCHING_ENABLED=0
 export FEATURE_BRANCHING_ENABLED=1
 make dev-api
 ```
+
+### 2.7 Sprint 18 双循环链路需要紧急止损
+
+双循环链路由环境变量 `FEATURE_DUAL_LOOP_ENABLED` 控制。
+
+关闭方式：
+
+```bash
+FEATURE_DUAL_LOOP_ENABLED=0 make dev-api
+```
+
+或在现有服务环境里显式注入：
+
+```bash
+export FEATURE_DUAL_LOOP_ENABLED=0
+```
+
+关闭后的预期行为：
+
+- 新推演退回 legacy Actor candidate event 路径
+- 已有 `SceneScript` / `NarratorInput` / rendered text 不会被删除
+- `/api/simulate/{id}/dual-loop/compare` 仍可读取已有证据，用于事故分析
+
+止损验证步骤：
+
+1. 访问 `GET /api/health`，确认服务已重启且无启动错误。
+2. 新建一次普通推演，确认能生成故事节点和正文。
+3. 对事故会话执行 `python -m worldbox_writer.evals.dual_loop_compare <sim_id>`，保存报告。
+4. 若是模型质量问题，补跑 `make model-eval` 并记录 provider / model / route 信息。
+
+完整灰度与恢复流程见 [Dual-loop Rollout Runbook](DUAL_LOOP_ROLLOUT.md)。
 
 ## 3. 数据与路径
 

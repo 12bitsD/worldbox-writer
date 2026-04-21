@@ -1,1 +1,1 @@
-"""Model evaluation helpers for Sprint 9."""
+"""Evaluation and rollout helpers."""

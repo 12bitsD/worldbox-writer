@@ -221,6 +221,21 @@ Sprint 17 的架构决策是：
 - 如果导出层直接消费 SceneScript，编辑器修订后的 `rendered_text` 会失去优先级。
 - 渲染层先有稳定输入合同后，Sprint 18 才能做 rollout compare 和 eval guardrails。
 
+#### Sprint 18 补充：双循环上线前必须有 compare 和 rollback 证据
+
+Sprint 18 的架构决策是：
+
+- **compare helper 是单一事实源**：`build_dual_loop_compare_report()` 负责统计 legacy path 与 dual-loop path 的节点、SceneScript、NarratorInput、Critic verdict、PromptTrace 和 reflection 证据，API 与 CLI 共用它。
+- **readiness 显式区分 required / optional**：feature flag、SceneScript lineage、NarratorInput v2 和 rollback path 是 required；Critic verdict 与 PromptTrace 在旧会话上缺失只给 warning。
+- **回滚信息随报告返回**：报告直接暴露 `FEATURE_DUAL_LOOP_ENABLED=0` 和 rollout runbook，避免事故时再去文档中猜开关。
+- **model-eval 是发布护栏，不是默认 PR gate**：默认 CI 继续保持 `make lint` / `make test`，真实模型质量评估由发布流程或显式模型评估任务触发。
+
+这样切的原因是：
+
+- 没有 compare report，双循环只能算实验路径，无法给上线决策提供证据。
+- 没有 CLI，评估结果不能纳入发布脚本或事故归档。
+- 没有明确 rollback flag，灰度发布会在模型异常时放大恢复成本。
+
 ### 4.3 大语言模型接入 (LLM Integration)
 - **云端 API**：OpenAI (GPT-4o), Anthropic (Claude 3.5 Sonnet)。
   - *用途*：用于复杂的逻辑推理、边界校验和高质量文本渲染。

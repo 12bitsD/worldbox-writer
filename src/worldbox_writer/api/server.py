@@ -48,6 +48,7 @@ from worldbox_writer.engine.dual_loop import (
     dual_loop_enabled,
 )
 from worldbox_writer.engine.graph import run_simulation
+from worldbox_writer.evals.dual_loop_compare import build_dual_loop_compare_report
 from worldbox_writer.exporting import build_export_bundle
 from worldbox_writer.exporting.story_export import render_export_artifact
 from worldbox_writer.memory.memory_manager import (
@@ -1442,6 +1443,31 @@ async def get_simulation_inspector(sim_id: str):
             "rejected_intent_count": len(snapshot.scene_script.rejected_intent_ids),
         },
     }
+
+
+@app.get("/api/simulate/{sim_id}/dual-loop/compare")
+async def compare_dual_loop_rollout(sim_id: str):
+    session = _load_session_into_memory(sim_id)
+    if session and session.world:
+        return build_dual_loop_compare_report(
+            session.sim_id,
+            session.world,
+            nodes_rendered=session.nodes_rendered,
+            telemetry_events=session.telemetry_events,
+            features=_feature_payload(),
+        )
+
+    data = db_load_session(sim_id)
+    if not data or not data["world"]:
+        raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
+
+    return build_dual_loop_compare_report(
+        sim_id,
+        data["world"],
+        nodes_rendered=data["nodes_rendered"],
+        telemetry_events=data["telemetry_events"],
+        features=_feature_payload(),
+    )
 
 
 @app.post("/api/simulate/{sim_id}/branch")

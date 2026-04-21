@@ -562,6 +562,36 @@ class TestCreativeWorkspace:
         assert isinstance(body["prompt_traces"], list)
         assert body["summary"]["prompt_trace_count"] == len(body["prompt_traces"])
 
+    def test_dual_loop_compare_returns_rollout_guardrails(
+        self, client, complete_session
+    ):
+        sim_id, _, node_id = complete_session
+        session = _sessions[sim_id]
+        node = session.world.get_node(node_id)
+        assert node is not None
+        scene_script = SceneScript(
+            script_id="script-compare-api",
+            scene_id="scene-compare-api",
+            title=node.title,
+            summary="GM 结算后的对比摘要。",
+        )
+        node.metadata["scene_script"] = scene_script.model_dump(mode="json")
+        node.metadata["narrator_input_v2"] = {"source": "scene_script"}
+        node.metadata["intent_critiques"] = [
+            {"intent_id": "intent-1", "accepted": False}
+        ]
+        session.nodes_rendered = [server_module._serialize_node(node, session.world)]
+
+        res = client.get(f"/api/simulate/{sim_id}/dual-loop/compare")
+
+        assert res.status_code == 200
+        body = res.json()
+        assert body["sim_id"] == sim_id
+        assert body["rollout_readiness"]["ready"] is True
+        assert body["dual_loop_path"]["scene_script_node_count"] == 1
+        assert body["dual_loop_path"]["critic_rejected_count"] == 1
+        assert body["rollback"]["feature_flag"] == "FEATURE_DUAL_LOOP_ENABLED"
+
     def test_export_returns_bundle_with_markdown_and_html(
         self, client, complete_session
     ):

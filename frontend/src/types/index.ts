@@ -255,6 +255,50 @@ export interface BranchCompareResponse {
   branches: Record<string, BranchCompareSummary>;
 }
 
+export interface DualLoopRolloutCheck {
+  name: string;
+  status: "pass" | "warn" | "fail";
+  required: boolean;
+  detail: string;
+}
+
+export interface DualLoopCompareReport {
+  sim_id: string;
+  generated_at: string;
+  active_branch_id: string;
+  contract_version: string;
+  legacy_path: {
+    node_count: number;
+    rendered_node_count: number;
+    event_source: string;
+    available: boolean;
+  };
+  dual_loop_path: {
+    enabled: boolean;
+    scene_script_node_count: number;
+    narrator_input_v2_node_count: number;
+    action_intent_count: number;
+    intent_critique_count: number;
+    critic_rejected_count: number;
+    prompt_trace_count: number;
+    reflection_note_count: number;
+  };
+  telemetry: {
+    event_count: number;
+    stage_counts: Record<string, number>;
+  };
+  rollout_readiness: {
+    ready: boolean;
+    checks: DualLoopRolloutCheck[];
+    required_commands: string[];
+  };
+  rollback: {
+    feature_flag: string;
+    disable_value: string;
+    runbook: string;
+  };
+}
+
 export interface WikiIssue {
   level: "warning" | "error";
   path: string;

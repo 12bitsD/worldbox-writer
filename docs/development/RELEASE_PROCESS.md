@@ -1,7 +1,7 @@
 # 发布流程
 
 **文档状态**：Active (v0.6.0+)  
-**最后更新**：2026-04-18
+**最后更新**：2026-04-22
 
 本文档说明 WorldBox Writer 的版本发布最小流程。
 
@@ -24,6 +24,22 @@
 4. 如改动涉及真实模型行为，执行 `make integration`
 5. 更新 `CHANGELOG.md`
 6. 更新 README 或相关设计文档
+
+双循环链路发布前额外执行：
+
+1. 对至少一个新会话生成 compare report：
+
+```bash
+python -m worldbox_writer.evals.dual_loop_compare <sim_id> --require-ready
+```
+
+2. 如涉及 provider、prompt 或路由策略，执行：
+
+```bash
+make model-eval
+```
+
+3. 确认回滚路径仍是 `FEATURE_DUAL_LOOP_ENABLED=0`，并检查 [Dual-loop Rollout Runbook](DUAL_LOOP_ROLLOUT.md)。
 
 ## 3. 版本号更新位置
 

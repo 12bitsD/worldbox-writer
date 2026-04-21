@@ -2,6 +2,7 @@
 
 import type {
   BranchCompareResponse,
+  DualLoopCompareReport,
   ExportArtifactKind,
   ExportData,
   SimulationDiagnostics,
@@ -120,6 +121,14 @@ export async function compareBranches(
   simId: string
 ): Promise<BranchCompareResponse> {
   const res = await fetch(`${BASE}/simulate/${simId}/branch/compare`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function compareDualLoop(
+  simId: string
+): Promise<DualLoopCompareReport> {
+  const res = await fetch(`${BASE}/simulate/${simId}/dual-loop/compare`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
