@@ -52,6 +52,7 @@
 - [Sprint 9 任务拆解](sprints/SPRINT_9_TASK_BREAKDOWN.md)
 - [Sprint 10 计划](sprints/SPRINT_10.md)
 - [Sprint 11 计划](sprints/SPRINT_11.md)
+- [Sprint 12 计划](sprints/SPRINT_12.md)
 
 ## 6. 实验与模板
 

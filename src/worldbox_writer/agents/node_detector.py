@@ -217,7 +217,16 @@ class NodeDetector:
                 ),
             },
         ]
-        response = self._invoke(messages, temperature=0.3, max_tokens=512)
+        try:
+            response = self._invoke(messages, temperature=0.3, max_tokens=512)
+        except Exception:
+            return InterventionSignal(
+                should_intervene=False,
+                urgency="low",
+                reason="",
+                context=node.description,
+                suggested_options=[],
+            )
         raw = self._parse_json_response(response)
         return InterventionSignal(
             should_intervene=raw.get("should_intervene", False),

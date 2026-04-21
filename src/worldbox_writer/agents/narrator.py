@@ -129,7 +129,16 @@ class NarratorAgent:
             },
         ]
 
-        response = self._invoke(messages, temperature=0.75, max_tokens=800)
+        try:
+            response = self._invoke(messages, temperature=0.75, max_tokens=800)
+        except Exception:
+            response = json.dumps(
+                {
+                    "prose": self._fallback_prose(node, world),
+                    "style_notes": "LLM 不可用时的结构化降级渲染。",
+                },
+                ensure_ascii=False,
+            )
         raw = self._parse_json_response(response)
         prose = raw.get("prose", response).strip()
 
@@ -208,7 +217,15 @@ class NarratorAgent:
             },
         ]
 
-        response = self._invoke(messages, temperature=0.5, max_tokens=800)
+        try:
+            response = self._invoke(messages, temperature=0.5, max_tokens=800)
+        except Exception:
+            return {
+                "summary": f"{world.title}围绕既有节点持续推进。",
+                "key_events": [node.title for node in world.nodes.values()],
+                "character_arcs": {},
+                "ending_type": "未完",
+            }
         return self._parse_json_response(response)
 
     def export_markdown(self, world: WorldState) -> str:
@@ -256,7 +273,10 @@ class NarratorAgent:
                 "content": f"节点标题：{node.title}\n节点描述：{node.description}",
             },
         ]
-        return self._invoke(messages, temperature=0.7, max_tokens=30).strip()
+        try:
+            return self._invoke(messages, temperature=0.7, max_tokens=30).strip()
+        except Exception:
+            return node.title or "未命名章节"
 
     def _parse_json_response(self, content: str) -> dict[str, Any]:
         text = content.strip()
@@ -287,3 +307,11 @@ class NarratorAgent:
                             except json.JSONDecodeError:
                                 break
             return {"prose": text, "style_notes": ""}
+
+    def _fallback_prose(self, node: StoryNode, world: WorldState) -> str:
+        premise = world.premise or "这个世界"
+        return (
+            f"在{premise}的阴影下，{node.title or '新的事件'}悄然展开。"
+            f"{node.description} 这一刻没有华丽的旁白，只有人物在局势压力下的选择。"
+            "他们暂时压下犹疑，沿着已经发生的事实继续前进，新的冲突也随之积蓄。"
+        )

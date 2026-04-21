@@ -152,7 +152,10 @@ class GateKeeperAgent:
                 "content": f"活跃约束：\n{constraints_text}\n\n提议节点：\n{node_text}",
             },
         ]
-        response = self._invoke(messages, temperature=0.0, max_tokens=512)
+        try:
+            response = self._invoke(messages, temperature=0.0, max_tokens=512)
+        except Exception:
+            return self._fallback_validation_data(constraints, node)
         return self._parse_json_response(response)
 
     def _build_result(
@@ -221,3 +224,36 @@ class GateKeeperAgent:
                             except json.JSONDecodeError:
                                 break
             return {"violations": [], "revision_hint": ""}
+
+    def _fallback_validation_data(
+        self, constraints: List[Constraint], node: StoryNode
+    ) -> dict[str, Any]:
+        node_text = f"{node.title} {node.description}"
+        terms = ["魔法", "法术", "超自然", "死亡", "杀死", "背叛", "违禁"]
+        violations: List[dict[str, Any]] = []
+
+        for constraint in constraints:
+            constraint_text = (
+                f"{constraint.name} {constraint.description} {constraint.rule}"
+            )
+            matched_terms = [
+                term for term in terms if term in constraint_text and term in node_text
+            ]
+            if not matched_terms:
+                continue
+            is_blocking = constraint.severity == ConstraintSeverity.HARD
+            violations.append(
+                {
+                    "constraint_name": constraint.name,
+                    "severity": constraint.severity.value,
+                    "explanation": (
+                        f"节点内容包含 {', '.join(matched_terms)}，可能违反约束：{constraint.rule}"
+                    ),
+                    "is_blocking": is_blocking,
+                }
+            )
+
+        return {
+            "violations": violations,
+            "revision_hint": "移除或改写违反约束的行动。" if violations else "",
+        }

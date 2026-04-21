@@ -109,10 +109,10 @@ LLM_PROVIDER=mimo
 LLM_API_KEY=tp-your-token-plan-key-here
 LLM_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
 
-# 或使用 Kimi（长上下文）
+# 或使用 Kimi Coding（Anthropic-compatible）
 # LLM_PROVIDER=kimi
 # LLM_API_KEY=sk-your-kimi-api-key
-# LLM_BASE_URL=https://api.moonshot.cn/v1
+# LLM_BASE_URL=https://api.kimi.com/coding/
 
 # 或使用 OpenAI
 # LLM_PROVIDER=openai
@@ -207,6 +207,8 @@ worldbox-writer/
 | Sprint 7 | 可视化补齐与稳定性加固 | ✅ 完成（v0.6.x 范围已交付） |
 | Sprint 8 | 掌控世界：时间线分叉与多分支控制 | ✅ 完成（branching loop 已交付） |
 | Sprint 9 | 创作作品：智能记忆、多模型路由与创作工作台 | ✅ P0 落地（ChromaDB deferred） |
+| Sprint 10-11 | 双循环基础：契约冻结 + Director Scene Planner | ✅ 完成（ScenePlan 已进主链） |
+| Sprint 12 | 隔离 Actor 运行时 v1 | ✅ 完成（spotlight fan-out / fan-in 已接入） |
 
 **当前版本**：v0.5.0
 
@@ -217,9 +219,11 @@ worldbox-writer/
 - 已完成的 Sprint 8.5 交付：初始化阶段进度可见化、SSE 首包优化、首个正文关键路径裁剪、主区域 progressive feedback 面板。
 - 已完成的 Sprint 9 P0 交付：SQLite 持久化记忆与摘要归档、logic/creative 多模型路由与 fallback 钩子、Creative Studio（Wiki + 富文本编辑 + 草稿恢复）、诊断 API、model-eval 与 perf gate 脚本/工作流。
 - 已完成的 Sprint 9 增量推进：真实 ChromaDB 向量检索已接线并成为默认 `auto` 路径；导出链路已升级为 TXT / Markdown / HTML / DOCX / PDF / JSON manifest bundle。
+- 已完成的 Sprint 10-11 交付：双循环契约冻结、compatibility adapter、diagnostics 暴露、Director scene planner、`ScenePlan` graph state 持久化和 legacy actor prompt 接入。
+- 已完成的 Sprint 12 交付：隔离 Actor runtime v1、spotlight actor fan-out / fan-in、私有 `PromptTrace` / `MemoryRecallTrace`、真实 `ActionIntent` 产出和 legacy candidate bridge。
 - 架构预留：`StoryNode` 和 `WorldState` 已预留 `branch_id` 和 `merged_from_ids`，为未来的分支管理奠定基础。
-- 测试状态：`make lint` 通过；`make test` 通过；`make typecheck` 通过。`make integration` 依赖可达的真实 LLM Provider，当前无网络环境下会在首个真实请求处报 `APIConnectionError`。
-- 当前迭代状态：Sprint 9 的 P0 生产力闭环与后续 ChromaDB / DOCX / PDF 增量都已落地；下一阶段聚焦更强的 embedding 质量、专业排版细化和外部协作链路。
+- 测试状态：`make lint` 通过；`make test` 通过；`make typecheck` 通过。`make integration` 依赖可达且未限流的真实 LLM Provider；网络受限、DNS 失败、超时或 429 限流都会导致失败。
+- 当前迭代状态：Sprint 12 已落地；下一阶段聚焦 Sprint 13 的 Critic 审查链路，让真实 `ActionIntent` 先经过规则与认知边界审查再进入结算。
 
 ---
 
@@ -294,8 +298,9 @@ MIT
    - `LLM_PROVIDER=mimo`
    - `LLM_API_KEY=tp-...`
    - `LLM_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1`
-2. **Kimi** (备选，适合长上下文)
+2. **Kimi Coding** (Anthropic-compatible，备选)
    - `LLM_PROVIDER=kimi`
+   - `LLM_BASE_URL=https://api.kimi.com/coding/`
 3. **OpenAI** (备选)
    - `LLM_PROVIDER=openai`
 4. **Ollama** (本地部署)

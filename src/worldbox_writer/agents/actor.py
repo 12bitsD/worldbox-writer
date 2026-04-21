@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, cast
+from uuid import UUID
 
 from worldbox_writer.core.models import Character, NodeType, StoryNode, WorldState
 from worldbox_writer.utils.llm import chat_completion, get_last_llm_call_metadata
@@ -24,7 +25,7 @@ from worldbox_writer.utils.llm import chat_completion, get_last_llm_call_metadat
 class ActionProposal:
     """A character's proposed action for the current story tick."""
 
-    character_id: str
+    character_id: UUID
     character_name: str
     action_type: str  # "dialogue" | "action" | "decision" | "reaction"
     description: str
@@ -165,7 +166,14 @@ class ActorAgent:
             },
         ]
 
-        return self._invoke(messages, temperature=0.7, max_tokens=300).strip()
+        try:
+            return self._invoke(messages, temperature=0.7, max_tokens=300).strip()
+        except Exception:
+            return "；".join(
+                proposal.description
+                for proposal in proposals
+                if proposal.description.strip()
+            )
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -229,12 +237,15 @@ class ActorAgent:
             },
         ]
 
-        response = self._invoke(messages, temperature=0.8, max_tokens=300)
+        try:
+            response = self._invoke(messages, temperature=0.8, max_tokens=300)
+        except Exception:
+            return self._fallback_action_data(character)
         return self._parse_json_response(response)
 
     def _build_proposal(self, data: dict, character: Character) -> ActionProposal:
         return ActionProposal(
-            character_id=str(character.id),
+            character_id=character.id,
             character_name=character.name,
             action_type=data.get("action_type", "action"),
             description=data.get("description", ""),
@@ -273,7 +284,18 @@ class ActorAgent:
                                 break
             return {
                 "action_type": "action",
-                "description": "角色陷入了沉默。",
+                "description": "角色暂时陷入沉默，谨慎观察局势变化。",
                 "emotional_state": "平静",
                 "consequence_hint": "",
             }
+
+    def _fallback_action_data(self, character: Character) -> Dict[str, Any]:
+        goal = character.goals[0] if character.goals else "当前处境"
+        return {
+            "action_type": "reaction",
+            "description": (
+                f"{character.name}暂时压下情绪，围绕{goal}谨慎观察局势，等待下一步机会。"
+            ),
+            "emotional_state": "谨慎",
+            "consequence_hint": "局势暂时放缓，但角色目标仍在推进。",
+        }

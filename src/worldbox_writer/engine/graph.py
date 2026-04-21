@@ -26,18 +26,24 @@ from __future__ import annotations
 from typing import Any, Dict, Literal, Optional, cast
 
 from langgraph.graph import END, START, StateGraph
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
 from worldbox_writer.agents.director import DirectorAgent
 from worldbox_writer.agents.gate_keeper import GateKeeperAgent
 from worldbox_writer.agents.node_detector import NodeDetector
 from worldbox_writer.agents.world_builder import WorldBuilderAgent
-from worldbox_writer.core.dual_loop import ScenePlan
+from worldbox_writer.core.dual_loop import ActionIntent, PromptTrace, ScenePlan
 from worldbox_writer.core.models import (
     NodeType,
     RelationshipLabel,
     StoryNode,
     WorldState,
+)
+from worldbox_writer.engine.dual_loop import (
+    ISOLATED_ACTOR_RUNTIME_MODE,
+    dual_loop_enabled,
+    run_isolated_actor_runtime,
+    synthesize_candidate_event_from_intents,
 )
 from worldbox_writer.memory.memory_manager import MemoryManager
 from worldbox_writer.utils.llm import chat_completion, get_last_llm_call_metadata
@@ -53,6 +59,8 @@ class SimulationState(TypedDict):
     world: WorldState
     memory: MemoryManager
     scene_plan: Optional[ScenePlan]
+    action_intents: NotRequired[list[ActionIntent]]
+    prompt_traces: NotRequired[list[PromptTrace]]
     candidate_event: str
     validation_passed: bool
     needs_intervention: bool
@@ -462,7 +470,68 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
 
     alive_chars = [c for c in world.characters.values() if c.status.value == "alive"]
     if not alive_chars:
-        return {"candidate_event": "世界陷入了沉寂，没有角色继续行动。"}
+        return {
+            "candidate_event": "世界陷入了沉寂，没有角色继续行动。",
+            "action_intents": [],
+            "prompt_traces": [],
+        }
+
+    if scene_plan is not None and dual_loop_enabled():
+        runtime_result = run_isolated_actor_runtime(
+            world,
+            memory,
+            scene_plan=scene_plan,
+        )
+        candidate = synthesize_candidate_event_from_intents(
+            runtime_result.action_intents,
+            scene_plan=scene_plan,
+        )
+        intent_payloads = [
+            intent.model_dump(mode="json") for intent in runtime_result.action_intents
+        ]
+        trace_payloads = [
+            trace.model_dump(mode="json") for trace in runtime_result.prompt_traces
+        ]
+        world.metadata["last_actor_runtime_mode"] = ISOLATED_ACTOR_RUNTIME_MODE
+        world.metadata["last_actor_intents"] = intent_payloads
+        world.metadata["last_prompt_traces"] = trace_payloads
+
+        _emit_telemetry(
+            state,
+            tick=world.tick,
+            agent="actor",
+            stage="isolated_intents_generated",
+            message="隔离 Actor 运行时已生成结构化意图",
+            payload={
+                "runtime_mode": ISOLATED_ACTOR_RUNTIME_MODE,
+                "scene_id": scene_plan.scene_id,
+                "actor_count": len(runtime_result.action_intents),
+                "branch_id": scene_plan.branch_id,
+                "intent_previews": [
+                    intent.summary[:80] for intent in runtime_result.action_intents
+                ],
+            },
+        )
+        _emit_telemetry(
+            state,
+            tick=world.tick,
+            agent="actor",
+            stage="proposal_generated",
+            message="隔离 Actor 意图已桥接为候选事件",
+            payload={
+                "preview": candidate[:80],
+                "pacing": scene_plan.narrative_pressure,
+                "scene_id": scene_plan.scene_id,
+                "spotlight_count": len(scene_plan.spotlight_character_ids),
+                "runtime_mode": ISOLATED_ACTOR_RUNTIME_MODE,
+            },
+        )
+        return {
+            "world": world,
+            "candidate_event": candidate,
+            "action_intents": runtime_result.action_intents,
+            "prompt_traces": runtime_result.prompt_traces,
+        }
 
     spotlight_chars = []
     if scene_plan is not None:
@@ -579,7 +648,11 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
         },
         **llm_fields,
     )
-    return {"candidate_event": candidate.strip()}
+    return {
+        "candidate_event": candidate.strip(),
+        "action_intents": [],
+        "prompt_traces": [],
+    }
 
 
 def gate_keeper_node(state: SimulationState) -> Dict[str, Any]:
@@ -692,6 +765,8 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
     world = state["world"]
     memory: MemoryManager = state["memory"]
     scene_plan = state.get("scene_plan")
+    action_intents = state.get("action_intents", [])
+    prompt_traces = state.get("prompt_traces", [])
     candidate = state.get("candidate_event", "")
     validation_passed = state.get("validation_passed", False)
 
@@ -754,6 +829,14 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
         scene_plan_payload = scene_plan.model_dump(mode="json")
         new_node.metadata["scene_plan"] = scene_plan_payload
         world.metadata["last_committed_scene_plan"] = scene_plan_payload
+    if action_intents:
+        new_node.metadata["action_intents"] = [
+            intent.model_dump(mode="json") for intent in action_intents
+        ]
+    if prompt_traces:
+        new_node.metadata["prompt_traces"] = [
+            trace.model_dump(mode="json") for trace in prompt_traces
+        ]
     relationships_changed = _apply_relationship_updates(
         world,
         relationship_character_ids,
@@ -772,6 +855,7 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
             "title": new_node.title,
             "characters": involved_character_ids,
             "scene_id": scene_plan.scene_id if scene_plan else None,
+            "actor_intent_count": len(action_intents),
         },
     )
     if relationships_changed:
@@ -899,14 +983,20 @@ def narrator_node(state: SimulationState) -> Dict[str, Any]:
             node_type=current_node.node_type.value,
         )
 
-    prose = chat_completion(
-        messages,
-        role="narrator",
-        temperature=0.8,
-        max_tokens=600,
-        top_p=0.95,
-        on_token=callbacks.get("on_token"),
-    )
+    try:
+        prose = chat_completion(
+            messages,
+            role="narrator",
+            temperature=0.8,
+            max_tokens=600,
+            top_p=0.95,
+            on_token=callbacks.get("on_token"),
+        )
+    except Exception:
+        prose = (
+            f"{current_node.title}继续展开。{current_node.description}"
+            "人物在既有事实和约束下推进选择，新的局势也随之积蓄。"
+        )
     llm_fields = _llm_telemetry_fields(get_last_llm_call_metadata())
 
     if on_end_cb:
@@ -1074,6 +1164,8 @@ def run_simulation(
         "world": world,
         "memory": memory,
         "scene_plan": None,
+        "action_intents": [],
+        "prompt_traces": [],
         "candidate_event": "",
         "validation_passed": False,
         "needs_intervention": False,

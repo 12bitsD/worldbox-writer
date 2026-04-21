@@ -130,6 +130,21 @@ Sprint 11 的架构决策因此是：
 - 没有 graph-state 持久化，Sprint 10 做出来的 dual-loop contract 只会停留在 compatibility 层，无法进入真实运行时。
 - 先让 Actor 在单链路上消费 `ScenePlan`，可以在不放大爆炸半径的前提下验证“Director 场控”是否真的改善失焦和流水账问题。
 
+#### Sprint 12 补充：先让隔离 Actor 意图真实进入主链，再引入 Critic / GM
+
+Sprint 12 的架构决策是：
+
+- **Actor fan-out/fan-in 先行**：`ScenePlan.spotlight_character_ids` 作为本轮 Actor 唤醒名单，每个角色独立组装 prompt 并产出 `ActionIntent`。
+- **私有上下文边界先行**：Actor prompt 只包含公开场景信息、可见角色、自身目标、自身短期记忆和该角色相关的持久记忆片段，不再把所有角色状态打包进同一个共享 prompt。
+- **legacy bridge 保守接入**：多个 `ActionIntent` 暂时合成为一个 legacy candidate event，继续复用 `GateKeeper -> NodeDetector -> Narrator`，不在本 Sprint 提前切换事实提交模型。
+- **trace 先沉淀**：`PromptTrace`、`MemoryRecallTrace` 和 `ActionIntent` 被写入 runtime metadata / node metadata，为后续 Critic、GM 和 Inspector 提供可追踪输入。
+
+这样切的原因同样直接：
+
+- 没有真实 `ActionIntent`，Sprint 13 的 Critic 只能审查旧式共享候选事件，无法验证角色认知边界。
+- 没有隔离 prompt trace，Sprint 16 的 Inspector 只能展示黑盒日志，不能定位“角色为什么知道了不该知道的信息”。
+- 保留 legacy bridge 可以把最大风险控制在 Actor 阶段，让 GateKeeper、NodeDetector、Narrator 的既有回归继续发挥保护作用。
+
 ### 4.3 大语言模型接入 (LLM Integration)
 - **云端 API**：OpenAI (GPT-4o), Anthropic (Claude 3.5 Sonnet)。
   - *用途*：用于复杂的逻辑推理、边界校验和高质量文本渲染。

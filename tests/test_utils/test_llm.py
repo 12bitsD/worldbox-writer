@@ -1,5 +1,6 @@
 import json
 
+from worldbox_writer.utils import llm as llm_module
 from worldbox_writer.utils.llm import get_provider_info, resolve_llm_route
 
 
@@ -34,6 +35,40 @@ def test_role_override_wins_over_group_override(monkeypatch):
 
     assert narrator_route.provider == "openai"
     assert narrator_route.model == "gpt-4.1"
+
+
+def test_kimi_coding_base_url_detects_kimi_provider(monkeypatch):
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.setenv("LLM_BASE_URL", "https://api.kimi.com/coding/")
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+
+    route = resolve_llm_route("director")
+
+    assert route.provider == "kimi"
+    assert route.base_url == "https://api.kimi.com/coding/"
+    assert llm_module._uses_anthropic_messages(route) is True
+    assert (
+        llm_module._anthropic_messages_endpoint(route.base_url)
+        == "https://api.kimi.com/coding/v1/messages"
+    )
+
+
+def test_anthropic_message_conversion_extracts_system_prompt():
+    system, messages = llm_module._convert_messages_to_anthropic(
+        [
+            {"role": "system", "content": "你是系统提示。"},
+            {"role": "user", "content": "你好"},
+            {"role": "assistant", "content": "你好。"},
+            {"role": "user", "content": [{"type": "text", "text": "继续"}]},
+        ]
+    )
+
+    assert system == "你是系统提示。"
+    assert messages == [
+        {"role": "user", "content": "你好"},
+        {"role": "assistant", "content": "你好。"},
+        {"role": "user", "content": "继续"},
+    ]
 
 
 def test_eval_report_triggers_fallback(monkeypatch, tmp_path):

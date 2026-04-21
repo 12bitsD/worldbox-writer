@@ -3,8 +3,12 @@ from __future__ import annotations
 from typing import Any, Dict
 
 import worldbox_writer.engine.graph as graph_module
-from worldbox_writer.core.dual_loop import ScenePlan
+from worldbox_writer.core.dual_loop import ActionIntent, PromptTrace, ScenePlan
 from worldbox_writer.core.models import Character, WorldState
+from worldbox_writer.engine.dual_loop import (
+    ISOLATED_ACTOR_RUNTIME_MODE,
+    IsolatedActorRuntimeResult,
+)
 from worldbox_writer.engine.graph import (
     actor_node,
     after_narrator,
@@ -127,6 +131,8 @@ def test_scene_director_node_persists_scene_plan(monkeypatch) -> None:
 def test_actor_node_includes_scene_plan_context(monkeypatch) -> None:
     captured: dict[str, Any] = {}
 
+    monkeypatch.setattr(graph_module, "dual_loop_enabled", lambda: False)
+
     def fake_chat_completion(messages, **kwargs):  # type: ignore[no-untyped-def]
         captured["messages"] = messages
         return "阿璃在雨夜中决定先试探敌人的底牌。"
@@ -166,3 +172,68 @@ def test_actor_node_includes_scene_plan_context(monkeypatch) -> None:
     assert "当前场景计划：第1幕：高压对峙" in prompt
     assert "场景目标：围绕阿璃试探敌人的真实部署" in prompt
     assert "叙事压力：intense" in prompt
+
+
+def test_actor_node_uses_isolated_runtime_when_dual_loop_enabled(monkeypatch) -> None:
+    def fake_runtime(
+        world: WorldState,
+        memory: MemoryManager,
+        *,
+        scene_plan: ScenePlan,
+    ) -> IsolatedActorRuntimeResult:
+        prompt_trace = PromptTrace(
+            trace_id="prompt-1",
+            agent="actor",
+            scene_id=scene_plan.scene_id,
+            character_id="char-1",
+            visible_character_ids=["char-1"],
+            metadata={"branch_id": scene_plan.branch_id},
+        )
+        return IsolatedActorRuntimeResult(
+            action_intents=[
+                ActionIntent(
+                    intent_id="intent-1",
+                    scene_id=scene_plan.scene_id,
+                    actor_id="char-1",
+                    actor_name="阿璃",
+                    action_type="decision",
+                    summary="阿璃决定逼问敌人的真实部署",
+                    metadata={
+                        "synthetic": False,
+                        "runtime_mode": ISOLATED_ACTOR_RUNTIME_MODE,
+                        "branch_id": scene_plan.branch_id,
+                    },
+                )
+            ],
+            prompt_traces=[prompt_trace],
+        )
+
+    monkeypatch.setattr(graph_module, "dual_loop_enabled", lambda: True)
+    monkeypatch.setattr(graph_module, "run_isolated_actor_runtime", fake_runtime)
+
+    world = WorldState(title="测试世界", premise="测试前提")
+    world.add_character(
+        Character(name="阿璃", personality="冷静", goals=["摸清敌人的部署"])
+    )
+    state = _state(
+        world,
+        scene_plan=ScenePlan(
+            scene_id="scene-isolated",
+            branch_id="branch-a",
+            title="第1幕：高压对峙",
+            objective="围绕阿璃试探敌人的真实部署",
+            public_summary="阿璃正在断桥上观察敌军",
+            spotlight_character_ids=["char-1"],
+            narrative_pressure="intense",
+        ),
+    )
+
+    result = actor_node(state)
+
+    assert "阿璃决定逼问敌人的真实部署" in result["candidate_event"]
+    assert result["action_intents"][0].metadata["synthetic"] is False
+    assert (
+        result["world"].metadata["last_actor_runtime_mode"]
+        == ISOLATED_ACTOR_RUNTIME_MODE
+    )
+    assert result["prompt_traces"][0].trace_id == "prompt-1"

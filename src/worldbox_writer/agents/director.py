@@ -228,15 +228,33 @@ class DirectorAgent:
             {"role": "system", "content": _WORLD_INIT_SYSTEM_PROMPT},
             {"role": "user", "content": f"用户故事前提：{premise}"},
         ]
-        response = self._invoke(messages, temperature=0.7, max_tokens=2048)
-        return self._parse_json_response(response)
+        try:
+            response = self._invoke(messages, temperature=0.7, max_tokens=2048)
+        except Exception:
+            return self._fallback_world_init_data(premise)
+        parsed = self._parse_json_response(response)
+        return parsed or self._fallback_world_init_data(premise)
 
     def _call_llm_for_intervention(self, instruction: str) -> Dict[str, Any]:
         messages = [
             {"role": "system", "content": _INTENT_UPDATE_SYSTEM_PROMPT},
             {"role": "user", "content": f"用户干预指令：{instruction}"},
         ]
-        response = self._invoke(messages, temperature=0.5, max_tokens=1024)
+        try:
+            response = self._invoke(messages, temperature=0.5, max_tokens=1024)
+        except Exception:
+            return {
+                "new_constraints": [
+                    {
+                        "name": "用户干预",
+                        "description": instruction,
+                        "constraint_type": "narrative",
+                        "severity": "soft",
+                        "rule": instruction,
+                    }
+                ],
+                "direction_summary": instruction,
+            }
         return self._parse_json_response(response)
 
     def _parse_json_response(self, content: str) -> Dict[str, Any]:
@@ -300,6 +318,7 @@ class DirectorAgent:
                 description=n_data.get("description", ""),
                 node_type=NodeType(n_data.get("node_type", "setup")),
                 parent_ids=[prev_node_id] if prev_node_id else [],
+                character_ids=list(world.characters.keys())[:2],
             )
             if prev_node_id and prev_node_id in world.nodes:
                 world.nodes[prev_node_id].child_ids.append(str(node.id))
@@ -319,6 +338,44 @@ class DirectorAgent:
             severity=ConstraintSeverity(data.get("severity", "hard")),
             rule=data.get("rule", ""),
         )
+
+    def _fallback_world_init_data(self, premise: str) -> Dict[str, Any]:
+        return {
+            "title": f"《{premise[:12] or '无名世界'}》",
+            "premise": premise,
+            "world_rules": ["角色行动必须符合自身认知与目标。"],
+            "tone": "冒险",
+            "characters": [
+                {
+                    "name": "主角",
+                    "description": "故事的核心行动者。",
+                    "personality": "谨慎而坚定",
+                    "goals": ["推进主线目标", "守住关键底线"],
+                },
+                {
+                    "name": "对手",
+                    "description": "推动冲突升级的关键角色。",
+                    "personality": "强势而多疑",
+                    "goals": ["阻止主角", "扩大自身优势"],
+                },
+            ],
+            "constraints": [
+                {
+                    "name": "主线一致性",
+                    "description": "故事必须持续围绕用户前提推进。",
+                    "constraint_type": "narrative",
+                    "severity": "hard",
+                    "rule": "不得脱离用户给定的故事前提和主要矛盾。",
+                }
+            ],
+            "opening_nodes": [
+                {
+                    "title": "开端",
+                    "description": f"围绕“{premise}”的核心矛盾开始浮现，主要角色被迫进入第一场选择。",
+                    "node_type": "setup",
+                }
+            ],
+        }
 
     def _select_spotlight_character_ids(
         self,

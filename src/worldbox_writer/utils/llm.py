@@ -18,10 +18,11 @@ from functools import lru_cache
 from typing import Any, Callable, Optional, cast
 from uuid import uuid4
 
+import httpx
 from openai import OpenAI
 
 MIMO_BASE_URL = "https://token-plan-cn.xiaomimimo.com/v1"
-KIMI_BASE_URL = "https://api.moonshot.cn/v1"
+KIMI_BASE_URL = "https://api.kimi.com/coding/"
 OLLAMA_BASE_URL = "http://localhost:11434/v1"
 
 LOGIC_ROLES = {"director", "gate_keeper", "node_detector", "actor", "memory"}
@@ -38,13 +39,13 @@ MIMO_MODEL_MAP = {
 }
 
 KIMI_MODEL_MAP = {
-    "director": "kimi-k2-5",
-    "gate_keeper": "kimi-k2-5",
-    "node_detector": "kimi-k2-5",
-    "actor": "kimi-k2-5",
-    "narrator": "kimi-k2-5",
-    "world_builder": "kimi-k2-5",
-    "memory": "kimi-k2-5",
+    "director": "kimi-k2.5",
+    "gate_keeper": "kimi-k2.5",
+    "node_detector": "kimi-k2.5",
+    "actor": "kimi-k2.5",
+    "narrator": "kimi-k2.5",
+    "world_builder": "kimi-k2.5",
+    "memory": "kimi-k2.5",
 }
 
 OPENAI_MODEL_MAP = {
@@ -149,7 +150,7 @@ def _detect_provider_from_values(
     normalized_url = (base_url or "").lower()
     if "xiaomimimo" in normalized_url or "mimo" in normalized_url:
         return "mimo"
-    if "moonshot" in normalized_url:
+    if "moonshot" in normalized_url or "api.kimi.com" in normalized_url:
         return "kimi"
     if "ollama" in normalized_url or "localhost:11434" in normalized_url:
         return "ollama"
@@ -387,6 +388,136 @@ def _messages_text(messages: list[dict[str, Any]]) -> str:
     return "\n".join(chunks)
 
 
+def _uses_anthropic_messages(route: ResolvedLLMRoute) -> bool:
+    base_url = (route.base_url or "").lower()
+    return route.provider == "kimi" and "api.kimi.com/coding" in base_url
+
+
+def _anthropic_messages_endpoint(base_url: Optional[str]) -> str:
+    root = (base_url or KIMI_BASE_URL).rstrip("/")
+    if root.endswith("/v1/messages"):
+        return root
+    if root.endswith("/v1"):
+        return f"{root}/messages"
+    return f"{root}/v1/messages"
+
+
+def _message_content_to_text(message: dict[str, Any]) -> str:
+    content = message.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for part in content:
+            if isinstance(part, dict) and isinstance(part.get("text"), str):
+                parts.append(part["text"])
+        return "\n".join(parts)
+    return ""
+
+
+def _convert_messages_to_anthropic(
+    messages: list[dict[str, Any]],
+) -> tuple[str, list[dict[str, str]]]:
+    system_parts: list[str] = []
+    converted: list[dict[str, str]] = []
+
+    for message in messages:
+        role = str(message.get("role", "user")).lower()
+        text = _message_content_to_text(message).strip()
+        if not text:
+            continue
+        if role == "system":
+            system_parts.append(text)
+            continue
+        if role not in {"user", "assistant"}:
+            role = "user"
+        if converted and converted[-1]["role"] == role:
+            converted[-1]["content"] += f"\n\n{text}"
+        else:
+            converted.append({"role": role, "content": text})
+
+    if not converted:
+        converted.append({"role": "user", "content": "继续"})
+    if converted[0]["role"] == "assistant":
+        converted.insert(0, {"role": "user", "content": "继续"})
+
+    return "\n\n".join(system_parts), converted
+
+
+def _extract_anthropic_text(payload: dict[str, Any]) -> str:
+    content = payload.get("content")
+    if not isinstance(content, list):
+        return ""
+    chunks: list[str] = []
+    for part in content:
+        if not isinstance(part, dict):
+            continue
+        if part.get("type") == "text" and isinstance(part.get("text"), str):
+            chunks.append(part["text"])
+    return "".join(chunks)
+
+
+def _chat_completion_anthropic_messages(
+    messages: list[dict[str, Any]],
+    *,
+    route: ResolvedLLMRoute,
+    temperature: float,
+    max_tokens: int,
+    stream: bool,
+    on_token: Optional[Callable[[str], None]],
+    top_p: Optional[float],
+) -> str:
+    system_prompt, anthropic_messages = _convert_messages_to_anthropic(messages)
+    payload: dict[str, Any] = {
+        "model": route.model,
+        "messages": anthropic_messages,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+    }
+    if system_prompt:
+        payload["system"] = system_prompt
+    if top_p is not None:
+        payload["top_p"] = top_p
+
+    headers = {
+        "x-api-key": route.api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+        "user-agent": "worldbox-writer/0.5.0",
+    }
+    endpoint = _anthropic_messages_endpoint(route.base_url)
+
+    if on_token is not None or stream:
+        payload["stream"] = True
+        collected: list[str] = []
+        with httpx.Client(timeout=120.0) as client:
+            with client.stream(
+                "POST", endpoint, headers=headers, json=payload
+            ) as response:
+                response.raise_for_status()
+                for line in response.iter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    raw = line.removeprefix("data:").strip()
+                    if not raw or raw == "[DONE]":
+                        continue
+                    event = json.loads(raw)
+                    if event.get("type") != "content_block_delta":
+                        continue
+                    delta = event.get("delta") or {}
+                    token = delta.get("text")
+                    if isinstance(token, str) and token:
+                        collected.append(token)
+                        if on_token is not None:
+                            on_token(token)
+        return "".join(collected)
+
+    with httpx.Client(timeout=120.0) as client:
+        response = client.post(endpoint, headers=headers, json=payload)
+        response.raise_for_status()
+        return _extract_anthropic_text(response.json())
+
+
 def _load_price_overrides() -> dict[str, dict[str, float]]:
     raw = os.environ.get("LLM_PRICE_OVERRIDES_JSON")
     if not raw:
@@ -452,7 +583,17 @@ def chat_completion(
         kwargs["top_p"] = top_p
 
     try:
-        if on_token is not None or stream:
+        if _uses_anthropic_messages(resolved_route):
+            text = _chat_completion_anthropic_messages(
+                cast(list[dict[str, Any]], messages),
+                route=resolved_route,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=stream,
+                on_token=on_token,
+                top_p=top_p,
+            )
+        elif on_token is not None or stream:
             kwargs["stream"] = True
             response = client.chat.completions.create(**cast(Any, kwargs))
             collected: list[str] = []

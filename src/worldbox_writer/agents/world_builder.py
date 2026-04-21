@@ -107,8 +107,13 @@ class WorldBuilderAgent:
                 ),
             },
         ]
-        response = self._invoke(messages, temperature=0.7, max_tokens=500)
-        return self._parse_json_response(response)
+        try:
+            response = self._invoke(messages, temperature=0.7, max_tokens=500)
+        except Exception:
+            return self._fallback_location_data(location_hint)
+        return self._parse_json_response(response) or self._fallback_location_data(
+            location_hint
+        )
 
     def generate_world_summary(self, world: WorldState) -> str:
         """Generate a concise world summary for the status panel."""
@@ -177,8 +182,12 @@ class WorldBuilderAgent:
                 ),
             },
         ]
-        response = self._invoke(messages, temperature=0.7, max_tokens=2000)
-        return self._parse_json_response(response)
+        try:
+            response = self._invoke(messages, temperature=0.7, max_tokens=2000)
+        except Exception:
+            return self._fallback_expansion_data(world)
+        parsed = self._parse_json_response(response)
+        return parsed or self._fallback_expansion_data(world)
 
     def _apply_expansion(self, world: WorldState, data: Dict[str, Any]) -> WorldState:
         """Apply the LLM-generated expansion data to the WorldState."""
@@ -237,3 +246,43 @@ class WorldBuilderAgent:
                             except json.JSONDecodeError:
                                 break
             return {}
+
+    def _fallback_expansion_data(self, world: WorldState) -> Dict[str, Any]:
+        premise = world.premise or "当前故事世界"
+        return {
+            "factions": [
+                {
+                    "name": "核心势力",
+                    "description": f"围绕“{premise}”形成的主要势力。",
+                    "ideology": "维护自身秩序与利益",
+                    "power_level": "moderate",
+                    "relationships": {},
+                }
+            ],
+            "locations": [
+                {
+                    "name": "主舞台",
+                    "description": "当前剧情最先展开的关键地点。",
+                    "atmosphere": "暗流涌动",
+                    "significance": "承载第一轮冲突与选择。",
+                }
+            ],
+            "power_system": {
+                "name": "行动代价",
+                "description": "任何突破都需要付出明确代价，并受世界规则约束。",
+                "levels": ["试探", "冲突", "转折"],
+                "rules": ["行动结果必须能从既有事实推出。"],
+            },
+            "history": f"这个世界的历史围绕“{premise}”积累出长期矛盾。",
+            "current_tensions": ["主要角色目标冲突正在升温。"],
+        }
+
+    def _fallback_location_data(self, location_hint: str) -> Dict[str, Any]:
+        return {
+            "name": location_hint or "未命名地点",
+            "description": "这是当前剧情提到的新地点，细节将在后续推演中逐步补全。",
+            "atmosphere": "未知而紧张",
+            "key_features": ["关键通道", "潜在冲突点"],
+            "inhabitants": ["当地居民", "相关势力成员"],
+            "significance": "为后续场景推进提供空间锚点。",
+        }

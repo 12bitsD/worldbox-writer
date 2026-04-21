@@ -8,8 +8,11 @@ incrementally migrate runtime behavior behind a feature flag.
 
 from __future__ import annotations
 
+import json
 import os
-from typing import List, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 from worldbox_writer.agents.director import DirectorAgent
 from worldbox_writer.core.dual_loop import (
@@ -25,8 +28,18 @@ from worldbox_writer.core.dual_loop import (
 )
 from worldbox_writer.core.models import Character, StoryNode, WorldState
 from worldbox_writer.memory.memory_manager import MemoryManager
+from worldbox_writer.utils.llm import chat_completion
 
 FEATURE_DUAL_LOOP_ENV = "FEATURE_DUAL_LOOP_ENABLED"
+ISOLATED_ACTOR_RUNTIME_MODE = "isolated-actor-runtime-v1"
+
+
+@dataclass(frozen=True)
+class IsolatedActorRuntimeResult:
+    """Fan-out/fan-in result for one ScenePlan actor phase."""
+
+    action_intents: List[ActionIntent]
+    prompt_traces: List[PromptTrace]
 
 
 def dual_loop_enabled() -> bool:
@@ -46,20 +59,26 @@ def build_dual_loop_snapshot(
     prompt_traces: List[PromptTrace] = []
     action_intents: List[ActionIntent] = []
 
-    for character_id in scene_plan.spotlight_character_ids:
-        character = world.get_character(character_id)
-        if not character:
-            continue
-        prompt_trace = build_prompt_trace(
-            character,
-            world,
-            scene_plan=scene_plan,
-            memory=memory,
-        )
-        prompt_traces.append(prompt_trace)
-        action_intents.append(
-            build_compatibility_intent(character, world, scene_plan, prompt_trace)
-        )
+    stored_prompt_traces = _load_stored_prompt_traces(world, scene_plan)
+    stored_action_intents = _load_stored_action_intents(world, scene_plan)
+    if stored_action_intents:
+        prompt_traces = stored_prompt_traces
+        action_intents = stored_action_intents
+    else:
+        for character_id in scene_plan.spotlight_character_ids:
+            character = world.get_character(character_id)
+            if not character:
+                continue
+            prompt_trace = build_prompt_trace(
+                character,
+                world,
+                scene_plan=scene_plan,
+                memory=memory,
+            )
+            prompt_traces.append(prompt_trace)
+            action_intents.append(
+                build_compatibility_intent(character, world, scene_plan, prompt_trace)
+            )
 
     scene_script = build_scene_script(world, scene_plan, action_intents)
     return DualLoopCompatibilitySnapshot(
@@ -107,6 +126,7 @@ def build_prompt_trace(
     system_prompt = (
         "你是双循环推演引擎中的角色 Actor。"
         "你只能基于当前场景的公开信息、你的私有记忆和你的目标做决定。"
+        "不要引用不可见角色、其他角色的私有记忆或全局剧本。"
     )
     user_prompt = (
         f"场景目标：{scene_plan.objective}\n"
@@ -141,8 +161,166 @@ def build_prompt_trace(
         narrative_pressure=scene_plan.narrative_pressure,
         visible_character_ids=visible_character_ids,
         memory_trace=recall_trace,
-        metadata={"adapter_mode": DUAL_LOOP_ADAPTER_MODE},
+        metadata={
+            "adapter_mode": DUAL_LOOP_ADAPTER_MODE,
+            "branch_id": scene_plan.branch_id,
+            "tick": scene_plan.tick,
+        },
     )
+
+
+def run_isolated_actor_runtime(
+    world: WorldState,
+    memory: MemoryManager,
+    *,
+    scene_plan: ScenePlan,
+    max_actors: int = 3,
+) -> IsolatedActorRuntimeResult:
+    """Run spotlight actors independently and collect structured intents."""
+    selected_characters = _select_spotlight_characters(
+        world,
+        scene_plan,
+        max_actors=max_actors,
+    )
+    if not selected_characters:
+        return IsolatedActorRuntimeResult(action_intents=[], prompt_traces=[])
+
+    intents_by_index: Dict[int, ActionIntent] = {}
+    traces_by_index: Dict[int, PromptTrace] = {}
+    max_workers = max(1, min(len(selected_characters), max_actors))
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_index = {
+            executor.submit(
+                invoke_isolated_actor_intent,
+                character,
+                world,
+                scene_plan=scene_plan,
+                memory=memory,
+            ): index
+            for index, character in enumerate(selected_characters)
+        }
+        for future in as_completed(future_to_index):
+            index = future_to_index[future]
+            character = selected_characters[index]
+            try:
+                intent, prompt_trace = future.result()
+            except Exception as exc:
+                prompt_trace = build_prompt_trace(
+                    character,
+                    world,
+                    scene_plan=scene_plan,
+                    memory=memory,
+                )
+                intent = _fallback_actor_intent(
+                    character,
+                    scene_plan,
+                    prompt_trace,
+                    reason=str(exc),
+                )
+            intents_by_index[index] = intent
+            traces_by_index[index] = prompt_trace
+
+    return IsolatedActorRuntimeResult(
+        action_intents=[
+            intents_by_index[index] for index in range(len(selected_characters))
+        ],
+        prompt_traces=[
+            traces_by_index[index] for index in range(len(selected_characters))
+        ],
+    )
+
+
+def invoke_isolated_actor_intent(
+    character: Character,
+    world: WorldState,
+    *,
+    scene_plan: ScenePlan,
+    memory: Optional[MemoryManager] = None,
+) -> tuple[ActionIntent, PromptTrace]:
+    """Invoke one actor with private context and parse a structured intent."""
+    prompt_trace = build_prompt_trace(
+        character,
+        world,
+        scene_plan=scene_plan,
+        memory=memory,
+    )
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                f"{prompt_trace.system_prompt}\n\n"
+                "只输出合法 JSON：\n"
+                "{\n"
+                '  "action_type": "dialogue|action|decision|reaction",\n'
+                '  "summary": "角色本轮意图，第三人称，30-80字",\n'
+                '  "rationale": "为什么这个角色会这样做，一句话",\n'
+                '  "target_character_names": ["可见目标角色名"],\n'
+                '  "confidence": 0.0\n'
+                "}"
+            ),
+        },
+        {"role": "user", "content": prompt_trace.assembled_prompt},
+    ]
+    raw = chat_completion(
+        messages,
+        role="actor",
+        temperature=0.75,
+        max_tokens=320,
+        top_p=0.95,
+    )
+    data = _parse_json_object(raw)
+    summary = str(
+        data.get("summary")
+        or data.get("description")
+        or f"{character.name} 暂时观察局势，寻找下一步机会。"
+    ).strip()
+    action_type = str(data.get("action_type") or "action").strip() or "action"
+    rationale = str(data.get("rationale") or "").strip()
+    confidence = _coerce_confidence(data.get("confidence"))
+    target_ids = _target_ids_from_payload(
+        data, world, prompt_trace.visible_character_ids
+    )
+
+    intent = ActionIntent(
+        scene_id=scene_plan.scene_id,
+        actor_id=str(character.id),
+        actor_name=character.name,
+        action_type=action_type,
+        summary=summary,
+        rationale=rationale,
+        target_ids=target_ids,
+        confidence=confidence,
+        prompt_trace_id=prompt_trace.trace_id,
+        metadata={
+            "synthetic": False,
+            "runtime_mode": ISOLATED_ACTOR_RUNTIME_MODE,
+            "branch_id": scene_plan.branch_id,
+            "tick": scene_plan.tick,
+            "visible_character_ids": list(prompt_trace.visible_character_ids),
+        },
+    )
+    return intent, prompt_trace
+
+
+def synthesize_candidate_event_from_intents(
+    action_intents: List[ActionIntent],
+    *,
+    scene_plan: ScenePlan,
+) -> str:
+    """Bridge Sprint 12 intents back into the legacy single-event pipeline."""
+    if not action_intents:
+        return "世界陷入了短暂的平静，角色们暂时没有采取新的行动。"
+
+    scene_title = scene_plan.title or "当前场景"
+    summaries = [
+        intent.summary.rstrip("。")
+        for intent in action_intents
+        if intent.summary.strip()
+    ]
+    if not summaries:
+        return f"在{scene_title}中，角色们短暂停顿，局势继续酝酿。"
+    return f"在{scene_title}中，" + "；".join(summaries) + "。"
 
 
 def build_compatibility_intent(
@@ -165,7 +343,12 @@ def build_compatibility_intent(
         target_ids=_guess_target_ids(character, current_node),
         confidence=0.35,
         prompt_trace_id=prompt_trace.trace_id,
-        metadata={"synthetic": True, "adapter_mode": DUAL_LOOP_ADAPTER_MODE},
+        metadata={
+            "synthetic": True,
+            "adapter_mode": DUAL_LOOP_ADAPTER_MODE,
+            "branch_id": scene_plan.branch_id,
+            "tick": scene_plan.tick,
+        },
     )
 
 
@@ -207,7 +390,10 @@ def build_scene_script(
         rejected_intent_ids=[],
         beats=beats,
         source_node_id=scene_plan.source_node_id,
-        metadata={"adapter_mode": DUAL_LOOP_ADAPTER_MODE},
+        metadata={
+            "adapter_mode": DUAL_LOOP_ADAPTER_MODE,
+            "runtime_mode": _resolve_runtime_mode(action_intents),
+        },
     )
 
 
@@ -232,15 +418,11 @@ def _build_memory_recall_trace(
     working_memory = list(character.memory[-3:])
     episodic_memory_snippets: List[str] = []
     if memory is not None:
-        context = memory.get_context_for_agent(
-            query=scene_plan.objective or world.premise,
+        episodic_memory_snippets = _private_memory_snippets(
+            memory,
             character_id=str(character.id),
             max_entries=6,
         )
-        if context and context != "（暂无记忆）":
-            episodic_memory_snippets = [
-                line.strip() for line in context.splitlines() if line.strip()
-            ]
     reflective_raw = character.metadata.get("reflection_notes", [])
     if isinstance(reflective_raw, str):
         reflective_memory = [reflective_raw]
@@ -255,8 +437,190 @@ def _build_memory_recall_trace(
         working_memory=working_memory,
         episodic_memory_snippets=episodic_memory_snippets,
         reflective_memory=reflective_memory,
-        metadata={"adapter_mode": DUAL_LOOP_ADAPTER_MODE},
+        metadata={
+            "adapter_mode": DUAL_LOOP_ADAPTER_MODE,
+            "branch_id": scene_plan.branch_id,
+            "tick": scene_plan.tick,
+        },
     )
+
+
+def _select_spotlight_characters(
+    world: WorldState,
+    scene_plan: ScenePlan,
+    *,
+    max_actors: int,
+) -> List[Character]:
+    selected: List[Character] = []
+    for character_id in scene_plan.spotlight_character_ids:
+        character = world.get_character(character_id)
+        if character and character.status.value == "alive":
+            selected.append(character)
+        if len(selected) >= max_actors:
+            return selected
+
+    if selected:
+        return selected
+
+    alive = [c for c in world.characters.values() if c.status.value == "alive"]
+    return alive[:max_actors]
+
+
+def _fallback_actor_intent(
+    character: Character,
+    scene_plan: ScenePlan,
+    prompt_trace: PromptTrace,
+    *,
+    reason: str,
+) -> ActionIntent:
+    return ActionIntent(
+        scene_id=scene_plan.scene_id,
+        actor_id=str(character.id),
+        actor_name=character.name,
+        action_type="reaction",
+        summary=f"{character.name} 暂时保持观察，等待更明确的机会。",
+        rationale="Actor intent generation failed; runtime emitted a safe fallback.",
+        confidence=0.2,
+        prompt_trace_id=prompt_trace.trace_id,
+        metadata={
+            "synthetic": True,
+            "runtime_mode": ISOLATED_ACTOR_RUNTIME_MODE,
+            "branch_id": scene_plan.branch_id,
+            "tick": scene_plan.tick,
+            "error": reason[:200],
+        },
+    )
+
+
+def _parse_json_object(content: str) -> Dict[str, Any]:
+    text = content.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        text = (
+            "\n".join(lines[1:-1])
+            if lines and lines[-1].strip() == "```"
+            else "\n".join(lines[1:])
+        )
+    try:
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, dict) else {}
+    except json.JSONDecodeError:
+        start = text.find("{")
+        if start == -1:
+            return {}
+        depth = 0
+        for index in range(start, len(text)):
+            if text[index] == "{":
+                depth += 1
+            elif text[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        parsed = json.loads(text[start : index + 1])
+                    except json.JSONDecodeError:
+                        return {}
+                    return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _coerce_confidence(raw: Any) -> float:
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return 0.55
+    return min(1.0, max(0.0, value))
+
+
+def _target_ids_from_payload(
+    data: Dict[str, Any],
+    world: WorldState,
+    visible_character_ids: List[str],
+) -> List[str]:
+    raw_ids = data.get("target_ids")
+    if isinstance(raw_ids, list):
+        return [str(item) for item in raw_ids if str(item) in visible_character_ids][:3]
+
+    raw_names = data.get("target_character_names") or data.get("target_characters")
+    if isinstance(raw_names, str):
+        candidate_names = [raw_names]
+    elif isinstance(raw_names, list):
+        candidate_names = [str(item) for item in raw_names]
+    else:
+        candidate_names = []
+
+    resolved: List[str] = []
+    for character_id in visible_character_ids:
+        character = world.get_character(character_id)
+        if character and character.name in candidate_names:
+            resolved.append(character_id)
+    return resolved[:3]
+
+
+def _private_memory_snippets(
+    memory: MemoryManager,
+    *,
+    character_id: str,
+    max_entries: int,
+) -> List[str]:
+    private_entries = [
+        entry
+        for entry in memory.export_memory_log()
+        if character_id in [str(item) for item in entry.get("character_ids", [])]
+    ]
+    private_entries = private_entries[-max_entries:]
+    return [
+        f"[第{entry.get('tick', 0)}步] {entry.get('content', '')}"
+        for entry in private_entries
+        if str(entry.get("content", "")).strip()
+    ]
+
+
+def _resolve_runtime_mode(action_intents: List[ActionIntent]) -> str:
+    for intent in action_intents:
+        runtime_mode = intent.metadata.get("runtime_mode")
+        if runtime_mode:
+            return str(runtime_mode)
+    return DUAL_LOOP_ADAPTER_MODE
+
+
+def _load_stored_action_intents(
+    world: WorldState,
+    scene_plan: ScenePlan,
+) -> List[ActionIntent]:
+    raw_intents = world.metadata.get("last_actor_intents")
+    if not isinstance(raw_intents, list):
+        return []
+    intents: List[ActionIntent] = []
+    for item in raw_intents:
+        if not isinstance(item, dict):
+            continue
+        try:
+            intent = ActionIntent.model_validate(item)
+        except Exception:
+            continue
+        if intent.scene_id == scene_plan.scene_id:
+            intents.append(intent)
+    return intents
+
+
+def _load_stored_prompt_traces(
+    world: WorldState,
+    scene_plan: ScenePlan,
+) -> List[PromptTrace]:
+    raw_traces = world.metadata.get("last_prompt_traces")
+    if not isinstance(raw_traces, list):
+        return []
+    traces: List[PromptTrace] = []
+    for item in raw_traces:
+        if not isinstance(item, dict):
+            continue
+        try:
+            trace = PromptTrace.model_validate(item)
+        except Exception:
+            continue
+        if trace.scene_id == scene_plan.scene_id:
+            traces.append(trace)
+    return traces
 
 
 def _visible_character_ids(
