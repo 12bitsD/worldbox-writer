@@ -224,6 +224,9 @@ export interface StoryNode {
   node_type: NodeType;
   rendered_text: string | null;
   editor_html?: string | null;
+  scene_script_id?: string | null;
+  scene_script_summary?: string | null;
+  narrator_input_source?: string | null;
   tick: number;
   requires_intervention: boolean;
   intervention_instruction?: string;

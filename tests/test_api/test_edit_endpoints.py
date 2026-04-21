@@ -16,6 +16,7 @@ from worldbox_writer.api.server import (
     _sessions,
     app,
 )
+from worldbox_writer.core.dual_loop import SceneScript
 from worldbox_writer.core.models import Character, StoryNode, WorldState
 from worldbox_writer.storage.db import (
     BranchSeedNotFoundError,
@@ -28,6 +29,13 @@ from worldbox_writer.storage.db import (
 def _rendered_node_payload(
     node: StoryNode, tick: int, rendered_text: str | None = None
 ) -> dict:
+    scene_script = node.metadata.get("scene_script")
+    if not isinstance(scene_script, dict):
+        scene_script = {}
+    narrator_input = node.metadata.get("narrator_input_v2")
+    if not isinstance(narrator_input, dict):
+        narrator_input = {}
+
     return {
         "id": str(node.id),
         "title": node.title,
@@ -41,6 +49,9 @@ def _rendered_node_payload(
         "parent_ids": node.parent_ids,
         "branch_id": node.branch_id,
         "merged_from_ids": node.merged_from_ids,
+        "scene_script_id": scene_script.get("script_id"),
+        "scene_script_summary": scene_script.get("summary"),
+        "narrator_input_source": narrator_input.get("source"),
     }
 
 
@@ -508,6 +519,33 @@ class TestCreativeWorkspace:
 
         assert res.status_code == 200
         assert res.json()["features"]["dual_loop_enabled"] is False
+
+    def test_get_simulation_exposes_scene_script_rendering_lineage(
+        self, client, complete_session
+    ):
+        sim_id, _, node_id = complete_session
+        session = _sessions[sim_id]
+        node = session.world.get_node(node_id)
+        assert node is not None
+        scene_script = SceneScript(
+            script_id="script-api",
+            scene_id="scene-api",
+            title=node.title,
+            summary="GM 结算后的场景摘要。",
+        )
+        node.metadata["scene_script"] = scene_script.model_dump(mode="json")
+        node.metadata["narrator_input_v2"] = {"source": "scene_script"}
+        session.nodes_rendered = [
+            server_module._serialize_node(node, session.world),
+        ]
+
+        res = client.get(f"/api/simulate/{sim_id}")
+
+        assert res.status_code == 200
+        node_payload = res.json()["nodes"][0]
+        assert node_payload["scene_script_id"] == "script-api"
+        assert node_payload["scene_script_summary"] == "GM 结算后的场景摘要。"
+        assert node_payload["narrator_input_source"] == "scene_script"
 
     def test_inspector_returns_prompt_and_settlement_traces(
         self, client, complete_session

@@ -400,6 +400,13 @@ def _serialize_world(world: WorldState) -> Dict[str, Any]:
 
 
 def _serialize_node(node: Any, world: WorldState) -> Dict[str, Any]:
+    scene_script = node.metadata.get("scene_script")
+    if not isinstance(scene_script, dict):
+        scene_script = {}
+    narrator_input = node.metadata.get("narrator_input_v2")
+    if not isinstance(narrator_input, dict):
+        narrator_input = {}
+
     return {
         "id": str(node.id),
         "title": node.title,
@@ -413,6 +420,9 @@ def _serialize_node(node: Any, world: WorldState) -> Dict[str, Any]:
         "branch_id": node.branch_id,
         "merged_from_ids": node.merged_from_ids,
         "editor_html": node.metadata.get("editor_html"),
+        "scene_script_id": scene_script.get("script_id"),
+        "scene_script_summary": scene_script.get("summary"),
+        "narrator_input_source": narrator_input.get("source"),
     }
 
 
@@ -424,6 +434,9 @@ def _serialize_nodes(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "branch_id": node.get("branch_id", "main"),
             "merged_from_ids": node.get("merged_from_ids", []),
             "editor_html": node.get("editor_html"),
+            "scene_script_id": node.get("scene_script_id"),
+            "scene_script_summary": node.get("scene_script_summary"),
+            "narrator_input_source": node.get("narrator_input_source"),
         }
         for node in nodes
     ]

@@ -129,6 +129,25 @@ class SceneScript(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
+class NarratorInput(BaseModel):
+    """Scene-aware input contract consumed by the prose rendering loop."""
+
+    contract_version: str = "narrator-input-v2"
+    source: str = "story_node"
+    scene_id: Optional[str] = None
+    script_id: Optional[str] = None
+    title: str = ""
+    summary: str = ""
+    public_facts: List[str] = Field(default_factory=list)
+    beats: List[str] = Field(default_factory=list)
+    participating_character_ids: List[str] = Field(default_factory=list)
+    rejected_intent_ids: List[str] = Field(default_factory=list)
+    memory_context: str = ""
+    character_summaries: List[str] = Field(default_factory=list)
+    location_context: str = ""
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
 class DualLoopCompatibilitySnapshot(BaseModel):
     """Compatibility bundle exposing v1 dual-loop contracts on top of legacy state."""
 

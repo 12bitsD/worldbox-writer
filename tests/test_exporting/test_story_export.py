@@ -34,6 +34,8 @@ def test_build_export_bundle_includes_rich_artifacts() -> None:
                 "description": "城头出现诡异红光",
                 "rendered_text": "第一段正文",
                 "editor_html": "<p><strong>第一段正文</strong></p>",
+                "scene_script_summary": "城头红光被 GM 结算为可渲染事实。",
+                "narrator_input_source": "scene_script",
                 "branch_id": "main",
             }
         ],
@@ -46,6 +48,7 @@ def test_build_export_bundle_includes_rich_artifacts() -> None:
     assert bundle["markdown"].startswith("# 赤潮纪")
     assert "## 边关失火" in bundle["markdown"]
     assert "<strong>第一段正文</strong>" in bundle["html"]
+    assert bundle["story_sections"][0]["prose"] == "第一段正文"
     assert bundle["world_settings"]["characters"][0]["description"] == "守城将军"
     assert bundle["timeline"][0]["branch_id"] == "main"
     manifest_kinds = {item["kind"] for item in bundle["manifest"]["files"]}

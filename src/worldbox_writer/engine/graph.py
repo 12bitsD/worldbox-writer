@@ -37,6 +37,7 @@ from worldbox_writer.agents.world_builder import WorldBuilderAgent
 from worldbox_writer.core.dual_loop import (
     ActionIntent,
     IntentCritique,
+    NarratorInput,
     PromptTrace,
     ScenePlan,
     SceneScript,
@@ -228,6 +229,76 @@ def _ordered_lineage_nodes(world: WorldState) -> list[StoryNode]:
 
     ordered.reverse()
     return ordered
+
+
+def _format_prompt_lines(items: list[str], empty: str = "（无）") -> str:
+    lines = [str(item).strip() for item in items if str(item).strip()]
+    if not lines:
+        return empty
+    return "\n".join(f"- {line}" for line in lines)
+
+
+def _load_scene_script_for_node(node: StoryNode) -> Optional[SceneScript]:
+    raw_scene_script = node.metadata.get("scene_script")
+    if isinstance(raw_scene_script, SceneScript):
+        return raw_scene_script
+    if not isinstance(raw_scene_script, dict):
+        return None
+    try:
+        return SceneScript.model_validate(raw_scene_script)
+    except Exception:
+        return None
+
+
+def _scene_beat_line(beat: Any) -> str:
+    actor_prefix = f"{beat.actor_name}：" if getattr(beat, "actor_name", None) else ""
+    outcome = getattr(beat, "outcome", "")
+    if outcome:
+        return f"{actor_prefix}{beat.summary} -> {outcome}"
+    return f"{actor_prefix}{beat.summary}"
+
+
+def _build_narrator_input_v2(
+    current_node: StoryNode,
+    *,
+    scene_script: Optional[SceneScript],
+    narrative_context: str,
+    chars_info: list[str],
+    locations_text: str,
+) -> NarratorInput:
+    if scene_script is None:
+        return NarratorInput(
+            source="story_node",
+            title=current_node.title,
+            summary=current_node.description,
+            memory_context=narrative_context,
+            character_summaries=chars_info,
+            location_context=locations_text,
+            metadata={"node_id": str(current_node.id)},
+        )
+
+    beats = [_scene_beat_line(beat) for beat in scene_script.beats]
+    return NarratorInput(
+        source="scene_script",
+        scene_id=scene_script.scene_id,
+        script_id=scene_script.script_id,
+        title=scene_script.title or current_node.title,
+        summary=scene_script.summary or current_node.description,
+        public_facts=list(scene_script.public_facts),
+        beats=beats,
+        participating_character_ids=list(scene_script.participating_character_ids),
+        rejected_intent_ids=list(scene_script.rejected_intent_ids),
+        memory_context=narrative_context,
+        character_summaries=chars_info,
+        location_context=locations_text,
+        metadata={
+            "node_id": str(current_node.id),
+            "source_node_id": scene_script.source_node_id,
+            "accepted_intent_count": len(scene_script.accepted_intent_ids),
+            "rejected_intent_count": len(scene_script.rejected_intent_ids),
+            "beat_count": len(scene_script.beats),
+        },
+    )
 
 
 def rebuild_memory_from_world(
@@ -1041,6 +1112,13 @@ def narrator_node(state: SimulationState) -> Dict[str, Any]:
     if not current_node or current_node.is_rendered:
         return {}
 
+    scene_script = _load_scene_script_for_node(current_node)
+    narrative_query = (
+        scene_script.summary
+        if scene_script is not None and scene_script.summary
+        else current_node.description
+    )
+
     chars_info = []
     for cid in current_node.character_ids[:3]:
         char = world.get_character(cid)
@@ -1048,7 +1126,7 @@ def narrator_node(state: SimulationState) -> Dict[str, Any]:
             chars_info.append(f"{char.name}（{char.personality}）")
 
     narrative_context = memory.get_context_for_agent(
-        query=current_node.description, max_entries=5
+        query=narrative_query, max_entries=5
     )
 
     locations_text = (
@@ -1057,31 +1135,78 @@ def narrator_node(state: SimulationState) -> Dict[str, Any]:
         else ""
     )
 
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "你是一位出色的中文小说作者。将给定的故事事件描述渲染为生动的小说文本。\n"
-                "要求：\n"
-                "1. 用第三人称叙述，200-400字\n"
-                "2. 包含场景描写、人物动作和对话\n"
-                "3. 文笔流畅，富有画面感\n"
-                "4. 与前文保持风格一致，不要与已有记忆矛盾\n"
-                "5. 只输出小说正文，不要有标题或其他内容"
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                f"世界背景：{world.premise}\n"
-                f"主要地点：{locations_text}\n\n"
-                f"涉及角色：{', '.join(chars_info)}\n\n"
-                f"故事记忆（按时间排序）：\n{narrative_context}\n\n"
-                f"当前事件（需要渲染）：{current_node.description}\n\n"
-                "请将此事件渲染为小说文本："
-            ),
-        },
-    ]
+    narrator_input = _build_narrator_input_v2(
+        current_node,
+        scene_script=scene_script,
+        narrative_context=narrative_context,
+        chars_info=chars_info,
+        locations_text=locations_text,
+    )
+    current_node.metadata["narrator_input_v2"] = narrator_input.model_dump(mode="json")
+
+    if narrator_input.source == "scene_script":
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "你是一位出色的中文小说作者。将 GM 结算后的 SceneScript "
+                    "渲染为生动的小说正文。\n"
+                    "硬性要求：\n"
+                    "1. 用第三人称叙述，200-400字\n"
+                    "2. 包含场景描写、人物动作和对话\n"
+                    "3. 只能扩写 SceneScript 中的 summary、public_facts 与 beats，"
+                    "不得新增会改变剧情因果的新事实\n"
+                    "4. 不要写入 rejected_intent_ids 对应的被拒绝意图\n"
+                    "5. 与前文记忆保持一致，不要与已有记忆矛盾\n"
+                    "6. 只输出小说正文，不要有标题或其他内容"
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"世界背景：{world.premise}\n"
+                    f"主要地点：{narrator_input.location_context}\n\n"
+                    f"涉及角色：{', '.join(narrator_input.character_summaries)}\n\n"
+                    f"故事记忆（按时间排序）：\n{narrator_input.memory_context}\n\n"
+                    "SceneScript（唯一客观事实源）：\n"
+                    f"标题：{narrator_input.title}\n"
+                    f"客观摘要：{narrator_input.summary}\n"
+                    "公开事实：\n"
+                    f"{_format_prompt_lines(narrator_input.public_facts)}\n"
+                    "已结算 beats：\n"
+                    f"{_format_prompt_lines(narrator_input.beats)}\n"
+                    "Rejected intent ids（禁止写入）：\n"
+                    f"{_format_prompt_lines(narrator_input.rejected_intent_ids)}\n\n"
+                    "请基于以上 SceneScript 渲染小说正文："
+                ),
+            },
+        ]
+    else:
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "你是一位出色的中文小说作者。将给定的故事事件描述渲染为生动的小说文本。\n"
+                    "要求：\n"
+                    "1. 用第三人称叙述，200-400字\n"
+                    "2. 包含场景描写、人物动作和对话\n"
+                    "3. 文笔流畅，富有画面感\n"
+                    "4. 与前文保持风格一致，不要与已有记忆矛盾\n"
+                    "5. 只输出小说正文，不要有标题或其他内容"
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"世界背景：{world.premise}\n"
+                    f"主要地点：{narrator_input.location_context}\n\n"
+                    f"涉及角色：{', '.join(narrator_input.character_summaries)}\n\n"
+                    f"故事记忆（按时间排序）：\n{narrator_input.memory_context}\n\n"
+                    f"当前事件（需要渲染）：{narrator_input.summary}\n\n"
+                    "请将此事件渲染为小说文本："
+                ),
+            },
+        ]
 
     callbacks = state.get("streaming_callbacks") or {}
     on_start_cb = callbacks.get("on_start")
@@ -1094,7 +1219,14 @@ def narrator_node(state: SimulationState) -> Dict[str, Any]:
             agent="narrator",
             stage="started",
             message="开始渲染小说文本",
-            payload={"node_id": str(current_node.id), "title": current_node.title},
+            payload={
+                "node_id": str(current_node.id),
+                "title": current_node.title,
+                "narrator_input_source": narrator_input.source,
+                "scene_id": narrator_input.scene_id,
+                "script_id": narrator_input.script_id,
+                "beat_count": len(narrator_input.beats),
+            },
         )
         on_start_cb(
             node_id=str(current_node.id),
@@ -1115,7 +1247,7 @@ def narrator_node(state: SimulationState) -> Dict[str, Any]:
         )
     except Exception:
         prose = (
-            f"{current_node.title}继续展开。{current_node.description}"
+            f"{current_node.title}继续展开。{narrator_input.summary}"
             "人物在既有事实和约束下推进选择，新的局势也随之积蓄。"
         )
     llm_fields = _llm_telemetry_fields(get_last_llm_call_metadata())
@@ -1128,7 +1260,13 @@ def narrator_node(state: SimulationState) -> Dict[str, Any]:
         agent="narrator",
         stage="completed",
         message="小说文本渲染完成",
-        payload={"node_id": str(current_node.id), "title": current_node.title},
+        payload={
+            "node_id": str(current_node.id),
+            "title": current_node.title,
+            "narrator_input_source": narrator_input.source,
+            "scene_id": narrator_input.scene_id,
+            "script_id": narrator_input.script_id,
+        },
         **llm_fields,
     )
 
@@ -1140,7 +1278,7 @@ def narrator_node(state: SimulationState) -> Dict[str, Any]:
     for cid in current_node.character_ids[:3]:
         char = world.get_character(cid)
         if char:
-            char.add_memory(current_node.description[:80])
+            char.add_memory(narrator_input.summary[:80])
 
     return {"world": world}
 

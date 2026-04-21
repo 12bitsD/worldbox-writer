@@ -128,6 +128,31 @@ export function StoryFeed({
               {node.description}
             </p>
 
+            {node.scene_script_summary && (
+              <div
+                style={{
+                  marginBottom: 12,
+                  padding: "8px 10px",
+                  border: "1px solid var(--color-border-light)",
+                  background: "rgba(28, 128, 98, 0.08)",
+                  fontSize: 11,
+                  lineHeight: 1.5,
+                  color: "var(--color-text-secondary)",
+                }}
+              >
+                <span
+                  style={{
+                    fontWeight: 700,
+                    color: "var(--color-text)",
+                    marginRight: 6,
+                  }}
+                >
+                  SceneScript
+                </span>
+                {node.scene_script_summary}
+              </div>
+            )}
+
             {/* Rendered novel text */}
             {(node.rendered_text || node.streaming_text) && (
               <div

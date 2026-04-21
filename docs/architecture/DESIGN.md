@@ -205,6 +205,22 @@ Sprint 16 的架构决策是：
 - 独立 Inspector API 让后续分页、权限和历史节点查看有演进空间。
 - 模板文件化后，后续可以逐步加版本管理，而不需要再改 Agent prompt 入口。
 
+#### Sprint 17 补充：Narrator 消费 SceneScript，而不是旧事件文本
+
+Sprint 17 的架构决策是：
+
+- **新增 NarratorInput v2 合同**：Narrator 渲染前把 `SceneScript`、三层记忆上下文、角色摘要和地点上下文组装成显式输入，并写回 `StoryNode.metadata["narrator_input_v2"]`。
+- **SceneScript 是渲染事实源**：当节点持有 `metadata["scene_script"]` 时，prompt 优先使用 summary、public facts 和 accepted beats；`StoryNode.description` 只作为 legacy fallback。
+- **拒绝意图不进入正文**：prompt 明确禁止写入 `rejected_intent_ids` 对应的内容，避免 Critic 已拒绝的行为被文笔层“复活”。
+- **API 只暴露轻量 lineage**：故事节点 payload 增加 `scene_script_id`、`scene_script_summary` 和 `narrator_input_source`，不把完整 prompt 或 rejected intent 细节推给故事流。
+- **导出继续依赖 rendered_text**：导出 bundle 不引入第二套渲染格式，保证旧 TXT / Markdown / HTML / DOCX / PDF 路径兼容。
+
+这样切的原因是：
+
+- 如果直接改写 `StoryNode.description`，逻辑事实、legacy 描述和渲染输入会混在一起。
+- 如果导出层直接消费 SceneScript，编辑器修订后的 `rendered_text` 会失去优先级。
+- 渲染层先有稳定输入合同后，Sprint 18 才能做 rollout compare 和 eval guardrails。
+
 ### 4.3 大语言模型接入 (LLM Integration)
 - **云端 API**：OpenAI (GPT-4o), Anthropic (Claude 3.5 Sonnet)。
   - *用途*：用于复杂的逻辑推理、边界校验和高质量文本渲染。

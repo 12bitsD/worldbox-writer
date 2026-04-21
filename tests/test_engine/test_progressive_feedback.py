@@ -10,7 +10,7 @@ from worldbox_writer.core.dual_loop import (
     ScenePlan,
     SceneScript,
 )
-from worldbox_writer.core.models import Character, WorldState
+from worldbox_writer.core.models import Character, StoryNode, WorldState
 from worldbox_writer.engine.dual_loop import (
     ISOLATED_ACTOR_RUNTIME_MODE,
     IsolatedActorRuntimeResult,
@@ -19,6 +19,7 @@ from worldbox_writer.engine.graph import (
     actor_node,
     after_narrator,
     after_world_builder,
+    narrator_node,
     node_detector_node,
     scene_director_node,
     world_builder_node,
@@ -445,3 +446,62 @@ def test_node_detector_writes_reflections_from_scene_script(monkeypatch) -> None
         "守住入口比追击更重要"
         in world.get_character(str(alice.id)).metadata["reflection_notes"][0]
     )
+
+
+def test_narrator_consumes_scene_script_input_v2(monkeypatch) -> None:
+    captured: Dict[str, Any] = {}
+
+    def fake_chat_completion(messages, **kwargs):  # type: ignore[no-untyped-def]
+        captured["messages"] = messages
+        captured["kwargs"] = kwargs
+        return "阿璃按下桥闸，潮雾吞没了追兵的火把。"
+
+    monkeypatch.setattr(graph_module, "chat_completion", fake_chat_completion)
+    monkeypatch.setattr(graph_module, "get_last_llm_call_metadata", lambda: None)
+
+    world = WorldState(title="测试世界", premise="断桥守卫战")
+    alice = Character(name="阿璃", personality="冷静", goals=["守住断桥"])
+    world.add_character(alice)
+    scene_script = SceneScript(
+        script_id="script-render",
+        scene_id="scene-render",
+        title="第1幕：断桥落闸",
+        summary="阿璃按下断桥闸机，阻断追兵。",
+        public_facts=["断桥入口已经起雾。"],
+        participating_character_ids=[str(alice.id)],
+        accepted_intent_ids=["intent-accepted"],
+        rejected_intent_ids=["intent-rejected"],
+        beats=[
+            {
+                "actor_id": str(alice.id),
+                "actor_name": "阿璃",
+                "summary": "阿璃按下桥闸",
+                "outcome": "追兵被挡在桥外",
+                "source_intent_id": "intent-accepted",
+            }
+        ],
+    )
+    node = StoryNode(
+        title="第1幕：断桥落闸",
+        description="旧事件描述不再作为 SceneScript 渲染主输入。",
+        character_ids=[str(alice.id)],
+    )
+    node.metadata["scene_script"] = scene_script.model_dump(mode="json")
+    world.add_node(node)
+    world.current_node_id = str(node.id)
+    world.tick = 1
+
+    result = narrator_node(_state(world))
+
+    rendered = result["world"].get_node(str(node.id))
+    prompt = "\n".join(message["content"] for message in captured["messages"])
+    system_prompt = captured["messages"][0]["content"]
+    assert rendered is not None
+    assert "SceneScript（唯一客观事实源）" in prompt
+    assert "断桥入口已经起雾" in prompt
+    assert "阿璃按下桥闸" in prompt
+    assert "intent-rejected" in prompt
+    assert "不要写入 rejected_intent_ids" in system_prompt
+    assert rendered.rendered_text == "阿璃按下桥闸，潮雾吞没了追兵的火把。"
+    assert rendered.metadata["narrator_input_v2"]["source"] == "scene_script"
+    assert rendered.metadata["narrator_input_v2"]["scene_id"] == "scene-render"
