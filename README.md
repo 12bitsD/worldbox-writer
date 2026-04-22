@@ -215,6 +215,7 @@ worldbox-writer/
 | Sprint 16 | Inspector 与 PromptOps | ✅ 完成（Prompt Inspector 与模板 registry 已接入） |
 | Sprint 17 | SceneScript 驱动 Narrator 渲染 | ✅ 完成（NarratorInput v2 已接入） |
 | Sprint 18 | 灰度上线与对比评估 | ✅ 完成（dual-loop compare/report 护栏已接入） |
+| Sprint 19 | 阅读优先的干预与工作台交互优化 | ✅ 完成（compact intervention drawer 已接入） |
 
 **当前版本**：v0.5.0
 
@@ -230,12 +231,13 @@ worldbox-writer/
 - 已完成的 Sprint 16 交付：Inspector API、Creative Studio Prompt Inspector、Actor prompt 模板外部化、Prompt registry hot reload contract。
 - 已完成的 Sprint 17 交付：`NarratorInput` v2、SceneScript 渲染适配、rejected intent 防写入 prompt guard、StoryFeed lineage 展示与导出兼容回归。
 - 已完成的 Sprint 18 交付：dual-loop compare report API/CLI、rollout readiness checks、`FEATURE_DUAL_LOOP_ENABLED=0` rollback runbook、发布前评估护栏文档。
+- 已完成的 Sprint 19 交付：关键节点 compact bar + drawer、设定编辑嵌入抽屉、StoryFeed 阅读优先折叠逻辑摘要、右侧推演信息可折叠、移动端单列降级。
 - 已完成的 Sprint 9 增量推进：真实 ChromaDB 向量检索已接线并成为默认 `auto` 路径；导出链路已升级为 TXT / Markdown / HTML / DOCX / PDF / JSON manifest bundle。
 - 已完成的 Sprint 10-11 交付：双循环契约冻结、compatibility adapter、diagnostics 暴露、Director scene planner、`ScenePlan` graph state 持久化和 legacy actor prompt 接入。
 - 已完成的 Sprint 12 交付：隔离 Actor runtime v1、spotlight actor fan-out / fan-in、私有 `PromptTrace` / `MemoryRecallTrace`、真实 `ActionIntent` 产出和 legacy candidate bridge。
 - 架构预留：`StoryNode` 和 `WorldState` 已预留 `branch_id` 和 `merged_from_ids`，为未来的分支管理奠定基础。
 - 测试状态：`make lint` 通过；`make test` 通过；`make typecheck` 通过。`make integration` 依赖可达且未限流的真实 LLM Provider；网络受限、DNS 失败、超时或 429 限流都会导致失败。
-- 当前迭代状态：Product Planning v2 的 Sprint 10-18 双循环主线已落地；下一阶段应基于 compare report 结果决定默认发布节奏。
+- 当前迭代状态：Product Planning v2 的 Sprint 10-18 双循环主线已落地；Sprint 19 已完成关键节点阅读体验优化，下一阶段应基于真实用户试用继续收敛创作工作台。
 
 ---
 

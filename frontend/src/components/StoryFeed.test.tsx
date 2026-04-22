@@ -23,6 +23,25 @@ function buildNode(overrides: Partial<StoryNode> = {}): StoryNode {
 }
 
 describe("StoryFeed", () => {
+  it("prioritizes rendered prose and folds logic details", () => {
+    const { container } = render(
+      <StoryFeed
+        nodes={[buildNode()]}
+        isRunning={false}
+        branchingEnabled={false}
+        activeBranchId="main"
+        onForkNode={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("阿璃在潮雾中停步。")).toBeInTheDocument();
+    expect(screen.getByText("逻辑摘要")).toBeInTheDocument();
+    const text = container.textContent ?? "";
+    expect(text.indexOf("阿璃在潮雾中停步。")).toBeLessThan(
+      text.indexOf("逻辑摘要")
+    );
+  });
+
   it("surfaces SceneScript lineage for rendered nodes", () => {
     render(
       <StoryFeed

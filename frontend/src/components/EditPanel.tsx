@@ -1,7 +1,7 @@
 // WorldBox Writer — EditPanel Component
 // Allows editing characters and world settings during intervention pause
 
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import type { WorldData } from "../types";
 import { updateCharacter, updateWorld, addConstraint } from "../utils/api";
 
@@ -9,9 +9,10 @@ interface EditPanelProps {
   simId: string;
   world: WorldData;
   onUpdated: () => void;
+  embedded?: boolean;
 }
 
-export function EditPanel({ simId, world, onUpdated }: EditPanelProps) {
+export function EditPanel({ simId, world, onUpdated, embedded = false }: EditPanelProps) {
   const [expandedChar, setExpandedChar] = useState<string | null>(null);
   const [showWorldEdit, setShowWorldEdit] = useState(false);
   const [showConstraintForm, setShowConstraintForm] = useState(false);
@@ -113,7 +114,7 @@ export function EditPanel({ simId, world, onUpdated }: EditPanelProps) {
     }
   };
 
-  const inputStyle: React.CSSProperties = {
+  const inputStyle: CSSProperties = {
     width: "100%",
     padding: "6px 8px",
     fontSize: 12,
@@ -125,7 +126,7 @@ export function EditPanel({ simId, world, onUpdated }: EditPanelProps) {
     fontFamily: "inherit",
   };
 
-  const btnStyle: React.CSSProperties = {
+  const btnStyle: CSSProperties = {
     padding: "5px 12px",
     fontSize: 11,
     cursor: saving ? "wait" : "pointer",
@@ -137,9 +138,9 @@ export function EditPanel({ simId, world, onUpdated }: EditPanelProps) {
   return (
     <div
       style={{
-        borderTop: "1px solid var(--color-border)",
-        background: "rgba(0,0,0,0.02)",
-        padding: "16px 24px",
+        borderTop: embedded ? "none" : "1px solid var(--color-border)",
+        background: embedded ? "transparent" : "rgba(0,0,0,0.02)",
+        padding: embedded ? 0 : "16px 24px",
       }}
     >
       <div

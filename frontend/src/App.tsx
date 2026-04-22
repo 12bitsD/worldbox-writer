@@ -34,6 +34,7 @@ export default function App() {
   } =
     useSimulation();
   const [rightTab, setRightTab] = useState<"graph" | "telemetry">("graph");
+  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
 
   const isRunning = state?.status === "running" || state?.status === "initializing";
   const isWaiting = state?.status === "waiting";
@@ -142,23 +143,16 @@ export default function App() {
 
       {/* Main 3-column layout */}
       <div
+        className="app-shell"
         style={{
-          display: "grid",
-          gridTemplateColumns: "280px 1fr 320px",
-          gap: 0,
-          minHeight: "calc(100vh - 52px)",
+          gridTemplateColumns: rightPanelCollapsed
+            ? "280px minmax(0, 1fr) 56px"
+            : "280px minmax(0, 1fr) 320px",
         }}
       >
         {/* Left: World state panel */}
         <aside
-          style={{
-            borderRight: "1px solid var(--color-border)",
-            padding: 20,
-            overflowY: "auto",
-            maxHeight: "calc(100vh - 52px)",
-            position: "sticky",
-            top: 52,
-          }}
+          className="app-side-panel app-side-panel-left"
         >
           {state?.world ? (
             <WorldPanel world={state.world} />
@@ -176,14 +170,9 @@ export default function App() {
 
         {/* Center: Story feed + intervention */}
         <main
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            maxHeight: "calc(100vh - 52px)",
-            overflow: "hidden",
-          }}
+          className="app-main-panel"
         >
-          <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
+          <div className="app-story-scroll">
             {state && (
               <>
                 {showProgressPanel && (
@@ -222,33 +211,52 @@ export default function App() {
               context={state.intervention_context}
               onSubmit={sendIntervention}
               onSkip={handleSkip}
-            />
-          )}
-
-          {isWaiting && simId && state?.world && (
-            <EditPanel
-              simId={simId}
-              world={state.world}
-              onUpdated={refresh}
+              editPanel={
+                simId && state.world ? (
+                  <EditPanel
+                    simId={simId}
+                    world={state.world}
+                    onUpdated={refresh}
+                    embedded
+                  />
+                ) : undefined
+              }
             />
           )}
         </main>
 
         {/* Right: Meta info panel */}
         <aside
-          style={{
-            borderLeft: "1px solid var(--color-border)",
-            padding: 20,
-            overflowY: "auto",
-            maxHeight: "calc(100vh - 52px)",
-            position: "sticky",
-            top: 52,
-          }}
+          className="app-side-panel app-side-panel-right"
+          style={{ padding: rightPanelCollapsed ? 12 : 20 }}
         >
-          <div className="label" style={{ marginBottom: 16 }}>
-            推演信息
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+              marginBottom: rightPanelCollapsed ? 0 : 16,
+            }}
+          >
+            {!rightPanelCollapsed && <div className="label">推演信息</div>}
+            <button
+              className="btn btn-ghost"
+              style={{
+                width: rightPanelCollapsed ? "100%" : "auto",
+                justifyContent: "center",
+                fontSize: 11,
+                padding: "6px 8px",
+              }}
+              aria-label={rightPanelCollapsed ? "展开推演信息" : "收起推演信息"}
+              onClick={() => setRightPanelCollapsed((value) => !value)}
+            >
+              {rightPanelCollapsed ? "展开" : "收起"}
+            </button>
           </div>
 
+          {!rightPanelCollapsed && (
+            <>
           {simId && (
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginBottom: 4 }}>
@@ -385,6 +393,8 @@ export default function App() {
               events={state?.telemetry ?? []}
               isRunning={isRunning}
             />
+          )}
+            </>
           )}
         </aside>
       </div>

@@ -236,6 +236,21 @@ Sprint 18 的架构决策是：
 - 没有 CLI，评估结果不能纳入发布脚本或事故归档。
 - 没有明确 rollback flag，灰度发布会在模型异常时放大恢复成本。
 
+#### Sprint 19 补充：关键节点必须保护阅读主线
+
+Sprint 19 的前端架构决策是：
+
+- **等待态默认是提示条，不是工作台**：关键节点只在底部保留 compact bar，避免大面板抢占故事正文。
+- **干预和设定编辑共享抽屉**：`InterventionPanel` 统一承载干预指令和 embedded `EditPanel`，避免等待态堆叠两个控制区。
+- **故事正文优先于逻辑证据**：`StoryFeed` 默认先展示 `rendered_text` / `streaming_text`，把 `description` 和 `SceneScript` 收到折叠区。
+- **旁路信息可收起**：右侧推演信息仍保留可观测性，但用户可收起它来释放横向阅读空间。
+
+这样切的原因是：
+
+- 关键节点的交互目标是“打断推演”，不是“打断阅读”。
+- 用户需要在看完上下文后决定是否干预，默认界面必须把故事内容放在最高优先级。
+- SceneScript 和 telemetry 是创作者调试证据，不应该在普通阅读路径中压过小说正文。
+
 ### 4.3 大语言模型接入 (LLM Integration)
 - **云端 API**：OpenAI (GPT-4o), Anthropic (Claude 3.5 Sonnet)。
   - *用途*：用于复杂的逻辑推理、边界校验和高质量文本渲染。
