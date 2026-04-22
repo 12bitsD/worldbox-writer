@@ -5,6 +5,13 @@ interface WorldPanelProps {
 }
 
 export function WorldPanel({ world }: WorldPanelProps) {
+  const activeBranchId = world.active_branch_id ?? "main";
+  const branches = world.branches ?? {};
+  const characters = world.characters ?? [];
+  const factions = world.factions ?? [];
+  const constraints = world.constraints ?? [];
+  const worldRules = world.world_rules ?? [];
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* World title */}
@@ -28,7 +35,7 @@ export function WorldPanel({ world }: WorldPanelProps) {
               textTransform: "uppercase",
             }}
           >
-            active: {world.active_branch_id}
+            active: {activeBranchId}
           </span>
           <span
             style={{
@@ -38,7 +45,7 @@ export function WorldPanel({ world }: WorldPanelProps) {
               color: "var(--color-text-muted)",
             }}
           >
-            {world.branches[world.active_branch_id]?.label ?? "Main Timeline"}
+            {branches[activeBranchId]?.label ?? "Main Timeline"}
           </span>
         </div>
         <div className="divider" />
@@ -50,13 +57,13 @@ export function WorldPanel({ world }: WorldPanelProps) {
           <div>
             <div className="label">角色数量</div>
             <div style={{ fontSize: 20, fontWeight: 800, marginTop: 2 }}>
-              {world.characters.length}
+              {characters.length}
             </div>
           </div>
           <div>
             <div className="label">势力数量</div>
             <div style={{ fontSize: 20, fontWeight: 800, marginTop: 2 }}>
-              {world.factions.length}
+              {factions.length}
             </div>
           </div>
         </div>
@@ -68,61 +75,65 @@ export function WorldPanel({ world }: WorldPanelProps) {
           角色
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {world.characters.map((char, i) => (
-            <div key={char.id} className="card card-sm numbered-item">
-              <span className="number">{String(i + 1).padStart(2, "0")}</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                  <span style={{ fontWeight: 700, fontSize: 13 }}>{char.name}</span>
-                  <span
-                    style={{
-                      fontSize: 10,
-                      padding: "1px 6px",
-                      border: "1px solid var(--color-border)",
-                      color: "var(--color-text-muted)",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.05em",
-                    }}
-                  >
-                    {char.status}
-                  </span>
-                </div>
-                <p style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>
-                  {char.personality}
-                </p>
-                {char.goals.length > 0 && (
-                  <p style={{ fontSize: 11, color: "var(--color-text-muted)" }}>
-                    目标：{char.goals.slice(0, 2).join(" / ")}
-                  </p>
-                )}
-                {char.memory.length > 0 && (
-                  <div
-                    style={{
-                      marginTop: 6,
-                      padding: "4px 8px",
-                      background: "var(--color-bg)",
-                      borderLeft: "2px solid var(--color-border)",
-                      fontSize: 11,
-                      color: "var(--color-text-muted)",
-                    }}
-                  >
-                    {char.memory[char.memory.length - 1]}
+          {characters.map((char, i) => {
+            const goals = char.goals ?? [];
+            const memory = char.memory ?? [];
+            return (
+              <div key={char.id} className="card card-sm numbered-item">
+                <span className="number">{String(i + 1).padStart(2, "0")}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <span style={{ fontWeight: 700, fontSize: 13 }}>{char.name}</span>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        padding: "1px 6px",
+                        border: "1px solid var(--color-border)",
+                        color: "var(--color-text-muted)",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                      }}
+                    >
+                      {char.status}
+                    </span>
                   </div>
-                )}
+                  <p style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>
+                    {char.personality}
+                  </p>
+                  {goals.length > 0 && (
+                    <p style={{ fontSize: 11, color: "var(--color-text-muted)" }}>
+                      目标：{goals.slice(0, 2).join(" / ")}
+                    </p>
+                  )}
+                  {memory.length > 0 && (
+                    <div
+                      style={{
+                        marginTop: 6,
+                        padding: "4px 8px",
+                        background: "var(--color-bg)",
+                        borderLeft: "2px solid var(--color-border)",
+                        fontSize: 11,
+                        color: "var(--color-text-muted)",
+                      }}
+                    >
+                      {memory[memory.length - 1]}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
       {/* Constraints */}
-      {world.constraints.length > 0 && (
+      {constraints.length > 0 && (
         <div>
           <div className="label" style={{ marginBottom: 10 }}>
             世界约束
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {world.constraints.map((c, i) => (
+            {constraints.map((c, i) => (
               <div
                 key={i}
                 className="card card-sm"
@@ -158,13 +169,13 @@ export function WorldPanel({ world }: WorldPanelProps) {
       )}
 
       {/* World rules */}
-      {world.world_rules.length > 0 && (
+      {worldRules.length > 0 && (
         <div>
           <div className="label" style={{ marginBottom: 10 }}>
             世界规则
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {world.world_rules.slice(0, 5).map((rule, i) => (
+            {worldRules.slice(0, 5).map((rule, i) => (
               <div key={i} className="numbered-item" style={{ padding: "6px 0" }}>
                 <span className="number">{String(i + 1).padStart(2, "0")}</span>
                 <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{rule}</span>

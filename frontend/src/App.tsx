@@ -34,6 +34,7 @@ export default function App() {
   } =
     useSimulation();
   const [rightTab, setRightTab] = useState<"graph" | "telemetry">("graph");
+  const [worldPanelCollapsed, setWorldPanelCollapsed] = useState(false);
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
 
   const isRunning = state?.status === "running" || state?.status === "initializing";
@@ -146,25 +147,50 @@ export default function App() {
         className="app-shell"
         style={{
           gridTemplateColumns: rightPanelCollapsed
-            ? "280px minmax(0, 1fr) 56px"
-            : "280px minmax(0, 1fr) 320px",
+            ? `${worldPanelCollapsed ? "56px" : "280px"} minmax(0, 1fr) 56px`
+            : `${worldPanelCollapsed ? "56px" : "280px"} minmax(0, 1fr) 320px`,
         }}
       >
         {/* Left: World state panel */}
         <aside
           className="app-side-panel app-side-panel-left"
+          style={{ padding: worldPanelCollapsed ? 12 : 20 }}
         >
-          {state?.world ? (
-            <WorldPanel world={state.world} />
-          ) : (
-            <div>
-              <div className="label" style={{ marginBottom: 16 }}>
-                世界
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+              marginBottom: worldPanelCollapsed ? 0 : 16,
+            }}
+          >
+            {!worldPanelCollapsed && <div className="label">世界面板</div>}
+            <button
+              className="btn btn-ghost"
+              style={{
+                width: worldPanelCollapsed ? "100%" : "auto",
+                justifyContent: "center",
+                fontSize: 11,
+                padding: "6px 8px",
+              }}
+              aria-label={worldPanelCollapsed ? "展开世界面板" : "收起世界面板"}
+              onClick={() => setWorldPanelCollapsed((value) => !value)}
+            >
+              {worldPanelCollapsed ? "世界" : "收起"}
+            </button>
+          </div>
+
+          {!worldPanelCollapsed && (
+            state?.world ? (
+              <WorldPanel world={state.world} />
+            ) : (
+              <div>
+                <div style={{ color: "var(--color-text-muted)", fontSize: 12 }}>
+                  世界正在初始化...
+                </div>
               </div>
-              <div style={{ color: "var(--color-text-muted)", fontSize: 12 }}>
-                世界正在初始化...
-              </div>
-            </div>
+            )
           )}
         </aside>
 
