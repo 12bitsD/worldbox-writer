@@ -1,4 +1,19 @@
-import type { StoryNode, NodeType } from "../types";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+
+import type {
+  Character,
+  NodeType,
+  StoryNode,
+  TelemetryEvent,
+  WorldData,
+} from "../types";
+import { updateCharacter } from "../utils/api";
 
 interface StoryFeedProps {
   nodes: StoryNode[];
@@ -6,7 +21,13 @@ interface StoryFeedProps {
   branchingEnabled: boolean;
   activeBranchId: string;
   onForkNode: (nodeId: string) => void;
+  simId?: string | null;
+  world?: WorldData | null;
+  telemetryEvents?: TelemetryEvent[];
+  onWorldUpdated?: () => void;
 }
+
+type AnchorSource = "console" | "reader";
 
 const nodeTypeLabel: Record<NodeType, string> = {
   setup: "序章",
@@ -16,272 +37,428 @@ const nodeTypeLabel: Record<NodeType, string> = {
   resolution: "结局",
 };
 
+const statusColor: Record<TelemetryEvent["level"], string> = {
+  info: "var(--color-success)",
+  warning: "var(--color-warning)",
+  error: "var(--color-danger)",
+};
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function buildStatusLabel(event: TelemetryEvent): string {
+  const agent = event.agent || "system";
+  const message = event.message || event.stage;
+  if (event.stage.includes("retry")) return `自动重试：${message}`;
+  if (event.stage.includes("critique")) return `质检员审查：${message}`;
+  if (event.stage.includes("gate") || event.agent === "gate_keeper") {
+    return `规则引擎校验：${message}`;
+  }
+  if (event.level === "error") return `${agent}：${message}`;
+  if (event.stage.includes("intent") || event.stage.includes("proposal")) {
+    return `${agent} 意图生成完毕`;
+  }
+  if (event.duration_ms == null && event.span_kind === "llm") {
+    return `${agent} 思考中...`;
+  }
+  return `${agent}：${message}`;
+}
+
+function buildConsoleLines(node: StoryNode): Array<{
+  role: string;
+  body: string;
+  tone: "director" | "actor" | "gm" | "user";
+}> {
+  const lines: Array<{
+    role: string;
+    body: string;
+    tone: "director" | "actor" | "gm" | "user";
+  }> = [
+    {
+      role: "导演",
+      body: `发起场景：${node.title}`,
+      tone: "director",
+    },
+  ];
+
+  if (node.description) {
+    lines.push({
+      role: "内循环",
+      body: node.description,
+      tone: "actor",
+    });
+  }
+
+  if (node.scene_script_summary) {
+    lines.push({
+      role: "SceneScript",
+      body: node.scene_script_summary,
+      tone: "gm",
+    });
+  }
+
+  if (node.intervention_instruction) {
+    lines.push({
+      role: "用户干预",
+      body: node.intervention_instruction,
+      tone: "user",
+    });
+  }
+
+  return lines;
+}
+
+function EntityMention({
+  active,
+  character,
+  disabled,
+  mentionKey,
+  onOpen,
+  onWorldUpdated,
+  simId,
+}: {
+  active: boolean;
+  character: Character;
+  disabled: boolean;
+  mentionKey: string;
+  onOpen: (key: string) => void;
+  onWorldUpdated?: () => void;
+  simId?: string | null;
+}) {
+  const [personality, setPersonality] = useState(character.personality);
+  const [goals, setGoals] = useState(character.goals.join("\n"));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!active) return;
+    setPersonality(character.personality);
+    setGoals(character.goals.join("\n"));
+    setError(null);
+  }, [active, character.goals, character.personality]);
+
+  const handleSave = async () => {
+    if (!simId) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await updateCharacter(simId, character.id, {
+        personality,
+        goals: goals.split("\n").map((goal) => goal.trim()).filter(Boolean),
+      });
+      await onWorldUpdated?.();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <span className="entity-mention-wrap">
+      <button
+        type="button"
+        className="entity-mention"
+        onClick={(event) => {
+          event.stopPropagation();
+          onOpen(mentionKey);
+        }}
+      >
+        {character.name}
+      </button>
+      {active && (
+        <span
+          className="entity-card"
+          role="dialog"
+          aria-label={`${character.name} 设定卡`}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <span className="entity-card-title">{character.name}</span>
+          <span className="entity-card-muted">状态：{character.status}</span>
+          {character.description && (
+            <span className="entity-card-text">{character.description}</span>
+          )}
+          <label className="entity-card-field">
+            Prompt 性格
+            <textarea
+              className="input textarea"
+              value={personality}
+              onChange={(event) => setPersonality(event.target.value)}
+              disabled={disabled || saving}
+            />
+          </label>
+          <label className="entity-card-field">
+            目标 / 动机（每行一个）
+            <textarea
+              className="input textarea"
+              value={goals}
+              onChange={(event) => setGoals(event.target.value)}
+              disabled={disabled || saving}
+            />
+          </label>
+          {character.memory.length > 0 && (
+            <span className="entity-card-memory">
+              最近记忆：{character.memory.slice(-2).join(" / ")}
+            </span>
+          )}
+          {disabled && (
+            <span className="entity-card-muted">
+              运行中不可直接改设定，请等关键节点暂停或推演完成。
+            </span>
+          )}
+          {error && <span className="entity-card-error">{error}</span>}
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={disabled || saving}
+            onClick={handleSave}
+          >
+            {saving ? "保存中..." : "保存设定"}
+          </button>
+        </span>
+      )}
+    </span>
+  );
+}
+
 export function StoryFeed({
   nodes,
   isRunning,
   branchingEnabled,
   activeBranchId,
   onForkNode,
+  simId,
+  world,
+  telemetryEvents = [],
+  onWorldUpdated,
 }: StoryFeedProps) {
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [activeMentionKey, setActiveMentionKey] = useState<string | null>(null);
+  const consoleRefs = useRef(new Map<string, HTMLDivElement>());
+  const readerRefs = useRef(new Map<string, HTMLElement>());
+  const readerPaneRef = useRef<HTMLDivElement | null>(null);
+  const consolePaneRef = useRef<HTMLDivElement | null>(null);
+
+  const characters = useMemo(
+    () =>
+      [...(world?.characters ?? [])]
+        .filter((character) => character.name.trim().length > 0)
+        .sort((left, right) => right.name.length - left.name.length),
+    [world?.characters]
+  );
+
+  const characterPattern = useMemo(() => {
+    if (characters.length === 0) return null;
+    return new RegExp(`(${characters.map((character) => escapeRegExp(character.name)).join("|")})`, "g");
+  }, [characters]);
+
+  const latestStatusChips = useMemo(
+    () => [...telemetryEvents].slice(-6).reverse(),
+    [telemetryEvents]
+  );
+
+  const activeNodeId = nodes.some((node) => node.id === selectedNodeId)
+    ? selectedNodeId
+    : nodes.at(-1)?.id ?? null;
+
+  useEffect(() => {
+    const root = readerPaneRef.current;
+    if (!root || typeof IntersectionObserver === "undefined") return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0];
+        const nextNodeId = visible?.target.getAttribute("data-node-id");
+        if (!nextNodeId) return;
+        setSelectedNodeId(nextNodeId);
+        consoleRefs.current.get(nextNodeId)?.scrollIntoView({
+          block: "nearest",
+          behavior: "smooth",
+        });
+      },
+      { root, threshold: [0.45, 0.7] }
+    );
+
+    for (const element of readerRefs.current.values()) {
+      observer.observe(element);
+    }
+
+    return () => observer.disconnect();
+  }, [nodes]);
+
   if (nodes.length === 0 && !isRunning) return null;
 
+  const activateNode = (nodeId: string, source: AnchorSource) => {
+    setSelectedNodeId(nodeId);
+    setActiveMentionKey(null);
+    const target =
+      source === "console"
+        ? readerRefs.current.get(nodeId)
+        : consoleRefs.current.get(nodeId);
+    if (typeof target?.scrollIntoView === "function") {
+      target.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  };
+
+  const renderEntityText = (text: string, nodeId: string): ReactNode => {
+    if (!characterPattern) return text;
+
+    return text.split(characterPattern).map((part, index) => {
+      const character = characters.find((candidate) => candidate.name === part);
+      if (!character) return part;
+      const mentionKey = `${nodeId}:${character.id}:${index}`;
+      return (
+        <EntityMention
+          key={mentionKey}
+          active={activeMentionKey === mentionKey}
+          character={character}
+          disabled={isRunning || !simId}
+          mentionKey={mentionKey}
+          onOpen={setActiveMentionKey}
+          onWorldUpdated={onWorldUpdated}
+          simId={simId}
+        />
+      );
+    });
+  };
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-      <div className="label" style={{ marginBottom: 16 }}>
-        故事推演
+    <section className="story-workspace">
+      <div className="story-workspace-header">
+        <div>
+          <div className="label">双循环工作台</div>
+          <div className="story-workspace-title">内循环控制台 / 外循环小说阅读</div>
+        </div>
+        <div className="story-workspace-hint">
+          点击任一侧节点可跳转并高亮另一侧锚点
+        </div>
       </div>
 
-      {nodes.map((node) => {
-        const narrativeText = node.rendered_text || node.streaming_text;
+      <div className="story-split">
+        <aside className="story-console" ref={consolePaneRef}>
+          <div className="story-pane-label">跑团控制台</div>
 
-        return (
-          <div
-            key={node.id}
-            className={`animate-fade-in node-${node.node_type}`}
-            style={{
-              marginBottom: 16,
-              background: "var(--color-bg-card)",
-              border: "1px solid var(--color-border)",
-              overflow: "hidden",
-            }}
-          >
-            {/* Node header */}
-            <div
-              style={{
-                padding: "10px 16px",
-                borderBottom: "1px solid var(--color-border-light)",
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-              }}
-            >
+          {nodes.map((node) => {
+            const isActive = activeNodeId === node.id;
+            return (
               <div
-                style={{
-                  minWidth: 0,
-                  flex: 1,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
+                key={node.id}
+                ref={(element) => {
+                  if (element) consoleRefs.current.set(node.id, element);
+                  else consoleRefs.current.delete(node.id);
                 }}
+                className={`console-node ${isActive ? "console-node-active" : ""}`}
+                onClick={() => activateNode(node.id, "console")}
               >
-                <span
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: "var(--color-text-muted)",
-                    minWidth: 28,
-                  }}
-                >
-                  T{node.tick}
-                </span>
-                <span
-                  style={{
-                    fontSize: 10,
-                    padding: "1px 6px",
-                    border: "1px solid var(--color-border)",
-                    color: "var(--color-text-muted)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
-                    flexShrink: 0,
-                  }}
-                >
-                  {nodeTypeLabel[node.node_type] || node.node_type}
-                </span>
-                <span
-                  style={{
-                    fontWeight: 700,
-                    fontSize: 13,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {node.title}
-                </span>
-                <span
-                  style={{
-                    fontSize: 10,
-                    padding: "1px 6px",
-                    border: "1px solid var(--color-border)",
-                    color:
-                      node.branch_id === activeBranchId
-                        ? "var(--color-warning)"
-                        : "var(--color-text-muted)",
-                    flexShrink: 0,
-                  }}
-                >
-                  {node.branch_id}
-                </span>
+                <div className="console-node-header">
+                  <span>T{node.tick}</span>
+                  <span>{nodeTypeLabel[node.node_type] || node.node_type}</span>
+                  <span>{node.branch_id}</span>
+                  {node.requires_intervention && (
+                    <span className="console-node-warning">
+                      {node.intervention_instruction ? "已干预" : "关键节点"}
+                    </span>
+                  )}
+                </div>
+                {buildConsoleLines(node).map((line, index) => (
+                  <div key={`${node.id}-${line.role}-${index}`} className="console-line">
+                    <span className={`console-avatar console-avatar-${line.tone}`}>
+                      {line.role}
+                    </span>
+                    <span className="console-message">
+                      {renderEntityText(line.body, `${node.id}:console:${index}`)}
+                    </span>
+                  </div>
+                ))}
               </div>
+            );
+          })}
 
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  flexShrink: 0,
+          <div className="harness-chips">
+            <div className="story-pane-label">工程呼吸灯</div>
+            {latestStatusChips.length > 0 ? (
+              latestStatusChips.map((event) => (
+                <span
+                  key={event.event_id}
+                  className="harness-chip"
+                  style={{
+                    borderColor: statusColor[event.level],
+                    color: statusColor[event.level],
+                  }}
+                >
+                  {buildStatusLabel(event)}
+                </span>
+              ))
+            ) : (
+              <span className="harness-chip harness-chip-muted">
+                {isRunning ? "等待第一条遥测事件..." : "暂无实时遥测"}
+              </span>
+            )}
+          </div>
+        </aside>
+
+        <main className="novel-reader" ref={readerPaneRef}>
+          <div className="story-pane-label">小说阅读区</div>
+          {nodes.map((node) => {
+            const narrativeText = node.rendered_text || node.streaming_text || "";
+            const isActive = activeNodeId === node.id;
+
+            return (
+              <article
+                key={node.id}
+                data-node-id={node.id}
+                ref={(element) => {
+                  if (element) readerRefs.current.set(node.id, element);
+                  else readerRefs.current.delete(node.id);
                 }}
+                className={`reader-node ${isActive ? "reader-node-active" : ""}`}
+                onClick={() => activateNode(node.id, "reader")}
               >
-                {node.requires_intervention && (
-                  <span
-                    style={{
-                      fontSize: 10,
-                      padding: "1px 6px",
-                      border: "1px solid var(--color-warning)",
-                      color: "var(--color-warning)",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.05em",
-                    }}
-                  >
-                    {node.intervention_instruction ? "已干预" : "关键节点"}
-                  </span>
+                <div className="reader-node-meta">
+                  <span>T{node.tick}</span>
+                  <span>{nodeTypeLabel[node.node_type] || node.node_type}</span>
+                  <span>{node.branch_id === activeBranchId ? "当前世界线" : node.branch_id}</span>
+                </div>
+                <h2>{node.title}</h2>
+                {narrativeText ? (
+                  <p>
+                    {renderEntityText(narrativeText, `${node.id}:reader`)}
+                    {!node.rendered_text && node.streaming_text && (
+                      <span className="typing-cursor">|</span>
+                    )}
+                  </p>
+                ) : (
+                  <p className="reader-placeholder">等待 Narrator 渲染正文...</p>
                 )}
+
                 {branchingEnabled && !isRunning && (
                   <button
                     className="btn"
-                    style={{ fontSize: 11, padding: "6px 10px" }}
-                    onClick={() => onForkNode(node.id)}
+                    style={{ fontSize: 11, padding: "6px 10px", marginTop: 12 }}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onForkNode(node.id);
+                    }}
                   >
                     从此分叉
                   </button>
                 )}
+              </article>
+            );
+          })}
+
+          {isRunning && (
+            <div className="reader-node reader-node-active">
+              <div className="reader-placeholder">
+                Agent 集群正在推演下一个故事节点...
               </div>
             </div>
-
-            {/* Node body */}
-            <div style={{ padding: "12px 16px" }}>
-              {narrativeText ? (
-                <div
-                  style={{
-                    padding: "12px 16px",
-                    background: "var(--color-bg)",
-                    borderLeft: "2px solid var(--color-border)",
-                    fontSize: 13,
-                    lineHeight: 1.8,
-                    color: "var(--color-text)",
-                    whiteSpace: "pre-wrap",
-                  }}
-                >
-                  {narrativeText}
-                  {!node.rendered_text && node.streaming_text && (
-                    <span className="typing-cursor" style={{ marginLeft: 2 }}>
-                      |
-                    </span>
-                  )}
-                </div>
-              ) : (
-                <p
-                  style={{
-                    fontSize: 12,
-                    color: "var(--color-text-secondary)",
-                    marginBottom: node.scene_script_summary ? 12 : 0,
-                    lineHeight: 1.6,
-                  }}
-                >
-                  {node.description}
-                </p>
-              )}
-
-              {narrativeText && node.description && (
-                <details
-                  style={{
-                    marginTop: 10,
-                    border: "1px solid var(--color-border-light)",
-                    background: "rgba(17, 17, 17, 0.02)",
-                    fontSize: 11,
-                    color: "var(--color-text-secondary)",
-                  }}
-                >
-                  <summary
-                    style={{
-                      cursor: "pointer",
-                      padding: "6px 10px",
-                      fontWeight: 700,
-                      color: "var(--color-text-muted)",
-                    }}
-                  >
-                    逻辑摘要
-                  </summary>
-                  <p style={{ padding: "0 10px 8px", lineHeight: 1.5 }}>
-                    {node.description}
-                  </p>
-                </details>
-              )}
-
-              {node.scene_script_summary && (
-                <details
-                  style={{
-                    marginTop: 10,
-                    border: "1px solid rgba(28, 128, 98, 0.16)",
-                    background: "rgba(28, 128, 98, 0.06)",
-                    fontSize: 11,
-                    lineHeight: 1.5,
-                    color: "var(--color-text-secondary)",
-                  }}
-                >
-                  <summary
-                    style={{
-                      cursor: "pointer",
-                      padding: "6px 10px",
-                      fontWeight: 700,
-                      color: "var(--color-text)",
-                    }}
-                  >
-                    SceneScript
-                  </summary>
-                  <div style={{ padding: "0 10px 8px" }}>
-                    {node.scene_script_summary}
-                  </div>
-                </details>
-              )}
-
-              {/* Intervention instruction */}
-              {node.intervention_instruction && (
-                <div
-                  style={{
-                    marginTop: 10,
-                    padding: "8px 12px",
-                    background: "rgba(230, 126, 34, 0.06)",
-                    border: "1px solid rgba(230, 126, 34, 0.2)",
-                    fontSize: 11,
-                    color: "var(--color-warning)",
-                  }}
-                >
-                  <span style={{ fontWeight: 600 }}>干预指令：</span>
-                  {node.intervention_instruction}
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })}
-
-      {/* Running indicator */}
-      {isRunning && (
-        <div
-          style={{
-            padding: "16px",
-            border: "1px solid var(--color-border)",
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            color: "var(--color-text-muted)",
-            fontSize: 12,
-          }}
-        >
-          <span
-            className="animate-pulse-dot"
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              background: "var(--color-success)",
-              display: "inline-block",
-            }}
-          />
-          Agent 集群正在推演下一个故事节点...
-        </div>
-      )}
-    </div>
+          )}
+        </main>
+      </div>
+    </section>
   );
 }

@@ -178,6 +178,25 @@ export async function updateCharacter(
   if (!res.ok) throw new Error(await res.text());
 }
 
+export async function updateRelationship(
+  simId: string,
+  input: {
+    source_character_id: string;
+    target_character_id: string;
+    label: string;
+    affinity: number;
+    note?: string;
+    bidirectional?: boolean;
+  }
+): Promise<void> {
+  const res = await fetch(`${BASE}/simulate/${simId}/relationships`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
 export async function updateWorld(
   simId: string,
   updates: {

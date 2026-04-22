@@ -216,6 +216,7 @@ worldbox-writer/
 | Sprint 17 | SceneScript 驱动 Narrator 渲染 | ✅ 完成（NarratorInput v2 已接入） |
 | Sprint 18 | 灰度上线与对比评估 | ✅ 完成（dual-loop compare/report 护栏已接入） |
 | Sprint 19 | 阅读优先的干预与工作台交互优化 | ✅ 完成（compact intervention drawer 已接入） |
+| Sprint 20 | 双视窗创作工作台与透明推演状态 | ✅ 完成（split-view workspace 已接入） |
 
 **当前版本**：v0.5.0
 
@@ -232,12 +233,13 @@ worldbox-writer/
 - 已完成的 Sprint 17 交付：`NarratorInput` v2、SceneScript 渲染适配、rejected intent 防写入 prompt guard、StoryFeed lineage 展示与导出兼容回归。
 - 已完成的 Sprint 18 交付：dual-loop compare report API/CLI、rollout readiness checks、`FEATURE_DUAL_LOOP_ENABLED=0` rollback runbook、发布前评估护栏文档。
 - 已完成的 Sprint 19 交付：关键节点 compact bar + drawer、设定编辑嵌入抽屉、StoryFeed 阅读优先折叠逻辑摘要、右侧推演信息可折叠、移动端单列降级。
+- 已完成的 Sprint 20 交付：StoryFeed 双视窗工作台、跑团控制台/小说阅读区拆分、节点双向锚点、角色实体浮窗快改、telemetry 状态胶囊、关系图谱拖拽建边/改边。
 - 已完成的 Sprint 9 增量推进：真实 ChromaDB 向量检索已接线并成为默认 `auto` 路径；导出链路已升级为 TXT / Markdown / HTML / DOCX / PDF / JSON manifest bundle。
 - 已完成的 Sprint 10-11 交付：双循环契约冻结、compatibility adapter、diagnostics 暴露、Director scene planner、`ScenePlan` graph state 持久化和 legacy actor prompt 接入。
 - 已完成的 Sprint 12 交付：隔离 Actor runtime v1、spotlight actor fan-out / fan-in、私有 `PromptTrace` / `MemoryRecallTrace`、真实 `ActionIntent` 产出和 legacy candidate bridge。
 - 架构预留：`StoryNode` 和 `WorldState` 已预留 `branch_id` 和 `merged_from_ids`，为未来的分支管理奠定基础。
 - 测试状态：`make lint` 通过；`make test` 通过；`make typecheck` 通过。`make integration` 依赖可达且未限流的真实 LLM Provider；网络受限、DNS 失败、超时或 429 限流都会导致失败。
-- 当前迭代状态：Product Planning v2 的 Sprint 10-18 双循环主线已落地；Sprint 19 已完成关键节点阅读体验优化，下一阶段应基于真实用户试用继续收敛创作工作台。
+- 当前迭代状态：Product Planning v2 的 Sprint 10-18 双循环主线已落地；Sprint 19-20 已完成关键节点阅读体验和双视窗创作工作台，下一阶段应补 intent-level 局部重跑能力。
 
 ---
 
@@ -259,6 +261,7 @@ worldbox-writer/
 | `GET` | `/api/simulate/{id}/diagnostics` | 查看记忆、路由与成本估算诊断摘要 |
 | `PUT` | `/api/simulate/{id}/wiki` | 保存创作工作台中的设定 Wiki |
 | `PATCH` | `/api/simulate/{id}/nodes/{node_id}/rendered-text` | 保存富文本润色后的正文节点 |
+| `PATCH` | `/api/simulate/{id}/relationships` | 在可编辑阶段建立或修改角色关系边 |
 | `GET` | `/api/health` | 健康检查 + LLM 配置信息 |
 | `GET` | `/api/simulate/{id}/stream` | 获取实时推演事件流 (SSE) |
 | `PATCH` | `/api/simulate/{id}/characters/{char_id}` | 编辑角色属性（仅 waiting 状态） |

@@ -318,6 +318,66 @@ class TestUpdateCharacter:
         assert res.status_code == 404
 
 
+class TestUpdateRelationship:
+    def test_update_relationship_success(self, client, waiting_session):
+        sim_id, source_id = waiting_session
+        target = Character(name="角色B", personality="谨慎", goals=["避战"])
+        _sessions[sim_id].world.add_character(target)
+
+        res = client.patch(
+            f"/api/simulate/{sim_id}/relationships",
+            json={
+                "source_character_id": source_id,
+                "target_character_id": str(target.id),
+                "label": "rival",
+                "affinity": -45,
+                "note": "结仇",
+            },
+        )
+
+        assert res.status_code == 200
+        relationship = res.json()["relationship"]
+        assert relationship["target_id"] == str(target.id)
+        assert relationship["label"] == "rival"
+        assert relationship["affinity"] == -45
+        assert relationship["note"] == "结仇"
+
+        source = _sessions[sim_id].world.get_character(source_id)
+        reverse = _sessions[sim_id].world.get_character(str(target.id))
+        assert source.relationships[str(target.id)].label.value == "rival"
+        assert reverse.relationships[source_id].label.value == "rival"
+
+    def test_update_relationship_rejected_when_running(self, client, running_session):
+        res = client.patch(
+            f"/api/simulate/{running_session}/relationships",
+            json={
+                "source_character_id": "a",
+                "target_character_id": "b",
+                "label": "ally",
+            },
+        )
+
+        assert res.status_code == 400
+        assert "干预暂停" in res.json()["detail"]
+
+    def test_update_relationship_rejects_invalid_label(self, client, waiting_session):
+        sim_id, source_id = waiting_session
+        target = Character(name="角色C", personality="冷静", goals=["观察"])
+        _sessions[sim_id].world.add_character(target)
+
+        res = client.patch(
+            f"/api/simulate/{sim_id}/relationships",
+            json={
+                "source_character_id": source_id,
+                "target_character_id": str(target.id),
+                "label": "结仇",
+            },
+        )
+
+        assert res.status_code == 400
+        assert "无效的关系标签" in res.json()["detail"]
+
+
 class TestUpdateWorld:
     def test_update_world_success(self, client, waiting_session):
         """Should update world when session is waiting."""

@@ -6,6 +6,7 @@ WorldBox Writer — FastAPI 后端服务
 - GET  /api/simulate/{id}    — 获取推演状态
 - POST /api/simulate/{id}/intervene — 提交用户干预
 - PATCH /api/simulate/{id}/characters/{char_id} — 编辑角色
+- PATCH /api/simulate/{id}/relationships — 编辑角色关系
 - PATCH /api/simulate/{id}/world — 编辑世界设定
 - POST /api/simulate/{id}/constraints — 添加约束
 - GET  /api/simulate/{id}/export    — 导出结果
@@ -36,6 +37,7 @@ from worldbox_writer.core.models import (
     Constraint,
     ConstraintSeverity,
     ConstraintType,
+    RelationshipLabel,
     TelemetryEvent,
     TelemetryLevel,
     TelemetrySpanKind,
@@ -745,6 +747,15 @@ class UpdateCharacterRequest(BaseModel):
     personality: Optional[str] = None
     goals: Optional[List[str]] = None
     status: Optional[str] = None
+
+
+class UpdateRelationshipRequest(BaseModel):
+    source_character_id: str
+    target_character_id: str
+    label: str = "unknown"
+    affinity: int = 0
+    note: str = ""
+    bidirectional: bool = True
 
 
 class UpdateWorldRequest(BaseModel):
@@ -1844,6 +1855,64 @@ async def update_character(
             "goals": char.goals,
             "status": char.status.value,
         },
+    }
+
+
+@app.patch("/api/simulate/{sim_id}/relationships")
+async def update_relationship(sim_id: str, request: UpdateRelationshipRequest):
+    """Create or update a character relationship edge from the graph UI."""
+    session = _load_session_into_memory(sim_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
+    _ensure_workspace_mutable(session, "编辑角色关系")
+    if not session.world:
+        raise HTTPException(status_code=400, detail="世界尚未初始化")
+
+    source = session.world.get_character(request.source_character_id)
+    target = session.world.get_character(request.target_character_id)
+    if not source or not target:
+        raise HTTPException(status_code=404, detail="关系两端角色不存在")
+    if source.id == target.id:
+        raise HTTPException(status_code=400, detail="不能给同一个角色建立自关系")
+
+    try:
+        label = RelationshipLabel(request.label)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"无效的关系标签: {request.label}，允许值为 "
+                f"{', '.join(label.value for label in RelationshipLabel)}"
+            ),
+        )
+
+    affinity = max(-100, min(100, request.affinity))
+    source.update_relationship(
+        str(target.id),
+        label.value,
+        affinity=affinity,
+        label=label,
+        note=request.note,
+        updated_at_tick=session.world.tick,
+    )
+    session.world.characters[str(source.id)] = source
+
+    if request.bidirectional:
+        target.update_relationship(
+            str(source.id),
+            label.value,
+            affinity=affinity,
+            label=label,
+            note=request.note,
+            updated_at_tick=session.world.tick,
+        )
+        session.world.characters[str(target.id)] = target
+
+    _persist_session(session)
+
+    return {
+        "message": "关系已更新",
+        "relationship": source.relationships[str(target.id)].model_dump(mode="json"),
     }
 
 

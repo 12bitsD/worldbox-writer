@@ -190,6 +190,10 @@ export default function App() {
                 branchingEnabled={state.features.branching_enabled}
                 activeBranchId={state.world?.active_branch_id ?? "main"}
                 onForkNode={handleForkNode}
+                simId={simId}
+                world={state.world}
+                telemetryEvents={state.telemetry}
+                onWorldUpdated={refresh}
               />
             )}
             {isComplete && simId && (
@@ -387,7 +391,12 @@ export default function App() {
           </div>
 
           {rightTab === "graph" ? (
-            <RelationshipPanel world={state?.world ?? null} />
+            <RelationshipPanel
+              world={state?.world ?? null}
+              simId={simId}
+              isRunning={isRunning}
+              onUpdated={refresh}
+            />
           ) : (
             <TelemetryPanel
               events={state?.telemetry ?? []}

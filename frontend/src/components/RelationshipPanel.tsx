@@ -1,9 +1,13 @@
 import { useState } from "react";
 
 import type { RelationshipLabel, WorldData } from "../types";
+import { updateRelationship } from "../utils/api";
 
 interface RelationshipPanelProps {
   world: WorldData | null;
+  simId?: string | null;
+  isRunning?: boolean;
+  onUpdated?: () => void;
 }
 
 const EDGE_COLOR: Record<RelationshipLabel, string> = {
@@ -15,9 +19,33 @@ const EDGE_COLOR: Record<RelationshipLabel, string> = {
   unknown: "#6b7280",
 };
 
-export function RelationshipPanel({ world }: RelationshipPanelProps) {
+const RELATIONSHIP_LABELS: RelationshipLabel[] = [
+  "ally",
+  "trust",
+  "neutral",
+  "rival",
+  "fear",
+  "unknown",
+];
+
+export function RelationshipPanel({
+  world,
+  simId,
+  isRunning = false,
+  onUpdated,
+}: RelationshipPanelProps) {
   const [focusedCharacterId, setFocusedCharacterId] = useState<string | null>(null);
   const [selectedEdgeKey, setSelectedEdgeKey] = useState<string | null>(null);
+  const [dragSourceId, setDragSourceId] = useState<string | null>(null);
+  const [draftEdge, setDraftEdge] = useState<{
+    sourceId: string;
+    targetId: string;
+  } | null>(null);
+  const [draftLabel, setDraftLabel] = useState<RelationshipLabel>("rival");
+  const [draftAffinity, setDraftAffinity] = useState(-20);
+  const [draftNote, setDraftNote] = useState("");
+  const [savingEdge, setSavingEdge] = useState(false);
+  const [edgeError, setEdgeError] = useState<string | null>(null);
 
   if (!world) {
     return (
@@ -85,6 +113,44 @@ export function RelationshipPanel({ world }: RelationshipPanelProps) {
     visibleEdges.find((edge) => edge.key === selectedEdgeKey) ?? visibleEdges[0] ?? null;
   const focusedCharacter =
     world.characters.find((char) => char.id === focusedCharacterId) ?? null;
+  const canEditGraph = Boolean(simId && onUpdated && !isRunning);
+  const draftSource =
+    world.characters.find((char) => char.id === draftEdge?.sourceId) ?? null;
+  const draftTarget =
+    world.characters.find((char) => char.id === draftEdge?.targetId) ?? null;
+
+  const openDraftEdge = (sourceId: string, targetId: string) => {
+    const existing =
+      world.characters.find((char) => char.id === sourceId)?.relationships[targetId] ??
+      null;
+    setDraftEdge({ sourceId, targetId });
+    setDraftLabel(existing?.label ?? "rival");
+    setDraftAffinity(existing?.affinity ?? -20);
+    setDraftNote(existing?.note ?? "");
+    setEdgeError(null);
+  };
+
+  const saveDraftEdge = async () => {
+    if (!simId || !draftEdge) return;
+    setSavingEdge(true);
+    setEdgeError(null);
+    try {
+      await updateRelationship(simId, {
+        source_character_id: draftEdge.sourceId,
+        target_character_id: draftEdge.targetId,
+        label: draftLabel,
+        affinity: draftAffinity,
+        note: draftNote,
+        bidirectional: true,
+      });
+      setDraftEdge(null);
+      await onUpdated?.();
+    } catch (e) {
+      setEdgeError(String(e));
+    } finally {
+      setSavingEdge(false);
+    }
+  };
 
   return (
     <div className="card" style={{ padding: 16 }}>
@@ -110,6 +176,14 @@ export function RelationshipPanel({ world }: RelationshipPanelProps) {
             清除聚焦
           </button>
         )}
+      </div>
+
+      <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginBottom: 10 }}>
+        {canEditGraph
+          ? "拖拽一个角色节点到另一个节点，可直接建立或修改关系。"
+          : isRunning
+            ? "运行中只读；关键节点暂停或完成后可拖拽编辑关系。"
+            : "当前会话不可编辑关系。"}
       </div>
 
       <div
@@ -183,11 +257,24 @@ export function RelationshipPanel({ world }: RelationshipPanelProps) {
             return (
               <g
                 key={node.id}
+                onPointerDown={(event) => {
+                  if (!canEditGraph) return;
+                  event.stopPropagation();
+                  setDragSourceId(node.id);
+                }}
+                onPointerUp={(event) => {
+                  if (!canEditGraph) return;
+                  event.stopPropagation();
+                  if (dragSourceId && dragSourceId !== node.id) {
+                    openDraftEdge(dragSourceId, node.id);
+                  }
+                  setDragSourceId(null);
+                }}
                 onClick={() => {
                   setFocusedCharacterId((prev) => (prev === node.id ? null : node.id));
                   setSelectedEdgeKey(null);
                 }}
-                style={{ cursor: "pointer" }}
+                style={{ cursor: canEditGraph ? "grab" : "pointer" }}
               >
                 <circle
                   cx={node.x}
@@ -214,6 +301,103 @@ export function RelationshipPanel({ world }: RelationshipPanelProps) {
           })}
         </svg>
       </div>
+
+      {draftEdge && draftSource && draftTarget && (
+        <div
+          className="card card-sm"
+          style={{
+            marginBottom: 12,
+            borderColor: EDGE_COLOR[draftLabel],
+            borderStyle: "dashed",
+          }}
+        >
+          <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 8 }}>
+            修改关系：{draftSource.name} → {draftTarget.name}
+          </div>
+          <label
+            style={{
+              display: "grid",
+              gap: 4,
+              fontSize: 11,
+              color: "var(--color-text-muted)",
+              marginBottom: 8,
+            }}
+          >
+            关系类型
+            <select
+              value={draftLabel}
+              onChange={(event) => setDraftLabel(event.target.value as RelationshipLabel)}
+              disabled={savingEdge}
+            >
+              {RELATIONSHIP_LABELS.map((label) => (
+                <option key={label} value={label}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label
+            style={{
+              display: "grid",
+              gap: 4,
+              fontSize: 11,
+              color: "var(--color-text-muted)",
+              marginBottom: 8,
+            }}
+          >
+            关系强度（-100 到 100）
+            <input
+              type="number"
+              min={-100}
+              max={100}
+              value={draftAffinity}
+              onChange={(event) => setDraftAffinity(Number(event.target.value))}
+              disabled={savingEdge}
+            />
+          </label>
+          <label
+            style={{
+              display: "grid",
+              gap: 4,
+              fontSize: 11,
+              color: "var(--color-text-muted)",
+              marginBottom: 8,
+            }}
+          >
+            关系说明
+            <textarea
+              className="input textarea"
+              value={draftNote}
+              onChange={(event) => setDraftNote(event.target.value)}
+              disabled={savingEdge}
+              style={{ minHeight: 56, fontSize: 12 }}
+            />
+          </label>
+          {edgeError && (
+            <div style={{ fontSize: 11, color: "var(--color-danger)", marginBottom: 8 }}>
+              {edgeError}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button
+              className="btn"
+              style={{ fontSize: 11, padding: "5px 10px" }}
+              onClick={() => setDraftEdge(null)}
+              disabled={savingEdge}
+            >
+              取消
+            </button>
+            <button
+              className="btn btn-primary"
+              style={{ fontSize: 11, padding: "5px 10px" }}
+              onClick={saveDraftEdge}
+              disabled={savingEdge}
+            >
+              {savingEdge ? "保存中..." : "保存关系"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {focusedCharacter && (
         <div className="card card-sm" style={{ marginBottom: 10 }}>
@@ -304,6 +488,15 @@ export function RelationshipPanel({ world }: RelationshipPanelProps) {
                 <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: 6 }}>
                   {selectedEdge.note}
                 </div>
+              )}
+              {canEditGraph && (
+                <button
+                  className="btn"
+                  style={{ fontSize: 11, padding: "5px 10px", marginTop: 8 }}
+                  onClick={() => openDraftEdge(selectedEdge.from, selectedEdge.to)}
+                >
+                  编辑这条关系
+                </button>
               )}
             </div>
           )}
