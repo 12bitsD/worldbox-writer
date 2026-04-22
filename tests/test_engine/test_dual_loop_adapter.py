@@ -280,3 +280,52 @@ def test_isolated_actor_runtime_generates_branch_aware_intents(monkeypatch) -> N
     assert result.action_intents[0].metadata["branch_id"] == "branch-a"
     assert str(hidden.id) not in result.prompt_traces[0].visible_character_ids
     assert "阿璃决定逼问白夜昨夜的行踪" in candidate
+
+
+def test_isolated_actor_runtime_salvages_plain_text_intent(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "worldbox_writer.engine.dual_loop.chat_completion",
+        lambda messages, **kwargs: "阿璃拔出断桥上的旧符钉，逼迫白夜解释昨夜的伏击。",
+    )
+
+    world = WorldState(title="测试世界", premise="测试前提")
+    alice = Character(name="阿璃", personality="谨慎", goals=["调查断桥"])
+    world.add_character(alice)
+    scene_plan = ScenePlan(
+        scene_id="scene-plain",
+        title="断桥试探",
+        objective="让阿璃逼近伏击真相",
+        spotlight_character_ids=[str(alice.id)],
+    )
+
+    result = run_isolated_actor_runtime(world, MemoryManager(), scene_plan=scene_plan)
+
+    assert result.action_intents[0].metadata["synthetic"] is False
+    assert "旧符钉" in result.action_intents[0].summary
+
+
+def test_isolated_actor_runtime_empty_completion_uses_story_forward_fallback(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "worldbox_writer.engine.dual_loop.chat_completion",
+        lambda messages, **kwargs: "",
+    )
+
+    world = WorldState(title="测试世界", premise="测试前提")
+    alice = Character(name="阿璃", personality="谨慎", goals=["调查断桥"])
+    world.add_character(alice)
+    scene_plan = ScenePlan(
+        scene_id="scene-empty",
+        title="断桥试探",
+        objective="让阿璃逼近伏击真相",
+        spotlight_character_ids=[str(alice.id)],
+    )
+
+    result = run_isolated_actor_runtime(world, MemoryManager(), scene_plan=scene_plan)
+
+    intent = result.action_intents[0]
+    assert intent.metadata["synthetic"] is True
+    assert "暂时保持观察" not in intent.summary
+    assert "调查断桥" in intent.summary
+    assert "让阿璃逼近伏击真相" in intent.summary

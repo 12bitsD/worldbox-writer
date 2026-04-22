@@ -505,3 +505,28 @@ def test_narrator_consumes_scene_script_input_v2(monkeypatch) -> None:
     assert rendered.rendered_text == "阿璃按下桥闸，潮雾吞没了追兵的火把。"
     assert rendered.metadata["narrator_input_v2"]["source"] == "scene_script"
     assert rendered.metadata["narrator_input_v2"]["scene_id"] == "scene-render"
+
+
+def test_narrator_empty_completion_uses_fallback_prose(monkeypatch) -> None:
+    monkeypatch.setattr(graph_module, "chat_completion", lambda messages, **kwargs: "")
+    monkeypatch.setattr(graph_module, "get_last_llm_call_metadata", lambda: None)
+
+    world = WorldState(title="测试世界", premise="断桥守卫战")
+    alice = Character(name="阿璃", personality="冷静", goals=["守住断桥"])
+    world.add_character(alice)
+    node = StoryNode(
+        title="第1幕：断桥落闸",
+        description="阿璃按下断桥闸机，阻断追兵。",
+        character_ids=[str(alice.id)],
+    )
+    world.add_node(node)
+    world.current_node_id = str(node.id)
+    world.tick = 1
+
+    result = narrator_node(_state(world))
+
+    rendered = result["world"].get_node(str(node.id))
+    assert rendered is not None
+    assert rendered.is_rendered is True
+    assert rendered.rendered_text
+    assert "阿璃按下断桥闸机" in rendered.rendered_text

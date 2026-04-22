@@ -340,24 +340,15 @@ class DirectorAgent:
         )
 
     def _fallback_world_init_data(self, premise: str) -> Dict[str, Any]:
+        protagonist, antagonist = self._fallback_character_blueprints(premise)
         return {
             "title": f"《{premise[:12] or '无名世界'}》",
             "premise": premise,
             "world_rules": ["角色行动必须符合自身认知与目标。"],
             "tone": "冒险",
             "characters": [
-                {
-                    "name": "主角",
-                    "description": "故事的核心行动者。",
-                    "personality": "谨慎而坚定",
-                    "goals": ["推进主线目标", "守住关键底线"],
-                },
-                {
-                    "name": "对手",
-                    "description": "推动冲突升级的关键角色。",
-                    "personality": "强势而多疑",
-                    "goals": ["阻止主角", "扩大自身优势"],
-                },
+                protagonist,
+                antagonist,
             ],
             "constraints": [
                 {
@@ -376,6 +367,69 @@ class DirectorAgent:
                 }
             ],
         }
+
+    def _fallback_character_blueprints(
+        self, premise: str
+    ) -> tuple[Dict[str, Any], Dict[str, Any]]:
+        if "克苏鲁" in premise and ("赛博" in premise or "义体" in premise):
+            return (
+                {
+                    "name": "灵能义体修士",
+                    "description": "在旧日污染与机械城邦夹缝中求生的破局者。",
+                    "personality": "警觉、执拗，习惯用代价换取真相",
+                    "goals": ["追查世界融合的源头", "守住自我意识"],
+                },
+                {
+                    "name": "旧日机械祭司",
+                    "description": "试图把修行、魔法与机械信仰统一为禁忌秩序的操盘者。",
+                    "personality": "狂热、精密，善于制造不可逆选择",
+                    "goals": ["阻止真相泄露", "扩大旧日机械教团的控制"],
+                },
+            )
+        if "修仙" in premise or "武侠" in premise:
+            return (
+                {
+                    "name": "弃徒剑修",
+                    "description": "被旧秩序驱逐后仍不肯放弃道心的行动者。",
+                    "personality": "克制、坚韧，遇到压迫会主动反击",
+                    "goals": ["查清被抛弃的真相", "夺回选择命运的权利"],
+                },
+                {
+                    "name": "玄门追猎者",
+                    "description": "代表旧门规与暗处利益追索主角的人。",
+                    "personality": "强硬、多疑，擅长利用规则压迫对方",
+                    "goals": ["阻止弃徒揭露秘密", "维护玄门既有秩序"],
+                },
+            )
+        if "赛博" in premise:
+            return (
+                {
+                    "name": "义体流亡者",
+                    "description": "掌握关键数据却被城邦系统追捕的边缘人。",
+                    "personality": "敏锐、谨慎，愿意为自由冒险",
+                    "goals": ["破解追捕自己的系统", "找到可信盟友"],
+                },
+                {
+                    "name": "城邦猎手",
+                    "description": "奉命回收异常个体与失控技术的执行者。",
+                    "personality": "冷酷、务实，习惯把人当作资产编号",
+                    "goals": ["阻止义体流亡者外逃", "扩大城邦情报优势"],
+                },
+            )
+        return (
+            {
+                "name": "流亡破局者",
+                "description": "被卷入核心矛盾后必须主动选择道路的人。",
+                "personality": "谨慎而坚定，愿意承担代价",
+                "goals": ["推进主线目标", "守住关键底线"],
+            },
+            {
+                "name": "秩序追猎者",
+                "description": "推动冲突升级并维护既有秩序的关键角色。",
+                "personality": "强势而多疑，善于压迫对手",
+                "goals": ["阻止破局者", "扩大自身优势"],
+            },
+        )
 
     def _select_spotlight_character_ids(
         self,

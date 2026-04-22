@@ -1245,6 +1245,8 @@ def narrator_node(state: SimulationState) -> Dict[str, Any]:
             top_p=0.95,
             on_token=callbacks.get("on_token"),
         )
+        if not prose.strip():
+            raise ValueError("Narrator returned an empty completion")
     except Exception:
         prose = (
             f"{current_node.title}继续展开。{narrator_input.summary}"

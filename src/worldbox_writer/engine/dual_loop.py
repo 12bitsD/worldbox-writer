@@ -299,11 +299,14 @@ def invoke_isolated_actor_intent(
         max_tokens=320,
         top_p=0.95,
     )
+    if not raw.strip():
+        raise ValueError("Actor returned an empty completion")
+
     data = _parse_json_object(raw)
     summary = str(
         data.get("summary")
         or data.get("description")
-        or f"{character.name} 暂时观察局势，寻找下一步机会。"
+        or _fallback_actor_summary(character, scene_plan, raw=raw)
     ).strip()
     action_type = str(data.get("action_type") or "action").strip() or "action"
     rationale = str(data.get("rationale") or "").strip()
@@ -560,14 +563,18 @@ def _fallback_actor_intent(
     *,
     reason: str,
 ) -> ActionIntent:
+    summary = _fallback_actor_summary(character, scene_plan)
     return ActionIntent(
         scene_id=scene_plan.scene_id,
         actor_id=str(character.id),
         actor_name=character.name,
         action_type="reaction",
-        summary=f"{character.name} 暂时保持观察，等待更明确的机会。",
-        rationale="Actor intent generation failed; runtime emitted a safe fallback.",
-        confidence=0.2,
+        summary=summary,
+        rationale=(
+            "Actor intent generation failed; runtime emitted a deterministic "
+            "story-forward fallback."
+        ),
+        confidence=0.35,
         prompt_trace_id=prompt_trace.trace_id,
         metadata={
             "synthetic": True,
@@ -576,6 +583,53 @@ def _fallback_actor_intent(
             "tick": scene_plan.tick,
             "error": reason[:200],
         },
+    )
+
+
+def _compact_text(value: str, *, limit: int = 120) -> str:
+    text = " ".join(value.strip().split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+
+def _fallback_actor_summary(
+    character: Character,
+    scene_plan: ScenePlan,
+    *,
+    raw: str = "",
+) -> str:
+    raw_text = _compact_text(raw, limit=100)
+    if raw_text:
+        return raw_text
+
+    goal = character.goals[0] if character.goals else "推进自身目标"
+    scene_focus = (
+        scene_plan.objective
+        or scene_plan.public_summary
+        or scene_plan.title
+        or "当前主线"
+    )
+    scene_focus = _compact_text(scene_focus, limit=64)
+    name = character.name
+
+    if any(keyword in goal for keyword in ("阻止", "压制", "扩大", "夺取")):
+        return (
+            f"{name}围绕“{goal}”主动设置阻碍，借“{scene_focus}”逼迫对方"
+            "暴露选择与代价。"
+        )
+    if scene_plan.narrative_pressure == "intense":
+        return (
+            f"{name}围绕“{goal}”直接逼近冲突核心，沿“{scene_focus}”" "抛出高风险选择。"
+        )
+    if scene_plan.narrative_pressure == "calm":
+        return (
+            f"{name}围绕“{goal}”整理上一幕线索，沿“{scene_focus}”"
+            "推进一次可验证的准备行动。"
+        )
+    return (
+        f"{name}围绕“{goal}”采取具体行动，沿“{scene_focus}”推进线索，"
+        "并制造新的阻力或选择。"
     )
 
 

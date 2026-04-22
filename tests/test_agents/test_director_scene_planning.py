@@ -67,3 +67,16 @@ def test_plan_scene_falls_back_to_alive_characters_when_no_scene_cast() -> None:
     assert scene_plan.spotlight_character_ids == [str(alice.id), str(bob.id)]
     assert scene_plan.public_summary == "当前聚焦角色：阿璃、白夜"
     assert scene_plan.metadata["planning_mode"] == "heuristic-scene-planner-v1"
+
+
+def test_fallback_world_init_uses_premise_specific_character_blueprints() -> None:
+    director = DirectorAgent()
+
+    payload = director._fallback_world_init_data(
+        "一个魔法，修仙，武侠，奇幻，赛博朋克，克苏鲁融合在一起的世界"
+    )
+
+    names = [character["name"] for character in payload["characters"]]
+    assert "主角" not in names
+    assert "对手" not in names
+    assert names == ["灵能义体修士", "旧日机械祭司"]

@@ -1,7 +1,14 @@
 import json
+from types import SimpleNamespace
+
+import pytest
 
 from worldbox_writer.utils import llm as llm_module
-from worldbox_writer.utils.llm import get_provider_info, resolve_llm_route
+from worldbox_writer.utils.llm import (
+    EmptyLLMResponseError,
+    get_provider_info,
+    resolve_llm_route,
+)
 
 
 def test_route_group_overrides_apply_by_role(monkeypatch):
@@ -103,3 +110,28 @@ def test_provider_info_reports_logic_and_creative_routes(monkeypatch):
 
     assert info["routing"]["logic"]["provider"] == "openai"
     assert info["routing"]["creative"]["provider"] == "kimi"
+
+
+def test_chat_completion_treats_empty_provider_response_as_failure(monkeypatch):
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=""))]
+    )
+    client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(create=lambda **kwargs: response)
+        )
+    )
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("LLM_MODEL", "gpt-4.1-mini")
+    monkeypatch.setattr(llm_module, "get_llm_client", lambda route: client)
+
+    with pytest.raises(EmptyLLMResponseError):
+        llm_module.chat_completion(
+            [{"role": "user", "content": "只输出 OK"}],
+            role="director",
+            max_tokens=8,
+        )
+
+    metadata = llm_module.get_last_llm_call_metadata()
+    assert metadata["status"] == "failed"
+    assert metadata["estimated_completion_tokens"] == 0

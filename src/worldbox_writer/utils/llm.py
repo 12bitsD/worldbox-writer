@@ -71,6 +71,10 @@ GEMINI_MODEL_MAP = {
 DEFAULT_PRICE_OVERRIDES: dict[str, dict[str, float]] = {}
 
 
+class EmptyLLMResponseError(RuntimeError):
+    """Raised when a provider returns a syntactically successful empty response."""
+
+
 def _load_dotenv() -> None:
     import pathlib
 
@@ -610,6 +614,9 @@ def chat_completion(
         else:
             response = client.chat.completions.create(**cast(Any, kwargs))
             text = response.choices[0].message.content or ""
+
+        if not text.strip():
+            raise EmptyLLMResponseError("LLM provider returned an empty completion")
 
         completion_tokens = _estimate_tokens(text)
         _set_last_llm_call_metadata(
