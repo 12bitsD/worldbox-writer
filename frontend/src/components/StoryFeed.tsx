@@ -235,6 +235,13 @@ export function StoryFeed({
 }: StoryFeedProps) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [activeMentionKey, setActiveMentionKey] = useState<string | null>(null);
+  const [showSimLog, setShowSimLog] = useState<boolean>(false);
+  const [highlightMenu, setHighlightMenu] = useState<{
+    nodeId: string;
+    text: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const consoleRefs = useRef(new Map<string, HTMLDivElement>());
   const readerRefs = useRef(new Map<string, HTMLElement>());
   const readerPaneRef = useRef<HTMLDivElement | null>(null);
@@ -262,6 +269,47 @@ export function StoryFeed({
     ? selectedNodeId
     : nodes.at(-1)?.id ?? null;
 
+  useEffect(() => {
+    const handleSelection = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+        setHighlightMenu(null);
+        return;
+      }
+      
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      const text = selection.toString().trim();
+      
+      if (!text) {
+        setHighlightMenu(null);
+        return;
+      }
+
+      // Find which node this belongs to
+      let container = range.startContainer.parentElement;
+      let nodeId = null;
+      while (container && container !== readerPaneRef.current) {
+        if (container.getAttribute('data-node-id')) {
+          nodeId = container.getAttribute('data-node-id');
+          break;
+        }
+        container = container.parentElement;
+      }
+
+      if (nodeId) {
+        setHighlightMenu({
+          nodeId,
+          text,
+          x: rect.left + rect.width / 2,
+          y: rect.top - 10,
+        });
+      }
+    };
+
+    document.addEventListener("mouseup", handleSelection);
+    return () => document.removeEventListener("mouseup", handleSelection);
+  }, []);
   useEffect(() => {
     const root = readerPaneRef.current;
     if (!root || typeof IntersectionObserver === "undefined") return;
@@ -330,16 +378,26 @@ export function StoryFeed({
       <div className="story-workspace-header">
         <div>
           <div className="label">双循环工作台</div>
-          <div className="story-workspace-title">内循环控制台 / 外循环小说阅读</div>
+          <div className="story-workspace-title" style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span>故事正文 (Manuscript)</span>
+            <button
+              className={`btn ${showSimLog ? "btn-primary" : "btn-ghost"}`}
+              style={{ fontSize: 11, padding: "4px 8px" }}
+              onClick={() => setShowSimLog(!showSimLog)}
+            >
+              {showSimLog ? "隐藏推演日志" : "显示推演日志"}
+            </button>
+          </div>
         </div>
         <div className="story-workspace-hint">
-          点击任一侧节点可跳转并高亮另一侧锚点
+          {showSimLog && "点击任一侧节点可跳转并高亮另一侧锚点"}
         </div>
       </div>
 
-      <div className="story-split">
-        <aside className="story-console" ref={consolePaneRef}>
-          <div className="story-pane-label">跑团控制台</div>
+      <div className={`story-split ${showSimLog ? "show-sim-log" : "hide-sim-log"}`}>
+        {showSimLog && (
+          <aside className="story-console animate-fade-in" ref={consolePaneRef}>
+            <div className="story-pane-label">推演日志 (Sim Log)</div>
 
           {nodes.map((node) => {
             const isActive = activeNodeId === node.id;
@@ -398,10 +456,11 @@ export function StoryFeed({
               </span>
             )}
           </div>
-        </aside>
+          </aside>
+        )}
 
         <main className="novel-reader" ref={readerPaneRef}>
-          <div className="story-pane-label">小说阅读区</div>
+          <div className="story-pane-label">故事正文 (Manuscript)</div>
           {nodes.map((node) => {
             const narrativeText = node.rendered_text || node.streaming_text || "";
             const isActive = activeNodeId === node.id;
@@ -455,6 +514,54 @@ export function StoryFeed({
               <div className="reader-placeholder">
                 Agent 集群正在推演下一个故事节点...
               </div>
+            </div>
+          )}
+
+          {highlightMenu && !isRunning && (
+            <div
+              className="highlight-menu"
+              style={{
+                position: "fixed",
+                left: highlightMenu.x,
+                top: highlightMenu.y,
+                transform: "translate(-50%, -100%)",
+                background: "var(--color-bg-card)",
+                border: "1px solid var(--color-border)",
+                boxShadow: "0 10px 24px rgba(0, 0, 0, 0.15)",
+                borderRadius: 8,
+                padding: "6px",
+                display: "flex",
+                gap: 8,
+                zIndex: 1000,
+              }}
+              onMouseDown={(e) => e.preventDefault()} // prevent selection clearing
+            >
+              <button
+                className="btn btn-ghost"
+                style={{ fontSize: 12, padding: "4px 8px" }}
+                onClick={() => {
+                  setShowSimLog(true);
+                  activateNode(highlightMenu.nodeId, "reader");
+                  setHighlightMenu(null);
+                }}
+              >
+                [?] 溯源逻辑
+              </button>
+              {branchingEnabled && (
+                <button
+                  className="btn btn-ghost"
+                  style={{ fontSize: 12, padding: "4px 8px", color: "var(--color-danger)" }}
+                  onClick={() => {
+                    const rewriteIntent = window.prompt("强制扭转此处的剧情为：", `将“${highlightMenu.text}”改为：`);
+                    if (rewriteIntent) {
+                      onForkNode(highlightMenu.nodeId);
+                    }
+                    setHighlightMenu(null);
+                  }}
+                >
+                  [✎] 强行扭转
+                </button>
+              )}
             </div>
           )}
         </main>

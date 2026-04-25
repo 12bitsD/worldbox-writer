@@ -8,7 +8,7 @@ afterEach(() => cleanup());
 const context = "第一幕结尾，阿璃已经发现断桥下的潮雾并非自然现象。";
 
 describe("InterventionPanel", () => {
-  it("keeps the waiting state as a compact reading bar", () => {
+  it("renders the ghost command line and context", () => {
     const onSubmit = vi.fn();
     const onSkip = vi.fn();
 
@@ -20,16 +20,27 @@ describe("InterventionPanel", () => {
       />
     );
 
-    expect(screen.getByText("关键节点")).toBeInTheDocument();
+    expect(screen.getByText("剧情引导 (Plot Guide)")).toBeInTheDocument();
     expect(screen.getByText(context)).toBeInTheDocument();
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "自然推进" }));
+  it("submits empty form to naturally progress (skip)", () => {
+    const onSkip = vi.fn();
+
+    render(
+      <InterventionPanel
+        context={context}
+        onSubmit={vi.fn()}
+        onSkip={onSkip}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "推进 ↵" }));
 
     expect(onSkip).toHaveBeenCalledTimes(1);
   });
 
-  it("opens intervention controls on demand and submits custom guidance", () => {
+  it("submits custom instruction", () => {
     const onSubmit = vi.fn();
 
     render(
@@ -40,31 +51,30 @@ describe("InterventionPanel", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "干预" }));
-    expect(screen.getByRole("dialog", { name: "关键节点干预" })).toBeInTheDocument();
-
-    fireEvent.change(screen.getByPlaceholderText("输入你的干预指令..."), {
+    const input = screen.getByPlaceholderText("输入神谕干预世界，或直接按回车自然推进...");
+    fireEvent.change(input, {
       target: { value: "让阿璃主动踏入潮雾并付出代价" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "提交干预" }));
+    
+    // The button text changes when there is input
+    fireEvent.click(screen.getByRole("button", { name: "引导" }));
 
     expect(onSubmit).toHaveBeenCalledWith("让阿璃主动踏入潮雾并付出代价");
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("moves setting edits into the drawer instead of stacking another panel", () => {
+  it("submits quick action immediately", () => {
+    const onSubmit = vi.fn();
+
     render(
       <InterventionPanel
         context={context}
-        onSubmit={vi.fn()}
+        onSubmit={onSubmit}
         onSkip={vi.fn()}
-        editPanel={<div>设定编辑内容</div>}
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "编辑设定" }));
+    fireEvent.click(screen.getByRole("button", { name: "局势急剧恶化" }));
 
-    expect(screen.getByRole("dialog", { name: "关键节点干预" })).toBeInTheDocument();
-    expect(screen.getByText("设定编辑内容")).toBeInTheDocument();
+    expect(onSubmit).toHaveBeenCalledWith("局势急剧恶化");
   });
 });

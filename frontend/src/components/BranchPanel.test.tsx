@@ -76,15 +76,13 @@ describe("BranchPanel", () => {
       />
     );
 
-    expect(screen.getByText("世界线")).toBeInTheDocument();
+    expect(screen.getByText("时间线 (Timelines)")).toBeInTheDocument();
     expect(screen.getByText("主线")).toBeInTheDocument();
     expect(screen.getByText("支线A")).toBeInTheDocument();
-    expect(screen.getByText("支线摘要")).toBeInTheDocument();
   });
 
-  it("invokes switch and pacing callbacks", () => {
+  it("invokes switch callback on click", () => {
     const onSwitch = vi.fn();
-    const onPacingChange = vi.fn();
 
     render(
       <BranchPanel
@@ -92,16 +90,12 @@ describe("BranchPanel", () => {
         compare={compare}
         isRunning={false}
         onSwitch={onSwitch}
-        onPacingChange={onPacingChange}
+        onPacingChange={vi.fn()}
       />
     );
 
-    fireEvent.click(screen.getByText("切换"));
-    fireEvent.change(screen.getAllByDisplayValue("高压")[0], {
-      target: { value: "calm" },
-    });
+    fireEvent.click(screen.getByText("支线A"));
 
     expect(onSwitch).toHaveBeenCalledWith("branch_a");
-    expect(onPacingChange).toHaveBeenCalledWith("branch_a", "calm");
   });
 });

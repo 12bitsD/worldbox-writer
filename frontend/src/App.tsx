@@ -7,12 +7,8 @@ import { WorldPanel } from "./components/WorldPanel";
 import { StoryFeed } from "./components/StoryFeed";
 import { InterventionPanel } from "./components/InterventionPanel";
 import { ExportPanel } from "./components/ExportPanel";
-import { EditPanel } from "./components/EditPanel";
 import { RelationshipPanel } from "./components/RelationshipPanel";
-import { TelemetryPanel } from "./components/TelemetryPanel";
 import { BranchPanel } from "./components/BranchPanel";
-import { ProgressPanel } from "./components/ProgressPanel";
-import { CreativeStudio } from "./components/CreativeStudio";
 
 export default function App() {
   const {
@@ -33,19 +29,12 @@ export default function App() {
     reset,
   } =
     useSimulation();
-  const [rightTab, setRightTab] = useState<"graph" | "telemetry">("graph");
   const [worldPanelCollapsed, setWorldPanelCollapsed] = useState(false);
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
 
   const isRunning = state?.status === "running" || state?.status === "initializing";
   const isWaiting = state?.status === "waiting";
   const isComplete = state?.status === "complete";
-  const showProgressPanel = Boolean(
-    state &&
-      (state.status === "initializing" || state.status === "running") &&
-      !state.nodes.some((node) => Boolean(node.rendered_text)) &&
-      (state.telemetry.length > 0 || state.nodes.length === 0)
-  );
 
   const handleSkip = () => {
     sendIntervention("按照故事自然发展，不干预");
@@ -107,23 +96,6 @@ export default function App() {
     );
   }
 
-  const agentList = [
-    { name: "Director", active: isRunning },
-    { name: "WorldBuilder", active: isRunning && (state?.nodes.length ?? 0) === 0 },
-    { name: "Actor × N", active: isRunning },
-    { name: "GateKeeper", active: isRunning },
-    { name: "NodeDetector", active: isRunning },
-    { name: "Narrator", active: isRunning },
-  ];
-
-  const nodeTypeLegend = [
-    { type: "setup", label: "序章", color: "#6b7280" },
-    { type: "development", label: "发展", color: "#374151" },
-    { type: "branch", label: "分支", color: "#d97706" },
-    { type: "climax", label: "高潮", color: "#dc2626" },
-    { type: "resolution", label: "结局", color: "#059669" },
-  ];
-
   return (
     <>
       <Header status={state?.status ?? null} onReset={reset} />
@@ -165,7 +137,7 @@ export default function App() {
               marginBottom: worldPanelCollapsed ? 0 : 16,
             }}
           >
-            {!worldPanelCollapsed && <div className="label">世界面板</div>}
+            {!worldPanelCollapsed && <div className="label">设定集 (Lorebook)</div>}
             <button
               className="btn btn-ghost"
               style={{
@@ -174,10 +146,10 @@ export default function App() {
                 fontSize: 11,
                 padding: "6px 8px",
               }}
-              aria-label={worldPanelCollapsed ? "展开世界面板" : "收起世界面板"}
+              aria-label={worldPanelCollapsed ? "展开设定集" : "收起设定集"}
               onClick={() => setWorldPanelCollapsed((value) => !value)}
             >
-              {worldPanelCollapsed ? "世界" : "收起"}
+              {worldPanelCollapsed ? "设定" : "收起"}
             </button>
           </div>
 
@@ -194,21 +166,11 @@ export default function App() {
           )}
         </aside>
 
-        {/* Center: Story feed + intervention */}
+        {/* Center: Story feed */}
         <main
           className="app-main-panel"
         >
           <div className="app-story-scroll">
-            {state && (
-              <>
-                {showProgressPanel && (
-                  <ProgressPanel
-                    events={state.telemetry}
-                    isRunning={isRunning}
-                  />
-                )}
-              </>
-            )}
             {state && (
               <StoryFeed
                 nodes={state.nodes}
@@ -222,37 +184,7 @@ export default function App() {
                 onWorldUpdated={refresh}
               />
             )}
-            {isComplete && simId && (
-              <div style={{ marginTop: 16 }}>
-                <ExportPanel simId={simId} onExport={doExport} />
-              </div>
-            )}
-            {!isRunning && simId && state?.world && (
-              <CreativeStudio
-                simId={simId}
-                state={state}
-                onRefresh={refresh}
-              />
-            )}
           </div>
-
-          {isWaiting && state?.intervention_context && (
-            <InterventionPanel
-              context={state.intervention_context}
-              onSubmit={sendIntervention}
-              onSkip={handleSkip}
-              editPanel={
-                simId && state.world ? (
-                  <EditPanel
-                    simId={simId}
-                    world={state.world}
-                    onUpdated={refresh}
-                    embedded
-                  />
-                ) : undefined
-              }
-            />
-          )}
         </main>
 
         {/* Right: Meta info panel */}
@@ -269,7 +201,7 @@ export default function App() {
               marginBottom: rightPanelCollapsed ? 0 : 16,
             }}
           >
-            {!rightPanelCollapsed && <div className="label">推演信息</div>}
+            {!rightPanelCollapsed && <div className="label">运行状态 (Status)</div>}
             <button
               className="btn btn-ghost"
               style={{
@@ -278,7 +210,7 @@ export default function App() {
                 fontSize: 11,
                 padding: "6px 8px",
               }}
-              aria-label={rightPanelCollapsed ? "展开推演信息" : "收起推演信息"}
+              aria-label={rightPanelCollapsed ? "展开运行状态" : "收起运行状态"}
               onClick={() => setRightPanelCollapsed((value) => !value)}
             >
               {rightPanelCollapsed ? "展开" : "收起"}
@@ -286,150 +218,46 @@ export default function App() {
           </div>
 
           {!rightPanelCollapsed && (
-            <>
-          {simId && (
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginBottom: 4 }}>
-                推演 ID
-              </div>
-              <div
-                style={{
-                  fontFamily: "monospace",
-                  fontSize: 12,
-                  padding: "4px 8px",
-                  background: "var(--color-bg)",
-                  border: "1px solid var(--color-border)",
-                }}
-              >
-                {simId}
-              </div>
-            </div>
-          )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {isComplete && simId && (
+                <div style={{ borderBottom: "1px solid var(--color-border)", paddingBottom: 16 }}>
+                  <ExportPanel simId={simId} onExport={doExport} />
+                </div>
+              )}
 
-          {state && (
-            <>
-              {state.world && state.features.branching_enabled && (
-                <div style={{ marginBottom: 16 }}>
-                  <BranchPanel
-                    world={state.world}
-                    compare={branchCompare}
+              {state && (
+                <>
+                  {state.world && state.features.branching_enabled && (
+                    <div style={{ borderBottom: "1px solid var(--color-border)", paddingBottom: 16 }}>
+                      <BranchPanel
+                        world={state.world}
+                        compare={branchCompare}
+                        isRunning={isRunning}
+                        onSwitch={activateBranch}
+                        onPacingChange={setBranchPacing}
+                      />
+                    </div>
+                  )}
+
+                  {isWaiting && state.intervention_context && (
+                    <div style={{ borderBottom: "1px solid var(--color-border)", paddingBottom: 16 }}>
+                      <InterventionPanel
+                        context={state.intervention_context}
+                        onSubmit={sendIntervention}
+                        onSkip={handleSkip}
+                      />
+                    </div>
+                  )}
+
+                  <RelationshipPanel
+                    world={state.world ?? null}
+                    simId={simId}
                     isRunning={isRunning}
-                    onSwitch={activateBranch}
-                    onPacingChange={setBranchPacing}
+                    onUpdated={refresh}
                   />
-                </div>
+                </>
               )}
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginBottom: 4 }}>
-                  故事节点
-                </div>
-                <div style={{ fontSize: 24, fontWeight: 800 }}>{state.nodes.length}</div>
-              </div>
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginBottom: 4 }}>
-                  干预次数
-                </div>
-                <div style={{ fontSize: 24, fontWeight: 800 }}>
-                  {state.nodes.filter((n) => n.requires_intervention).length}
-                </div>
-              </div>
-              {state.world && (
-                <div style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginBottom: 4 }}>
-                    当前时间轴
-                  </div>
-                  <div style={{ fontSize: 24, fontWeight: 800 }}>T{state.world.tick}</div>
-                </div>
-              )}
-            </>
-          )}
-
-          <hr style={{ border: "none", borderTop: "1px solid var(--color-border)", margin: "16px 0" }} />
-
-          <div className="label" style={{ marginBottom: 10 }}>
-            节点类型
-          </div>
-          {nodeTypeLegend.map((item) => (
-            <div
-              key={item.type}
-              style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, fontSize: 12 }}
-            >
-              <span
-                style={{
-                  width: 12,
-                  height: 12,
-                  background: item.color,
-                  display: "inline-block",
-                  flexShrink: 0,
-                }}
-              />
-              <span style={{ color: "var(--color-text-secondary)" }}>{item.label}</span>
             </div>
-          ))}
-
-          <hr style={{ border: "none", borderTop: "1px solid var(--color-border)", margin: "16px 0" }} />
-
-          <div className="label" style={{ marginBottom: 10 }}>
-            Agent 状态
-          </div>
-          {agentList.map((agent) => (
-            <div
-              key={agent.name}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 6,
-                fontSize: 12,
-              }}
-            >
-              <span style={{ color: "var(--color-text-secondary)" }}>{agent.name}</span>
-              <span
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: "50%",
-                  background: agent.active ? "var(--color-success)" : "var(--color-border)",
-                  display: "inline-block",
-                }}
-                className={agent.active ? "animate-pulse-dot" : ""}
-              />
-            </div>
-          ))}
-
-          <hr style={{ border: "none", borderTop: "1px solid var(--color-border)", margin: "16px 0" }} />
-
-          <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-            <button
-              className={`btn ${rightTab === "graph" ? "btn-primary" : ""}`}
-              style={{ flex: 1, justifyContent: "center", fontSize: 11, padding: "6px 10px" }}
-              onClick={() => setRightTab("graph")}
-            >
-              Graph
-            </button>
-            <button
-              className={`btn ${rightTab === "telemetry" ? "btn-primary" : ""}`}
-              style={{ flex: 1, justifyContent: "center", fontSize: 11, padding: "6px 10px" }}
-              onClick={() => setRightTab("telemetry")}
-            >
-              Telemetry
-            </button>
-          </div>
-
-          {rightTab === "graph" ? (
-            <RelationshipPanel
-              world={state?.world ?? null}
-              simId={simId}
-              isRunning={isRunning}
-              onUpdated={refresh}
-            />
-          ) : (
-            <TelemetryPanel
-              events={state?.telemetry ?? []}
-              isRunning={isRunning}
-            />
-          )}
-            </>
           )}
         </aside>
       </div>

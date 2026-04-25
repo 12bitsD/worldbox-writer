@@ -163,7 +163,7 @@ export function RelationshipPanel({
           marginBottom: 10,
         }}
       >
-        <div className="label">关系图谱</div>
+        <div className="label">关系网 (Network)</div>
         {focusedCharacterId && (
           <button
             className="btn"

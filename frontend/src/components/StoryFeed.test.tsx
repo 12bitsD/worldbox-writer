@@ -87,8 +87,12 @@ describe("StoryFeed", () => {
       />
     );
 
-    expect(screen.getByText("跑团控制台")).toBeInTheDocument();
-    expect(screen.getByText("小说阅读区")).toBeInTheDocument();
+    expect(screen.getAllByText("故事正文 (Manuscript)")[0]).toBeInTheDocument();
+    
+    // Toggle the simulation log
+    fireEvent.click(screen.getByRole("button", { name: "显示推演日志" }));
+
+    expect(screen.getByText("推演日志 (Sim Log)")).toBeInTheDocument();
     expect(screen.getByText("内循环")).toBeInTheDocument();
     expect(screen.getByText("阿璃来到断桥。")).toBeInTheDocument();
     expect(screen.getByText("阿璃在潮雾中停步。")).toBeInTheDocument();
@@ -109,6 +113,9 @@ describe("StoryFeed", () => {
         onForkNode={vi.fn()}
       />
     );
+
+    // Toggle the simulation log
+    fireEvent.click(screen.getByRole("button", { name: "显示推演日志" }));
 
     expect(screen.getByText("SceneScript")).toBeInTheDocument();
     expect(screen.getByText("GM 结算后的场景摘要。")).toBeInTheDocument();
@@ -144,6 +151,9 @@ describe("StoryFeed", () => {
         telemetryEvents={[buildEvent()]}
       />
     );
+
+    // Toggle the simulation log
+    fireEvent.click(screen.getByRole("button", { name: "显示推演日志" }));
 
     expect(screen.getByText("工程呼吸灯")).toBeInTheDocument();
     expect(screen.getByText("规则引擎校验：失败！李四没有带刀")).toBeInTheDocument();

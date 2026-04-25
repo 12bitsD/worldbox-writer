@@ -1,4 +1,5 @@
 import type { BranchCompareSummary, WorldData } from "../types";
+import { useMemo } from "react";
 
 interface BranchPanelProps {
   world: WorldData;
@@ -11,50 +12,91 @@ interface BranchPanelProps {
   ) => void;
 }
 
-const pacingLabel: Record<"calm" | "balanced" | "intense", string> = {
-  calm: "平缓",
-  balanced: "均衡",
-  intense: "高压",
-};
+// Removed unused pacingLabel
 
 export function BranchPanel({
   world,
   compare,
   isRunning,
   onSwitch,
-  onPacingChange,
 }: BranchPanelProps) {
-  const compareEntries =
-    compare ??
-    Object.fromEntries(
-      Object.entries(world.branches).map(([branchId, branch]) => [
-        branchId,
-        {
-          branch_id: branchId,
-          label: branch.label,
-          forked_from_node: branch.forked_from_node,
-          source_branch_id: branch.source_branch_id ?? null,
-          source_sim_id: branch.source_sim_id ?? null,
-          created_at_tick: branch.created_at_tick ?? 0,
-          latest_node_id: branch.latest_node_id ?? null,
-          latest_tick: branch.latest_tick ?? world.tick,
-          nodes_count: branch.nodes_count ?? 0,
-          last_node_summary: branch.last_node_summary ?? null,
-          status: branch.status ?? (branchId === world.active_branch_id ? "running" : "complete"),
-          pacing: branch.pacing ?? "balanced",
-          is_active: branchId === world.active_branch_id,
-        } satisfies BranchCompareSummary,
-      ])
-    );
+  const compareEntries = useMemo(() => {
+    return compare ??
+      Object.fromEntries(
+        Object.entries(world.branches).map(([branchId, branch]) => [
+          branchId,
+          {
+            branch_id: branchId,
+            label: branch.label,
+            forked_from_node: branch.forked_from_node,
+            source_branch_id: branch.source_branch_id ?? null,
+            source_sim_id: branch.source_sim_id ?? null,
+            created_at_tick: branch.created_at_tick ?? 0,
+            latest_node_id: branch.latest_node_id ?? null,
+            latest_tick: branch.latest_tick ?? world.tick,
+            nodes_count: branch.nodes_count ?? 0,
+            last_node_summary: branch.last_node_summary ?? null,
+            status: branch.status ?? (branchId === world.active_branch_id ? "running" : "complete"),
+            pacing: branch.pacing ?? "balanced",
+            is_active: branchId === world.active_branch_id,
+          } as BranchCompareSummary,
+        ])
+      );
+  }, [compare, world.branches, world.active_branch_id, world.tick]);
 
-  const branchEntries = Object.values(compareEntries).sort((left, right) => {
-    if (left.is_active) return -1;
-    if (right.is_active) return 1;
-    return left.created_at_tick - right.created_at_tick;
-  });
+  const branchEntries = Object.values(compareEntries);
+
+  // 构建树形结构
+  const rootBranches = branchEntries.filter((b) => !b.source_branch_id);
+  const getChildren = (branchId: string) => branchEntries.filter((b) => b.source_branch_id === branchId).sort((a, b) => a.created_at_tick - b.created_at_tick);
+
+  const renderBranchNode = (branch: BranchCompareSummary, depth: number) => {
+    const children = getChildren(branch.branch_id);
+    return (
+      <div key={branch.branch_id} style={{ display: "flex", flexDirection: "column" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            marginLeft: depth * 20,
+            padding: "8px 12px",
+            background: branch.is_active ? "var(--color-bg-card)" : "transparent",
+            border: branch.is_active ? "1px solid var(--color-accent)" : "1px solid transparent",
+            borderLeft: branch.is_active ? "3px solid var(--color-accent)" : "3px solid var(--color-border)",
+            borderRadius: branch.is_active ? 6 : 0,
+            marginBottom: 4,
+            cursor: "pointer",
+            transition: "all 0.2s ease",
+          }}
+          onClick={() => {
+            if (!branch.is_active && !isRunning) {
+              onSwitch(branch.branch_id);
+            }
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontWeight: 700, fontSize: 13, color: branch.is_active ? "var(--color-accent)" : "var(--color-text)" }}>
+                {branch.label || branch.branch_id}
+              </span>
+              {branch.is_active && (
+                <span className="badge" style={{ borderColor: "var(--color-accent)", color: "var(--color-accent)" }}>当前</span>
+              )}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: 2, display: "flex", gap: 8 }}>
+              <span>节点数: {branch.nodes_count}</span>
+              <span>最新: T{branch.latest_tick}</span>
+            </div>
+          </div>
+        </div>
+        {children.map((child) => renderBranchNode(child, depth + 1))}
+      </div>
+    );
+  };
 
   return (
-    <div className="card" style={{ padding: 16 }}>
+    <div style={{ marginBottom: 16 }}>
       <div
         style={{
           display: "flex",
@@ -63,10 +105,7 @@ export function BranchPanel({
           marginBottom: 10,
         }}
       >
-        <div className="label">世界线</div>
-        <span style={{ fontSize: 11, color: "var(--color-text-muted)" }}>
-          当前：{world.branches[world.active_branch_id]?.label ?? world.active_branch_id}
-        </span>
+        <div className="label">时间线 (Timelines)</div>
       </div>
 
       {branchEntries.length === 0 ? (
@@ -74,122 +113,10 @@ export function BranchPanel({
           目前只有主线。
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {branchEntries.map((branch) => (
-            <div
-              key={branch.branch_id}
-              className="card card-sm"
-              style={{
-                borderLeft: branch.is_active
-                  ? "3px solid var(--color-warning)"
-                  : "3px solid var(--color-border)",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 8,
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 12 }}>
-                    {branch.label}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 10,
-                      color: "var(--color-text-muted)",
-                      marginTop: 2,
-                    }}
-                  >
-                    {branch.branch_id}
-                  </div>
-                </div>
-                {branch.is_active ? (
-                  <span
-                    style={{
-                      fontSize: 10,
-                      padding: "2px 6px",
-                      border: "1px solid var(--color-warning)",
-                      color: "var(--color-warning)",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    Active
-                  </span>
-                ) : (
-                  <button
-                    className="btn"
-                    style={{ fontSize: 11, padding: "6px 10px" }}
-                    disabled={isRunning}
-                    onClick={() => onSwitch(branch.branch_id)}
-                  >
-                    切换
-                  </button>
-                )}
-              </div>
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                  gap: 8,
-                  marginTop: 10,
-                  fontSize: 11,
-                  color: "var(--color-text-secondary)",
-                }}
-              >
-                <div>来源节点：{branch.forked_from_node ?? "主线起点"}</div>
-                <div>节点数：{branch.nodes_count}</div>
-                <div>最新 Tick：T{branch.latest_tick}</div>
-                <div>状态：{branch.status}</div>
-              </div>
-
-              {branch.last_node_summary && (
-                <div
-                  style={{
-                    marginTop: 8,
-                    fontSize: 11,
-                    color: "var(--color-text-muted)",
-                    lineHeight: 1.5,
-                  }}
-                >
-                  {branch.last_node_summary}
-                </div>
-              )}
-
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 8,
-                  marginTop: 10,
-                }}
-              >
-                <span style={{ fontSize: 11, color: "var(--color-text-muted)" }}>
-                  节奏：{pacingLabel[branch.pacing]}
-                </span>
-                <select
-                  value={branch.pacing}
-                  disabled={isRunning}
-                  onChange={(event) =>
-                    onPacingChange(
-                      branch.branch_id,
-                      event.target.value as "calm" | "balanced" | "intense"
-                    )
-                  }
-                  style={{ fontSize: 11 }}
-                >
-                  <option value="calm">平缓</option>
-                  <option value="balanced">均衡</option>
-                  <option value="intense">高压</option>
-                </select>
-              </div>
-            </div>
-          ))}
+        <div style={{ display: "flex", flexDirection: "column", position: "relative" }}>
+          {/* 左侧轨道辅助线 */}
+          <div style={{ position: "absolute", left: 1, top: 0, bottom: 0, width: 2, background: "var(--color-border-light)", zIndex: -1 }} />
+          {rootBranches.map((branch) => renderBranchNode(branch, 0))}
         </div>
       )}
     </div>

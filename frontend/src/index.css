@@ -1,16 +1,16 @@
 :root {
-  --color-bg: #f5f4f0;
-  --color-bg-card: #f9f8f5;
-  --color-text: #111111;
-  --color-text-secondary: #555555;
-  --color-text-muted: #999999;
-  --color-border: #d8d5ce;
-  --color-border-light: #e8e5de;
-  --color-accent: #111111;
-  --color-accent-hover: #333333;
-  --color-danger: #c0392b;
-  --color-success: #27ae60;
-  --color-warning: #e67e22;
+  --color-bg: #FDFBF7;
+  --color-bg-card: #FFFFFF;
+  --color-text: #1A1A1A;
+  --color-text-secondary: #4A4A4A;
+  --color-text-muted: #888888;
+  --color-border: #E5E0D8;
+  --color-border-light: #F2EFE9;
+  --color-accent: #8B5CF6;
+  --color-accent-hover: #7C3AED;
+  --color-danger: #E11D48;
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -125,9 +125,16 @@ html, body {
 
 .story-split {
   display: grid;
-  grid-template-columns: minmax(260px, 0.95fr) minmax(360px, 1.45fr);
   gap: 16px;
   align-items: start;
+}
+
+.story-split.show-sim-log {
+  grid-template-columns: minmax(240px, 0.6fr) minmax(460px, 1.8fr);
+}
+
+.story-split.hide-sim-log {
+  grid-template-columns: 1fr;
 }
 
 .story-console,
@@ -139,15 +146,22 @@ html, body {
 }
 
 .story-console {
-  background: #efede6;
+  background: var(--color-bg);
   padding: 14px;
 }
 
 .novel-reader {
-  background: #fffdf7;
-  color: #181713;
-  padding: 24px clamp(20px, 4vw, 48px);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.7);
+  background: var(--color-bg-card);
+  color: var(--color-text);
+  padding: 24px clamp(20px, 4vw, 60px);
+  border: none;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
+  margin: 0 auto;
+  width: 100%;
+}
+
+.story-split.hide-sim-log .novel-reader {
+  max-width: 860px;
 }
 
 .story-pane-label {
