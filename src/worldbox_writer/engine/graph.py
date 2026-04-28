@@ -23,13 +23,14 @@ WorldBox Writer — Simulation Engine (LangGraph StateGraph).
 
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, Literal, Optional, cast
 
 from langgraph.graph import END, START, StateGraph
 from typing_extensions import NotRequired, TypedDict
 
 from worldbox_writer.agents.critic import CriticAgent
-from worldbox_writer.agents.director import DirectorAgent
+from worldbox_writer.agents.director import DirectorAgent, derive_title_from_premise
 from worldbox_writer.agents.gate_keeper import GateKeeperAgent
 from worldbox_writer.agents.gm import GMAgent
 from worldbox_writer.agents.node_detector import NodeDetector
@@ -1071,7 +1072,13 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
     # Detect intervention need — use detect(node, world)
     detector = NodeDetector()
     signal = detector.detect(new_node, world)
-    needs_intervention = signal is not None and signal.urgency in ["high", "critical"]
+    # Only trigger intervention on ticks where tick % 3 == 1 (ticks 1, 4, 7, 10...)
+    frequency_gate = world.tick % 3 == 1
+    needs_intervention = (
+        signal is not None
+        and signal.urgency in ["high", "critical"]
+        and frequency_gate
+    )
     new_node.requires_intervention = needs_intervention
     detector_fields = _llm_telemetry_fields(detector.last_call_metadata)
 
@@ -1149,16 +1156,23 @@ def narrator_node(state: SimulationState) -> Dict[str, Any]:
             {
                 "role": "system",
                 "content": (
-                    "你是一位出色的中文小说作者。将 GM 结算后的 SceneScript "
-                    "渲染为生动的小说正文。\n"
-                    "硬性要求：\n"
-                    "1. 用第三人称叙述，200-400字\n"
-                    "2. 包含场景描写、人物动作和对话\n"
-                    "3. 只能扩写 SceneScript 中的 summary、public_facts 与 beats，"
-                    "不得新增会改变剧情因果的新事实\n"
-                    "4. 不要写入 rejected_intent_ids 对应的被拒绝意图\n"
-                    "5. 与前文记忆保持一致，不要与已有记忆矛盾\n"
-                    "6. 只输出小说正文，不要有标题或其他内容"
+                    "你是一位出色的中文网络小说作家。你的任务是根据 GM 提供的场景脚本，"
+                    "创作一段引人入胜的小说章节。\n\n"
+                    "写作风格要求：\n"
+                    "1. 第三人称叙述，800-1500字\n"
+                    "2. 开头用环境描写建立氛围（天气、光线、声音、气味）\n"
+                    "3. 角色对话要有个性——用语气、用词、口癖体现性格差异\n"
+                    "4. 穿插角色的心理活动和微表情描写\n"
+                    "5. 段落之间有节奏变化：紧张时短句，舒缓时长句\n"
+                    "6. 章节结尾留悬念或情绪钩子\n\n"
+                    "创作边界：\n"
+                    "- 以 SceneScript 的 beats 为剧情骨架，在此基础上丰富细节\n"
+                    "- 不要改变 beats 中定义的核心事实（谁做了什么、结果是什么）\n"
+                    "- 可以添加：环境细节、配角反应、角色内心独白、感官描写\n"
+                    "- 不要写入 rejected intent ids 对应的被拒绝意图\n"
+                    "- 与前文记忆保持一致，不要与已有记忆矛盾\n\n"
+                    "输出合法 JSON：\n"
+                    '{"prose": "小说正文...", "style_notes": "本段风格说明"}'
                 ),
             },
             {
@@ -1186,13 +1200,22 @@ def narrator_node(state: SimulationState) -> Dict[str, Any]:
             {
                 "role": "system",
                 "content": (
-                    "你是一位出色的中文小说作者。将给定的故事事件描述渲染为生动的小说文本。\n"
-                    "要求：\n"
-                    "1. 用第三人称叙述，200-400字\n"
-                    "2. 包含场景描写、人物动作和对话\n"
-                    "3. 文笔流畅，富有画面感\n"
-                    "4. 与前文保持风格一致，不要与已有记忆矛盾\n"
-                    "5. 只输出小说正文，不要有标题或其他内容"
+                    "你是一位出色的中文网络小说作家。你的任务是根据 GM 提供的场景脚本，"
+                    "创作一段引人入胜的小说章节。\n\n"
+                    "写作风格要求：\n"
+                    "1. 第三人称叙述，800-1500字\n"
+                    "2. 开头用环境描写建立氛围（天气、光线、声音、气味）\n"
+                    "3. 角色对话要有个性——用语气、用词、口癖体现性格差异\n"
+                    "4. 穿插角色的心理活动和微表情描写\n"
+                    "5. 段落之间有节奏变化：紧张时短句，舒缓时长句\n"
+                    "6. 章节结尾留悬念或情绪钩子\n\n"
+                    "创作边界：\n"
+                    "- 以 beats 为剧情骨架，在此基础上丰富细节\n"
+                    "- 不要改变核心事实（谁做了什么、结果是什么）\n"
+                    "- 可以添加：环境细节、配角反应、角色内心独白、感官描写\n"
+                    "- 与前文记忆保持一致，不要与已有记忆矛盾\n\n"
+                    "输出合法 JSON：\n"
+                    '{"prose": "小说正文...", "style_notes": "本段风格说明"}'
                 ),
             },
             {
@@ -1237,16 +1260,29 @@ def narrator_node(state: SimulationState) -> Dict[str, Any]:
         )
 
     try:
-        prose = chat_completion(
+        raw_output = chat_completion(
             messages,
             role="narrator",
             temperature=0.8,
-            max_tokens=600,
+            max_tokens=2000,
             top_p=0.95,
             on_token=callbacks.get("on_token"),
         )
-        if not prose.strip():
+        if not raw_output.strip():
             raise ValueError("Narrator returned an empty completion")
+        # Strip markdown code block wrapper if present
+        clean = raw_output.strip()
+        if clean.startswith("```"):
+            clean = clean.split("\n", 1)[-1]
+        if clean.endswith("```"):
+            clean = clean.rsplit("```", 1)[0]
+        clean = clean.strip()
+        # Parse JSON response to extract prose field
+        try:
+            parsed = json.loads(clean)
+            prose = parsed.get("prose", raw_output)
+        except (json.JSONDecodeError, TypeError):
+            prose = raw_output
     except Exception:
         prose = (
             f"{current_node.title}继续展开。{narrator_input.summary}"
@@ -1413,7 +1449,7 @@ def run_simulation(
         memory = initial_memory or rebuild_memory_from_world(world, sim_id=sim_id)
         world_builder_completed = bool(world.metadata.get("world_builder_completed"))
     else:
-        world = WorldState(premise=premise, title=f"《{premise[:20]}》")
+        world = WorldState(premise=premise, title=derive_title_from_premise(premise))
         memory = MemoryManager(short_term_limit=15, sim_id=sim_id or None)
         world_builder_completed = False
 

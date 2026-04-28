@@ -1,14 +1,10 @@
 import { useState } from "react";
+import type { SessionSummary } from "../types";
 
 interface StartPanelProps {
   onStart: (premise: string, maxTicks: number) => void;
   onOpenSession: (simId: string) => void;
-  recentSessions: Array<{
-    sim_id: string;
-    status: string;
-    premise: string;
-    nodes_count: number;
-  }>;
+  recentSessions: SessionSummary[];
   loading: boolean;
 }
 
@@ -28,9 +24,13 @@ export function StartPanel({
   const [premise, setPremise] = useState("");
   const [maxTicks, setMaxTicks] = useState(8);
 
+  const submitPremise = () => {
+    if (premise.trim()) onStart(premise.trim(), maxTicks);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (premise.trim()) onStart(premise.trim(), maxTicks);
+    submitPremise();
   };
 
   return (
@@ -137,10 +137,11 @@ export function StartPanel({
           </div>
 
           <button
-            type="submit"
+            type="button"
             className="btn btn-primary"
             style={{ width: "100%", justifyContent: "center", padding: "12px 24px", fontSize: 14 }}
             disabled={loading || !premise.trim()}
+            onClick={submitPremise}
           >
             {loading ? "初始化世界中..." : "开始推演 →"}
           </button>
@@ -179,6 +180,21 @@ export function StartPanel({
                     <span style={{ color: "var(--color-text-muted)", fontSize: 11 }}>
                       {session.sim_id} · {session.status} · {session.nodes_count} 节点
                     </span>
+                    {session.error && (
+                      <span
+                        title={session.error}
+                        style={{
+                          color: "var(--color-danger)",
+                          fontSize: 11,
+                          maxWidth: "100%",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        错误原因：{session.error}
+                      </span>
+                    )}
                   </span>
                   <span style={{ color: "var(--color-text-muted)", fontSize: 11 }}>
                     打开

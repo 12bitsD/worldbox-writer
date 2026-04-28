@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 import worldbox_writer.engine.graph as graph_module
+from worldbox_writer.agents.node_detector import InterventionSignal
 from worldbox_writer.core.dual_loop import (
     ActionIntent,
     IntentCritique,
@@ -501,7 +502,7 @@ def test_narrator_consumes_scene_script_input_v2(monkeypatch) -> None:
     assert "断桥入口已经起雾" in prompt
     assert "阿璃按下桥闸" in prompt
     assert "intent-rejected" in prompt
-    assert "不要写入 rejected_intent_ids" in system_prompt
+    assert "rejected intent ids" in system_prompt
     assert rendered.rendered_text == "阿璃按下桥闸，潮雾吞没了追兵的火把。"
     assert rendered.metadata["narrator_input_v2"]["source"] == "scene_script"
     assert rendered.metadata["narrator_input_v2"]["scene_id"] == "scene-render"
@@ -530,3 +531,143 @@ def test_narrator_empty_completion_uses_fallback_prose(monkeypatch) -> None:
     assert rendered.is_rendered is True
     assert rendered.rendered_text
     assert "阿璃按下断桥闸机" in rendered.rendered_text
+
+
+def test_narrator_scenescript_prompt_has_creative_writing_guidance(monkeypatch) -> None:
+    captured: Dict[str, Any] = {}
+
+    def fake_chat_completion(messages, **kwargs):  # type: ignore[no-untyped-def]
+        captured["messages"] = messages
+        return "潮雾从断桥下涌起，阿璃的手按在冰冷的闸机上。"
+
+    monkeypatch.setattr(graph_module, "chat_completion", fake_chat_completion)
+    monkeypatch.setattr(graph_module, "get_last_llm_call_metadata", lambda: None)
+
+    world = WorldState(title="测试世界", premise="断桥守卫战")
+    alice = Character(name="阿璃", personality="冷静", goals=["守住断桥"])
+    world.add_character(alice)
+    scene_script = SceneScript(
+        script_id="script-creative",
+        scene_id="scene-creative",
+        title="断桥落闸",
+        summary="阿璃按下断桥闸机。",
+        participating_character_ids=[str(alice.id)],
+    )
+    node = StoryNode(
+        title="断桥落闸",
+        description="阿璃按下断桥闸机。",
+        character_ids=[str(alice.id)],
+    )
+    node.metadata["scene_script"] = scene_script.model_dump(mode="json")
+    world.add_node(node)
+    world.current_node_id = str(node.id)
+    world.tick = 1
+
+    narrator_node(_state(world))
+
+    system_prompt = captured["messages"][0]["content"]
+    assert "800-1500" in system_prompt
+    assert "氛围" in system_prompt
+    assert "对话" in system_prompt or "语气" in system_prompt
+    assert "心理活动" in system_prompt or "内心" in system_prompt
+    assert "悬念" in system_prompt or "钩子" in system_prompt
+    assert "节奏变化" in system_prompt or "短句" in system_prompt
+    assert "rejected intent ids" in system_prompt
+
+
+def test_narrator_legacy_prompt_has_creative_writing_guidance(monkeypatch) -> None:
+    captured: Dict[str, Any] = {}
+
+    def fake_chat_completion(messages, **kwargs):  # type: ignore[no-untyped-def]
+        captured["messages"] = messages
+        return "潮雾从断桥下涌起，阿璃的手按在冰冷的闸机上。"
+
+    monkeypatch.setattr(graph_module, "chat_completion", fake_chat_completion)
+    monkeypatch.setattr(graph_module, "get_last_llm_call_metadata", lambda: None)
+
+    world = WorldState(title="测试世界", premise="断桥守卫战")
+    alice = Character(name="阿璃", personality="冷静", goals=["守住断桥"])
+    world.add_character(alice)
+    node = StoryNode(
+        title="断桥落闸",
+        description="阿璃按下断桥闸机，阻断追兵。",
+        character_ids=[str(alice.id)],
+    )
+    world.add_node(node)
+    world.current_node_id = str(node.id)
+    world.tick = 1
+
+    narrator_node(_state(world))
+
+    system_prompt = captured["messages"][0]["content"]
+    assert "800-1500" in system_prompt
+    assert "氛围" in system_prompt
+    assert "对话" in system_prompt or "语气" in system_prompt
+    assert "心理活动" in system_prompt or "内心" in system_prompt
+    assert "悬念" in system_prompt or "钩子" in system_prompt
+
+
+def test_intervention_frequency_every_third_tick(monkeypatch) -> None:
+    """Intervention should only trigger on ticks 1, 4, 7, ... (tick % 3 == 1)."""
+
+    class FakeNodeDetector:
+        last_call_metadata = None
+
+        def detect(self, node, world):  # type: ignore[no-untyped-def]
+            return InterventionSignal(
+                should_intervene=True,
+                urgency="high",
+                reason="剧情转折",
+                context="关键分歧点",
+                suggested_options=["选项A", "选项B"],
+            )
+
+    monkeypatch.setattr(graph_module, "NodeDetector", FakeNodeDetector)
+
+    world = WorldState(title="测试世界", premise="测试前提")
+    alice = Character(name="阿璃", personality="冷静", goals=["守住断桥"])
+    world.add_character(alice)
+
+    # Tick 1 (world.tick starts at 0, advance_tick makes it 1): intervention
+    result1 = node_detector_node(
+        _state(
+            world,
+            candidate_event="阿璃发现了敌军的踪迹。",
+            validation_passed=True,
+        )
+    )
+    assert result1["needs_intervention"] is True
+    assert result1["world"].tick == 1
+
+    # Tick 2: no intervention
+    result2 = node_detector_node(
+        _state(
+            result1["world"],
+            candidate_event="阿璃隐藏在雾中观察。",
+            validation_passed=True,
+        )
+    )
+    assert result2["needs_intervention"] is False
+    assert result2["world"].tick == 2
+
+    # Tick 3: no intervention
+    result3 = node_detector_node(
+        _state(
+            result2["world"],
+            candidate_event="敌人开始渡桥。",
+            validation_passed=True,
+        )
+    )
+    assert result3["needs_intervention"] is False
+    assert result3["world"].tick == 3
+
+    # Tick 4: intervention
+    result4 = node_detector_node(
+        _state(
+            result3["world"],
+            candidate_event="阿璃按下了闸机。",
+            validation_passed=True,
+        )
+    )
+    assert result4["needs_intervention"] is True
+    assert result4["world"].tick == 4

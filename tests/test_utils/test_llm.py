@@ -60,6 +60,61 @@ def test_kimi_coding_base_url_detects_kimi_provider(monkeypatch):
     )
 
 
+def test_kimi_coding_provider_alias_uses_anthropic_messages(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "kimi-coding")
+    monkeypatch.setenv("LLM_BASE_URL", "https://api.kimi.com/coding/")
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+
+    route = resolve_llm_route("director")
+
+    assert route.provider == "kimi"
+    assert route.model == "kimi-k2.5"
+    assert route.base_url == "https://api.kimi.com/coding/"
+    assert llm_module._uses_anthropic_messages(route) is True
+
+
+def test_missing_provider_defaults_to_kimi(monkeypatch):
+    for key in (
+        "LLM_PROVIDER",
+        "LLM_PROVIDER_LOGIC",
+        "LLM_PROVIDER_DIRECTOR",
+        "LLM_MODEL",
+        "LLM_MODEL_LOGIC",
+        "LLM_MODEL_DIRECTOR",
+        "LLM_BASE_URL",
+        "LLM_BASE_URL_LOGIC",
+        "LLM_BASE_URL_DIRECTOR",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    route = resolve_llm_route("director")
+
+    assert route.provider == "kimi"
+    assert route.model == "kimi-k2.5"
+    assert route.base_url == "https://api.kimi.com/coding/"
+
+
+def test_openai_without_explicit_model_falls_back_to_kimi(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    for key in (
+        "LLM_PROVIDER_LOGIC",
+        "LLM_PROVIDER_DIRECTOR",
+        "LLM_MODEL",
+        "LLM_MODEL_LOGIC",
+        "LLM_MODEL_DIRECTOR",
+        "LLM_BASE_URL",
+        "LLM_BASE_URL_LOGIC",
+        "LLM_BASE_URL_DIRECTOR",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    route = resolve_llm_route("director")
+
+    assert route.provider == "kimi"
+    assert route.model == "kimi-k2.5"
+    assert route.base_url == "https://api.kimi.com/coding/"
+
+
 def test_anthropic_message_conversion_extracts_system_prompt():
     system, messages = llm_module._convert_messages_to_anthropic(
         [

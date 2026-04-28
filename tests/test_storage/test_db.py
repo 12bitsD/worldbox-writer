@@ -232,12 +232,23 @@ class TestSessionCRUD:
     def test_list_sessions(self, db_path, sample_world):
         """list_sessions should return all saved sessions."""
         save_session("s1", "premise1", 3, "complete", sample_world, [], db_path=db_path)
-        save_session("s2", "premise2", 5, "running", None, [], db_path=db_path)
+        save_session(
+            "s2",
+            "premise2",
+            5,
+            "error",
+            None,
+            [],
+            error="Server restarted during simulation",
+            db_path=db_path,
+        )
 
         sessions = list_sessions(db_path)
         assert len(sessions) == 2
         sim_ids = {s["sim_id"] for s in sessions}
         assert sim_ids == {"s1", "s2"}
+        errored = next(s for s in sessions if s["sim_id"] == "s2")
+        assert errored["error"] == "Server restarted during simulation"
 
     def test_delete_session(self, db_path, sample_world):
         """Deleted session should not be found."""

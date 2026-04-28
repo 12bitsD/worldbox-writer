@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type {
   BranchCompareResponse,
+  SessionSummary,
   SimulationState,
 } from "../types";
 import {
@@ -26,6 +27,10 @@ import {
 
 const LAST_SIM_ID_KEY = "worldbox:last-sim-id";
 
+export function shouldAutoRestoreSession(status: SimulationState["status"]): boolean {
+  return status !== "error" && status !== "initializing";
+}
+
 export function useSimulation() {
   const [simId, setSimId] = useState<string | null>(null);
   const [state, setState] = useState<SimulationState | null>(null);
@@ -33,14 +38,7 @@ export function useSimulation() {
   const [error, setError] = useState<string | null>(null);
   const [branchCompare, setBranchCompare] =
     useState<BranchCompareResponse["branches"] | null>(null);
-  const [recentSessions, setRecentSessions] = useState<
-    Array<{
-      sim_id: string;
-      status: string;
-      premise: string;
-      nodes_count: number;
-    }>
-  >([]);
+  const [recentSessions, setRecentSessions] = useState<SessionSummary[]>([]);
   const esRef = useRef<EventSource | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -193,12 +191,19 @@ export function useSimulation() {
   );
 
   const openSession = useCallback(
-    async (id: string) => {
+    async (id: string, options?: { autoRestore?: boolean }) => {
       setLoading(true);
       setError(null);
       stopAll();
       try {
         const nextState = await getSimulation(id);
+        if (
+          options?.autoRestore &&
+          !shouldAutoRestoreSession(nextState.status)
+        ) {
+          window.sessionStorage.removeItem(LAST_SIM_ID_KEY);
+          return;
+        }
         setSimId(id);
         setState((prev) => mergeSimulationSnapshot(prev, nextState));
         if (nextState.features.branching_enabled) {
@@ -394,7 +399,7 @@ export function useSimulation() {
   useEffect(() => {
     const storedId = window.sessionStorage.getItem(LAST_SIM_ID_KEY);
     if (!storedId) return;
-    void openSession(storedId);
+    void openSession(storedId, { autoRestore: true });
   }, [openSession]);
 
   return {

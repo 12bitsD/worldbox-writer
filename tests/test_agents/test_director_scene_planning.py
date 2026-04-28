@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from worldbox_writer.agents.director import DirectorAgent
+from worldbox_writer.agents.director import DirectorAgent, derive_title_from_premise
 from worldbox_writer.core.models import (
     Character,
     CharacterStatus,
@@ -79,4 +79,12 @@ def test_fallback_world_init_uses_premise_specific_character_blueprints() -> Non
     names = [character["name"] for character in payload["characters"]]
     assert "主角" not in names
     assert "对手" not in names
-    assert names == ["灵能义体修士", "旧日机械祭司"]
+    assert names == ["陆玄衡", "钟无烬"]
+    assert all("者" not in name and "修士" not in name for name in names)
+
+
+def test_fallback_title_uses_phrase_boundary_instead_of_mid_word_cut() -> None:
+    title = derive_title_from_premise("末日后的地下城市，三个势力争夺最后的净水源")
+
+    assert title == "《末日后的地下城市》"
+    assert not title.endswith("势》")

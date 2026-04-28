@@ -5,6 +5,7 @@ import type {
   DualLoopCompareReport,
   ExportArtifactKind,
   ExportData,
+  SessionSummary,
   SimulationDiagnostics,
   SimulationInspector,
   SimulationState,
@@ -146,14 +147,7 @@ export async function updateBranchPacing(
   if (!res.ok) throw new Error(await res.text());
 }
 
-export async function listSessions(): Promise<
-  Array<{
-    sim_id: string;
-    status: string;
-    premise: string;
-    nodes_count: number;
-  }>
-> {
+export async function listSessions(): Promise<SessionSummary[]> {
   const res = await fetch(`${BASE}/sessions`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();

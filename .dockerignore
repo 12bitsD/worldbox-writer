@@ -1,0 +1,41 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.venv
+venv
+.pytest_cache
+.mypy_cache
+.coverage
+htmlcov
+artifacts
+
+# Node
+node_modules
+dist
+.pnpm-store
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docs (not needed at runtime)
+docs
+*.md
+!README.md
+
+# Local data
+data
+*.db
+*.sqlite3

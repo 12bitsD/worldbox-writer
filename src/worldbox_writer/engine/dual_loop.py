@@ -128,7 +128,11 @@ def build_scene_plan(
         try:
             return ScenePlan.model_validate(stored_scene_plan)
         except Exception:
-            pass
+            import logging
+
+            logging.getLogger(__name__).exception(
+                "Failed to validate stored scene plan"
+            )
 
     return DirectorAgent().plan_scene(
         world,
@@ -743,6 +747,9 @@ def _load_stored_action_intents(
         try:
             intent = ActionIntent.model_validate(item)
         except Exception:
+            import logging
+
+            logging.getLogger(__name__).debug("Invalid action intent item: %s", item)
             continue
         if intent.scene_id == scene_plan.scene_id:
             intents.append(intent)
@@ -763,6 +770,9 @@ def _load_stored_prompt_traces(
         try:
             trace = PromptTrace.model_validate(item)
         except Exception:
+            import logging
+
+            logging.getLogger(__name__).debug("Invalid prompt trace item: %s", item)
             continue
         if trace.scene_id == scene_plan.scene_id:
             traces.append(trace)

@@ -249,6 +249,14 @@ export interface SimulationState {
   features: SimulationFeatures;
 }
 
+export interface SessionSummary {
+  sim_id: string;
+  status: SimStatus;
+  premise: string;
+  nodes_count: number;
+  error?: string | null;
+}
+
 export interface BranchCompareResponse {
   sim_id: string;
   active_branch_id: string;

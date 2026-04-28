@@ -405,7 +405,7 @@ def list_sessions(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     conn = _get_conn(db_path)
     try:
         rows = conn.execute(
-            "SELECT sim_id, premise, status, nodes_json FROM sessions ORDER BY created_at DESC"
+            "SELECT sim_id, premise, status, nodes_json, error FROM sessions ORDER BY created_at DESC"
         ).fetchall()
         return [
             {
@@ -413,6 +413,7 @@ def list_sessions(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
                 "premise": r["premise"][:50],
                 "status": r["status"],
                 "nodes_count": len(json.loads(r["nodes_json"])),
+                "error": r["error"],
             }
             for r in rows
         ]
@@ -552,6 +553,8 @@ def archive_memory_entries(
 
     conn = _get_conn(db_path)
     try:
+        # nosec B608: placeholders are internally-generated "?" strings,
+        # not user input. entry_ids are passed as query parameters.
         conn.execute(
             f"""UPDATE memory_entries
                 SET archived=?

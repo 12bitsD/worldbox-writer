@@ -31,6 +31,33 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from worldbox_writer.api.core.branching import (
+    branch_cutoffs,
+    compare_summary,
+    default_branch_meta,
+    filter_nodes_for_branch,
+    filter_telemetry_for_branch,
+    lineage_from_latest_node,
+    node_index,
+    normalize_branch_registry,
+)
+from worldbox_writer.api.core.serialization import (
+    serialize_node,
+    serialize_nodes,
+    serialize_telemetry,
+    serialize_world,
+)
+from worldbox_writer.api.schemas import (
+    AddConstraintRequest,
+    InterveneRequest,
+    SimulationResponse,
+    StartSimulationRequest,
+    UpdateCharacterRequest,
+    UpdateRelationshipRequest,
+    UpdateWorldRequest,
+    WikiCharacterPayload,
+    WikiEntityPayload,
+)
 from worldbox_writer.core.models import (
     Character,
     CharacterStatus,
@@ -69,6 +96,23 @@ from worldbox_writer.storage.db import (
 from worldbox_writer.storage.db import load_session as db_load_session
 from worldbox_writer.storage.db import save_session as db_save_session
 from worldbox_writer.utils.llm import get_provider_info
+
+# ---------------------------------------------------------------------------
+# Aliases to new core modules (backward compat during refactor)
+# ---------------------------------------------------------------------------
+
+_default_branch_meta = default_branch_meta
+_normalize_branch_registry = normalize_branch_registry
+_node_index = node_index
+_lineage_from_latest_node = lineage_from_latest_node
+_branch_cutoffs = branch_cutoffs
+_filter_nodes_for_branch = filter_nodes_for_branch
+_filter_telemetry_for_branch = filter_telemetry_for_branch
+_compare_summary = compare_summary
+_serialize_world = serialize_world
+_serialize_node = serialize_node
+_serialize_nodes = serialize_nodes
+_serialize_telemetry = serialize_telemetry
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -126,121 +170,6 @@ def _feature_payload() -> Dict[str, bool]:
     }
 
 
-def _default_branch_meta() -> Dict[str, Any]:
-    return {
-        "label": "Main Timeline",
-        "forked_from_node": None,
-        "source_branch_id": None,
-        "source_sim_id": None,
-        "created_at_tick": 0,
-        "latest_node_id": None,
-        "latest_tick": 0,
-        "last_node_summary": None,
-        "nodes_count": 0,
-        "status": "complete",
-        "pacing": "balanced",
-    }
-
-
-def _normalize_branch_registry(
-    branches: Optional[Dict[str, Dict[str, Any]]],
-) -> Dict[str, Dict[str, Any]]:
-    normalized = copy.deepcopy(branches or {})
-    main_meta = _default_branch_meta()
-    main_meta["label"] = "Main Timeline"
-    normalized["main"] = {**main_meta, **normalized.get("main", {})}
-    return normalized
-
-
-def _node_index(nodes: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-    return {str(node["id"]): node for node in nodes if node.get("id")}
-
-
-def _lineage_from_latest_node(
-    nodes: List[Dict[str, Any]], latest_node_id: Optional[str]
-) -> List[Dict[str, Any]]:
-    if not latest_node_id:
-        return []
-
-    indexed = _node_index(nodes)
-    lineage: List[Dict[str, Any]] = []
-    seen: set[str] = set()
-    cursor: Optional[str] = latest_node_id
-    while cursor and cursor not in seen:
-        seen.add(cursor)
-        node = indexed.get(cursor)
-        if not node:
-            break
-        lineage.append(node)
-        parent_ids = node.get("parent_ids") or []
-        cursor = parent_ids[0] if parent_ids else None
-
-    lineage.reverse()
-    return lineage
-
-
-def _branch_cutoffs(
-    branches: Dict[str, Dict[str, Any]], branch_id: str
-) -> Dict[str, float]:
-    if branch_id == "main":
-        return {"main": float("inf")}
-
-    cutoffs: Dict[str, float] = {branch_id: float("inf")}
-    cursor = branch_id
-    while True:
-        branch_meta = branches.get(cursor) or {}
-        parent_id = branch_meta.get("source_branch_id")
-        if not parent_id:
-            break
-        cutoffs[parent_id] = float(branch_meta.get("created_at_tick", 0))
-        cursor = parent_id
-    cutoffs.setdefault("main", float("inf"))
-    return cutoffs
-
-
-def _filter_nodes_for_branch(
-    nodes: List[Dict[str, Any]],
-    branches: Dict[str, Dict[str, Any]],
-    branch_id: str,
-) -> List[Dict[str, Any]]:
-    latest_node_id = (branches.get(branch_id) or {}).get("latest_node_id")
-    lineage = _lineage_from_latest_node(nodes, latest_node_id)
-    if lineage:
-        return lineage
-
-    if branch_id == "main":
-        return [node for node in nodes if node.get("branch_id", "main") == "main"]
-
-    cutoffs = _branch_cutoffs(branches, branch_id)
-    return [
-        node
-        for node in nodes
-        if node.get("branch_id", "main") in cutoffs
-        and float(node.get("tick", 0)) <= cutoffs[node.get("branch_id", "main")]
-    ]
-
-
-def _filter_telemetry_for_branch(
-    events: List[Any],
-    branches: Dict[str, Dict[str, Any]],
-    branch_id: str,
-) -> List[Any]:
-    cutoffs = _branch_cutoffs(branches, branch_id)
-    filtered: List[Any] = []
-    for event in events:
-        event_branch_id = (
-            event.branch_id
-            if isinstance(event, TelemetryEvent)
-            else event.get("branch_id", "main")
-        ) or "main"
-        event_tick = (
-            event.tick if isinstance(event, TelemetryEvent) else event.get("tick", 0)
-        )
-        if event_branch_id in cutoffs and float(event_tick) <= cutoffs[event_branch_id]:
-            filtered.append(event)
-    return filtered
-
-
 def _update_branch_meta(
     session: "SimulationSession", branch_id: Optional[str] = None
 ) -> None:
@@ -277,38 +206,6 @@ def _update_branch_meta(
         ),
         "status": session.status,
     }
-
-
-def _compare_summary(
-    world: WorldState, nodes_rendered: List[Dict[str, Any]]
-) -> Dict[str, Dict[str, Any]]:
-    branches = _normalize_branch_registry(world.branches)
-    summary: Dict[str, Dict[str, Any]] = {}
-    for branch_id, meta in branches.items():
-        filtered_nodes = _filter_nodes_for_branch(nodes_rendered, branches, branch_id)
-        latest_node = filtered_nodes[-1] if filtered_nodes else None
-        summary[branch_id] = {
-            "branch_id": branch_id,
-            "label": meta.get("label", branch_id),
-            "forked_from_node": meta.get("forked_from_node"),
-            "source_branch_id": meta.get("source_branch_id"),
-            "source_sim_id": meta.get("source_sim_id"),
-            "created_at_tick": meta.get("created_at_tick", 0),
-            "latest_node_id": meta.get("latest_node_id"),
-            "latest_tick": meta.get(
-                "latest_tick",
-                latest_node.get("tick") if latest_node else 0,
-            ),
-            "nodes_count": meta.get("nodes_count", len(filtered_nodes)),
-            "last_node_summary": meta.get(
-                "last_node_summary",
-                latest_node.get("description") if latest_node else None,
-            ),
-            "status": meta.get("status", "complete"),
-            "pacing": meta.get("pacing", "balanced"),
-            "is_active": branch_id == world.active_branch_id,
-        }
-    return summary
 
 
 def _build_simulation_payload(
@@ -357,104 +254,6 @@ def _build_simulation_payload(
         "error": error,
         "features": _feature_payload(),
     }
-
-
-def _serialize_world(world: WorldState) -> Dict[str, Any]:
-    world.branches = _normalize_branch_registry(world.branches)
-    return {
-        "title": world.title,
-        "premise": world.premise,
-        "tick": world.tick,
-        "is_complete": world.is_complete,
-        "characters": [
-            {
-                "id": str(c.id),
-                "name": c.name,
-                "description": c.description,
-                "personality": c.personality,
-                "goals": c.goals,
-                "status": c.status.value,
-                "memory": c.memory[-3:],
-                "relationships": {
-                    other_id: rel.model_dump(mode="json")
-                    for other_id, rel in c.relationships.items()
-                },
-            }
-            for c in world.characters.values()
-        ],
-        "factions": world.factions,
-        "locations": world.locations,
-        "world_rules": world.world_rules,
-        "branches": world.branches,
-        "active_branch_id": world.active_branch_id,
-        "constraints": [
-            {
-                "id": str(c.id),
-                "name": c.name,
-                "description": c.description,
-                "rule": c.rule,
-                "severity": c.severity.value,
-                "type": c.constraint_type.value,
-                "is_active": c.is_active,
-            }
-            for c in world.constraints
-        ],
-    }
-
-
-def _serialize_node(node: Any, world: WorldState) -> Dict[str, Any]:
-    scene_script = node.metadata.get("scene_script")
-    if not isinstance(scene_script, dict):
-        scene_script = {}
-    narrator_input = node.metadata.get("narrator_input_v2")
-    if not isinstance(narrator_input, dict):
-        narrator_input = {}
-
-    return {
-        "id": str(node.id),
-        "title": node.title,
-        "description": node.description,
-        "node_type": node.node_type.value,
-        "rendered_text": node.rendered_text,
-        "tick": world.tick,
-        "requires_intervention": node.requires_intervention,
-        "intervention_instruction": node.intervention_instruction,
-        "parent_ids": node.parent_ids,
-        "branch_id": node.branch_id,
-        "merged_from_ids": node.merged_from_ids,
-        "editor_html": node.metadata.get("editor_html"),
-        "scene_script_id": scene_script.get("script_id"),
-        "scene_script_summary": scene_script.get("summary"),
-        "narrator_input_source": narrator_input.get("source"),
-    }
-
-
-def _serialize_nodes(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    return [
-        {
-            **node,
-            "parent_ids": node.get("parent_ids", []),
-            "branch_id": node.get("branch_id", "main"),
-            "merged_from_ids": node.get("merged_from_ids", []),
-            "editor_html": node.get("editor_html"),
-            "scene_script_id": node.get("scene_script_id"),
-            "scene_script_summary": node.get("scene_script_summary"),
-            "narrator_input_source": node.get("narrator_input_source"),
-        }
-        for node in nodes
-    ]
-
-
-def _serialize_telemetry(events: List[Any]) -> List[Dict[str, Any]]:
-    serialized: List[Dict[str, Any]] = []
-    for event in events:
-        if isinstance(event, TelemetryEvent):
-            serialized.append(event.model_dump(mode="json"))
-        else:
-            serialized.append(
-                TelemetryEvent.model_validate(event).model_dump(mode="json")
-            )
-    return serialized
 
 
 def _queue_event(session: "SimulationSession", event: Dict[str, Any]) -> None:
@@ -539,7 +338,10 @@ def _persist_session(session: "SimulationSession") -> None:
             error=session.error,
         )
     except Exception:
-        pass  # Don't let DB errors break the simulation
+        # Don't let DB errors break the simulation, but log for observability.
+        import logging
+
+        logging.getLogger(__name__).exception("_persist_session failed")
 
 
 def _restore_world_at_node(
@@ -722,70 +524,8 @@ class SimulationSession:
 
 
 # ---------------------------------------------------------------------------
-# Request / Response models
+# Save wiki request model
 # ---------------------------------------------------------------------------
-
-
-class StartSimulationRequest(BaseModel):
-    premise: str
-    max_ticks: int = 8
-
-
-class InterveneRequest(BaseModel):
-    instruction: str
-
-
-class SimulationResponse(BaseModel):
-    sim_id: str
-    status: str
-    message: str
-
-
-class UpdateCharacterRequest(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    personality: Optional[str] = None
-    goals: Optional[List[str]] = None
-    status: Optional[str] = None
-
-
-class UpdateRelationshipRequest(BaseModel):
-    source_character_id: str
-    target_character_id: str
-    label: str = "unknown"
-    affinity: int = 0
-    note: str = ""
-    bidirectional: bool = True
-
-
-class UpdateWorldRequest(BaseModel):
-    title: Optional[str] = None
-    premise: Optional[str] = None
-    world_rules: Optional[List[str]] = None
-
-
-class AddConstraintRequest(BaseModel):
-    name: str
-    description: str
-    constraint_type: str = "narrative"
-    severity: str = "hard"
-    rule: str
-
-
-class WikiEntityPayload(BaseModel):
-    name: str
-    description: str = ""
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-
-
-class WikiCharacterPayload(BaseModel):
-    id: Optional[str] = None
-    name: str
-    description: str = ""
-    personality: str = ""
-    goals: List[str] = Field(default_factory=list)
-    status: str = "alive"
-    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 class SaveWikiRequest(BaseModel):
@@ -875,7 +615,8 @@ def _validate_wiki_request(
     validate_unique_names(request.factions, "factions", "势力")
     validate_unique_names(request.locations, "locations", "地点")
 
-    assert session.world is not None
+    if session.world is None:
+        raise RuntimeError("Cannot apply wiki request: session.world is None")
     referenced_character_ids = {
         character_id
         for node in session.world.nodes.values()
@@ -944,7 +685,8 @@ def _materialize_character(
 
 def _apply_wiki_request(session: "SimulationSession", request: SaveWikiRequest) -> None:
     existing_world = session.world
-    assert existing_world is not None
+    if existing_world is None:
+        raise RuntimeError("Cannot apply wiki request: session.world is None")
     existing_characters = existing_world.characters
     next_characters: Dict[str, Character] = {}
     for payload in request.characters:
@@ -1797,6 +1539,7 @@ async def list_sessions():
                 "status": s.status,
                 "premise": s.premise[:50],
                 "nodes_count": len(s.nodes_rendered),
+                "error": s.error,
             }
         )
     for s in db_list_sessions():

@@ -10,6 +10,23 @@ import { ExportPanel } from "./components/ExportPanel";
 import { RelationshipPanel } from "./components/RelationshipPanel";
 import { BranchPanel } from "./components/BranchPanel";
 
+function ErrorBanner({ error }: { error: string | null }) {
+  if (!error) return null;
+  return (
+    <div
+      style={{
+        padding: "10px 32px",
+        background: "rgba(192, 57, 43, 0.08)",
+        borderBottom: "1px solid rgba(192, 57, 43, 0.3)",
+        fontSize: 12,
+        color: "var(--color-danger)",
+      }}
+    >
+      错误：{error}
+    </div>
+  );
+}
+
 export default function App() {
   const {
     simId,
@@ -53,6 +70,7 @@ export default function App() {
     return (
       <>
         <Header status={null} onReset={reset} />
+        <ErrorBanner error={error} />
         <StartPanel
           onStart={start}
           onOpenSession={openSession}
@@ -100,19 +118,7 @@ export default function App() {
     <>
       <Header status={state?.status ?? null} onReset={reset} />
 
-      {error && (
-        <div
-          style={{
-            padding: "10px 32px",
-            background: "rgba(192, 57, 43, 0.08)",
-            borderBottom: "1px solid rgba(192, 57, 43, 0.3)",
-            fontSize: 12,
-            color: "var(--color-danger)",
-          }}
-        >
-          错误：{error}
-        </div>
-      )}
+      <ErrorBanner error={error} />
 
       {/* Main 3-column layout */}
       <div

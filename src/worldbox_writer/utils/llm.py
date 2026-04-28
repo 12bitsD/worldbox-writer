@@ -24,6 +24,7 @@ from openai import OpenAI
 MIMO_BASE_URL = "https://token-plan-cn.xiaomimimo.com/v1"
 KIMI_BASE_URL = "https://api.kimi.com/coding/"
 OLLAMA_BASE_URL = "http://localhost:11434/v1"
+DEFAULT_LLM_PROVIDER = "kimi"
 
 LOGIC_ROLES = {"director", "gate_keeper", "node_detector", "actor", "memory"}
 CREATIVE_ROLES = {"narrator", "world_builder"}
@@ -46,16 +47,6 @@ KIMI_MODEL_MAP = {
     "narrator": "kimi-k2.5",
     "world_builder": "kimi-k2.5",
     "memory": "kimi-k2.5",
-}
-
-OPENAI_MODEL_MAP = {
-    "director": "gpt-4.1-mini",
-    "gate_keeper": "gpt-4.1-mini",
-    "node_detector": "gpt-4.1-mini",
-    "actor": "gpt-4.1-mini",
-    "narrator": "gpt-4.1-mini",
-    "world_builder": "gpt-4.1-mini",
-    "memory": "gpt-4.1-mini",
 }
 
 GEMINI_MODEL_MAP = {
@@ -149,7 +140,7 @@ def _detect_provider_from_values(
     explicit: Optional[str], base_url: Optional[str]
 ) -> str:
     if explicit:
-        return explicit.lower()
+        return _normalize_provider(explicit)
 
     normalized_url = (base_url or "").lower()
     if "xiaomimimo" in normalized_url or "mimo" in normalized_url:
@@ -160,7 +151,24 @@ def _detect_provider_from_values(
         return "ollama"
     if "gemini" in normalized_url or "generativelanguage" in normalized_url:
         return "gemini"
-    return "openai"
+    return DEFAULT_LLM_PROVIDER
+
+
+def _normalize_provider(provider: str) -> str:
+    normalized = provider.strip().lower().replace("_", "-")
+    if normalized in {"kimi", "kimi-coding", "moonshot", "moonshot-kimi"}:
+        return "kimi"
+    if normalized in {
+        "mimo",
+        "xiaomi-mimo",
+        "xiaomimimo",
+        "token-plan",
+        "token-plan-cn",
+    }:
+        return "mimo"
+    if normalized in {"ollama", "local", "local-ollama"}:
+        return "ollama"
+    return normalized
 
 
 def _default_base_url(provider: str) -> Optional[str]:
@@ -177,10 +185,22 @@ def _default_model_name(provider: str, role: str) -> str:
     if provider == "mimo":
         return MIMO_MODEL_MAP.get(role, "mimo-v2-pro")
     if provider == "kimi":
-        return KIMI_MODEL_MAP.get(role, "kimi-k2-5")
+        return KIMI_MODEL_MAP.get(role, "kimi-k2.5")
     if provider == "gemini":
         return GEMINI_MODEL_MAP.get(role, "gemini-2.5-flash")
-    return OPENAI_MODEL_MAP.get(role, "gpt-4.1-mini")
+    return KIMI_MODEL_MAP.get(role, "kimi-k2.5")
+
+
+def _provider_has_builtin_model_default(provider: str) -> bool:
+    return provider in {"mimo", "kimi", "gemini"}
+
+
+def _fallback_provider_if_model_missing(
+    provider: str, explicit_model: Optional[str]
+) -> str:
+    if explicit_model or _provider_has_builtin_model_default(provider):
+        return provider
+    return DEFAULT_LLM_PROVIDER
 
 
 def _load_eval_report() -> dict[str, Any]:
@@ -225,7 +245,10 @@ def _should_fallback(
     if benchmark_score >= benchmark_threshold:
         return False, None, benchmark_score, benchmark_threshold
 
-    global_provider = _detect_default_provider()
+    global_provider = _fallback_provider_if_model_missing(
+        _detect_default_provider(),
+        os.environ.get("LLM_MODEL"),
+    )
     global_model = _resolve_model_for_role(
         role=role,
         provider=global_provider,
@@ -292,17 +315,25 @@ def resolve_llm_route(role: str) -> ResolvedLLMRoute:
         _resolve_base_url(role_key, route_group, role_provider or group_provider),
     )
 
+    explicit_model = _first_non_empty(
+        f"LLM_MODEL_{role_key}",
+        f"LLM_MODEL_{route_group.upper()}",
+        "LLM_MODEL",
+    )
+    original_provider = provider
+    provider = _fallback_provider_if_model_missing(provider, explicit_model)
+    provider_defaulted_to_kimi = provider != original_provider
     model = _resolve_model_for_role(
         role=role,
         provider=provider,
-        explicit_model=_first_non_empty(
-            f"LLM_MODEL_{role_key}",
-            f"LLM_MODEL_{route_group.upper()}",
-            "LLM_MODEL",
-        ),
+        explicit_model=explicit_model,
     )
     api_key = _resolve_api_key(role_key, route_group)
-    base_url = _resolve_base_url(role_key, route_group, provider)
+    base_url = (
+        _default_base_url(provider)
+        if provider_defaulted_to_kimi
+        else _resolve_base_url(role_key, route_group, provider)
+    )
 
     fallback, reason, benchmark_score, benchmark_threshold = _should_fallback(
         role=role,
@@ -311,14 +342,23 @@ def resolve_llm_route(role: str) -> ResolvedLLMRoute:
         model=model,
     )
     if fallback:
-        provider = _detect_provider()
+        global_explicit_model = os.environ.get("LLM_MODEL")
+        fallback_provider = _detect_provider()
+        provider = _fallback_provider_if_model_missing(
+            fallback_provider,
+            global_explicit_model,
+        )
         model = _resolve_model_for_role(
             role=role,
             provider=provider,
-            explicit_model=os.environ.get("LLM_MODEL"),
+            explicit_model=global_explicit_model,
         )
         api_key = _first_non_empty("LLM_API_KEY", "OPENAI_API_KEY") or api_key
-        base_url = os.environ.get("LLM_BASE_URL") or _default_base_url(provider)
+        base_url = (
+            _default_base_url(provider)
+            if provider != fallback_provider
+            else os.environ.get("LLM_BASE_URL") or _default_base_url(provider)
+        )
 
     return ResolvedLLMRoute(
         role=role,
@@ -531,7 +571,9 @@ def _load_price_overrides() -> dict[str, dict[str, float]]:
         if isinstance(parsed, dict):
             return cast(dict[str, dict[str, float]], parsed)
     except Exception:
-        pass
+        import logging
+
+        logging.getLogger(__name__).exception("Failed to parse price overrides")
     return DEFAULT_PRICE_OVERRIDES
 
 
@@ -673,10 +715,16 @@ def chat_completion(
 def get_provider_info() -> dict[str, Any]:
     logic_route = resolve_llm_route("actor")
     creative_route = resolve_llm_route("narrator")
+    provider = (
+        logic_route.provider
+        if logic_route.provider == creative_route.provider
+        else "mixed"
+    )
     return {
-        "provider": _detect_provider(),
+        "provider": provider,
         "model_sample": creative_route.model,
-        "base_url": os.environ.get("LLM_BASE_URL", "default"),
+        "base_url": creative_route.base_url
+        or os.environ.get("LLM_BASE_URL", "default"),
         "routing": {
             "logic": {
                 "provider": logic_route.provider,

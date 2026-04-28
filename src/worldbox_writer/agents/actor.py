@@ -121,7 +121,11 @@ class ActorAgent:
                 proposal = self.propose_action(char, world, context_node)
                 proposals.append(proposal)
             except Exception:
-                pass
+                import logging
+
+                logging.getLogger(__name__).exception(
+                    "propose_action failed for %s", char.name
+                )
 
         return proposals
 

@@ -580,6 +580,21 @@ class TestCreativeWorkspace:
         assert res.status_code == 200
         assert res.json()["features"]["dual_loop_enabled"] is False
 
+    def test_list_sessions_includes_error_reason_for_failed_sessions(self, client):
+        session = SimulationSession(
+            sim_id="failed-session", premise="失败前提", max_ticks=3
+        )
+        session.status = "error"
+        session.error = "Server restarted during simulation"
+        _sessions[session.sim_id] = session
+
+        res = client.get("/api/sessions")
+
+        assert res.status_code == 200
+        failed = next(item for item in res.json() if item["sim_id"] == "failed-session")
+        assert failed["status"] == "error"
+        assert failed["error"] == "Server restarted during simulation"
+
     def test_get_simulation_exposes_scene_script_rendering_lineage(
         self, client, complete_session
     ):

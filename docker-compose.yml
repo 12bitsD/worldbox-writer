@@ -1,0 +1,37 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: .
+      target: backend
+    container_name: worldbox-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - worldbox-data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      target: frontend
+    container_name: worldbox-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  worldbox-data:

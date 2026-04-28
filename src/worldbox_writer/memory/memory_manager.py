@@ -955,7 +955,9 @@ class MemoryManager:
             if summary:
                 return summary
         except Exception:
-            pass
+            import logging
+
+            logging.getLogger(__name__).exception("Memory summary generation failed")
 
         key_entries = sorted(
             entries,
