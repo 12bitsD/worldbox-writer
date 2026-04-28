@@ -55,6 +55,45 @@ def _rendered_node_payload(
     }
 
 
+def _world_with_rendered_nodes(count: int) -> tuple[WorldState, list[StoryNode]]:
+    world = WorldState(title="多节点世界", premise="测试前提")
+    nodes: list[StoryNode] = []
+    previous_id: str | None = None
+    for tick in range(1, count + 1):
+        node = StoryNode(
+            title=f"第{tick}幕",
+            description=f"第{tick}幕事件",
+            parent_ids=[previous_id] if previous_id else [],
+        )
+        node.is_rendered = True
+        node.rendered_text = f"第{tick}幕正文"
+        node.metadata["tick"] = tick
+        if previous_id:
+            world.nodes[previous_id].child_ids.append(str(node.id))
+        world.add_node(node)
+        world.current_node_id = str(node.id)
+        world.tick = tick
+        nodes.append(node)
+        previous_id = str(node.id)
+    world.is_complete = True
+    if nodes:
+        latest = nodes[-1]
+        world.branches["main"] = {
+            "label": "Main Timeline",
+            "forked_from_node": None,
+            "source_branch_id": None,
+            "source_sim_id": None,
+            "created_at_tick": 0,
+            "latest_node_id": str(latest.id),
+            "latest_tick": count,
+            "last_node_summary": latest.description,
+            "nodes_count": count,
+            "status": "complete",
+            "pacing": "balanced",
+        }
+    return world, nodes
+
+
 @pytest.fixture(autouse=True)
 def setup_db(tmp_path, monkeypatch):
     """Use a temporary DB for API tests."""
@@ -851,6 +890,30 @@ class TestGetSimulation:
         assert body["telemetry"][0]["trace_id"] == ""
         assert body["telemetry"][0]["span_kind"] == "event"
         assert body["telemetry"][0]["request_id"] is None
+
+    def test_get_simulation_restores_rendered_nodes_missing_from_nodes_json(
+        self, client
+    ):
+        """A complete world should return every rendered node, not only nodes_json."""
+        world, nodes = _world_with_rendered_nodes(4)
+        server_module.db_save_session(
+            sim_id="missing-rendered-history",
+            premise="测试前提",
+            max_ticks=4,
+            status="complete",
+            world=world,
+            nodes_json=[_rendered_node_payload(nodes[-1], 4, nodes[-1].rendered_text)],
+            telemetry_events=[],
+        )
+
+        res = client.get("/api/simulate/missing-rendered-history")
+
+        assert res.status_code == 200
+        body = res.json()
+        assert [node["id"] for node in body["nodes"]] == [
+            str(node.id) for node in nodes
+        ]
+        assert [node["tick"] for node in body["nodes"]] == [1, 2, 3, 4]
 
 
 class TestIntervene:

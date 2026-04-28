@@ -236,6 +236,7 @@ def _build_simulation_payload(
     world.branches = _normalize_branch_registry(world.branches)
     selected_branch_id = branch_id or world.active_branch_id or "main"
     world.active_branch_id = selected_branch_id
+    response_nodes = _merge_rendered_nodes_from_world(world, nodes_rendered)
 
     return {
         "sim_id": sim_id,
@@ -243,7 +244,7 @@ def _build_simulation_payload(
         "premise": premise,
         "world": _serialize_world(world),
         "nodes": _serialize_nodes(
-            _filter_nodes_for_branch(nodes_rendered, world.branches, selected_branch_id)
+            _filter_nodes_for_branch(response_nodes, world.branches, selected_branch_id)
         ),
         "telemetry": _serialize_telemetry(
             _filter_telemetry_for_branch(
@@ -268,6 +269,55 @@ def _upsert_rendered_node(
             session.nodes_rendered[index] = {**existing, **node_dict}
             return
     session.nodes_rendered.append(node_dict)
+
+
+def _coerce_tick_for_sort(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _merge_rendered_nodes_from_world(
+    world: WorldState, nodes_rendered: Sequence[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """Return rendered node payloads with any world-only rendered nodes restored."""
+    existing_by_id = {
+        str(node["id"]): dict(node) for node in nodes_rendered if node.get("id")
+    }
+    merged: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    ordered_world_nodes = sorted(
+        enumerate(world.nodes.values()),
+        key=lambda item: (
+            _coerce_tick_for_sort(item[1].metadata.get("tick", world.tick)),
+            item[0],
+        ),
+    )
+
+    for _, node in ordered_world_nodes:
+        if not node.is_rendered and not node.rendered_text:
+            continue
+        node_id = str(node.id)
+        serialized = _serialize_node(node, world)
+        merged.append({**existing_by_id.get(node_id, {}), **serialized})
+        seen.add(node_id)
+
+    for node in nodes_rendered:
+        node_id = str(node.get("id", ""))
+        if node_id and node_id not in seen:
+            merged.append(dict(node))
+            seen.add(node_id)
+
+    return merged
+
+
+def _sync_rendered_nodes_from_world(session: "SimulationSession") -> None:
+    if not session.world:
+        return
+    session.nodes_rendered = _merge_rendered_nodes_from_world(
+        session.world, session.nodes_rendered
+    )
 
 
 def _append_telemetry_event(
@@ -325,6 +375,7 @@ def _append_telemetry_event(
 def _persist_session(session: "SimulationSession") -> None:
     """Persist session state to DB."""
     try:
+        _sync_rendered_nodes_from_world(session)
         _update_branch_meta(session)
         db_save_session(
             sim_id=session.sim_id,

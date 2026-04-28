@@ -1312,6 +1312,10 @@ def narrator_node(state: SimulationState) -> Dict[str, Any]:
     current_node.is_rendered = True
     world.nodes[world.current_node_id] = current_node
 
+    on_node_rendered_cb = callbacks.get("on_node_rendered")
+    if on_node_rendered_cb:
+        on_node_rendered_cb(current_node, world)
+
     # Update character memory
     for cid in current_node.character_ids[:3]:
         char = world.get_character(cid)
@@ -1479,11 +1483,13 @@ def run_simulation(
                 "on_token": on_streaming_token,
                 "on_start": on_streaming_start,
                 "on_end": on_streaming_end,
+                "on_node_rendered": on_node_rendered,
                 "on_telemetry": on_telemetry,
             }
             if any(
                 callback is not None
                 for callback in (
+                    on_node_rendered,
                     on_streaming_token,
                     on_streaming_start,
                     on_streaming_end,
@@ -1500,11 +1506,6 @@ def run_simulation(
     while True:
         result = cast(SimulationState, app.invoke(state))
         final_world = result["world"]
-
-        if on_node_rendered and final_world.current_node_id:
-            node = final_world.get_node(final_world.current_node_id)
-            if node and node.is_rendered:
-                on_node_rendered(node, final_world)
 
         if final_world.pending_intervention and intervention_callback:
             user_input = intervention_callback(final_world.intervention_context)

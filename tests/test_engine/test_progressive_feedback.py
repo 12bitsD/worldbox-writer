@@ -533,6 +533,45 @@ def test_narrator_empty_completion_uses_fallback_prose(monkeypatch) -> None:
     assert "阿璃按下断桥闸机" in rendered.rendered_text
 
 
+def test_narrator_notifies_rendered_node_callback(monkeypatch) -> None:
+    monkeypatch.setattr(
+        graph_module,
+        "chat_completion",
+        lambda messages, **kwargs: "阿璃按下桥闸，追兵被阻断。",
+    )
+    monkeypatch.setattr(graph_module, "get_last_llm_call_metadata", lambda: None)
+
+    world = WorldState(title="测试世界", premise="断桥守卫战")
+    alice = Character(name="阿璃", personality="冷静", goals=["守住断桥"])
+    world.add_character(alice)
+    node = StoryNode(
+        title="断桥落闸",
+        description="阿璃按下断桥闸机。",
+        character_ids=[str(alice.id)],
+    )
+    world.add_node(node)
+    world.current_node_id = str(node.id)
+    world.tick = 1
+    observed: list[tuple[str, int, str | None]] = []
+
+    narrator_node(
+        _state(
+            world,
+            streaming_callbacks={
+                "on_node_rendered": lambda rendered_node, rendered_world: observed.append(
+                    (
+                        str(rendered_node.id),
+                        rendered_world.tick,
+                        rendered_node.rendered_text,
+                    )
+                )
+            },
+        )
+    )
+
+    assert observed == [(str(node.id), 1, "阿璃按下桥闸，追兵被阻断。")]
+
+
 def test_narrator_scenescript_prompt_has_creative_writing_guidance(monkeypatch) -> None:
     captured: Dict[str, Any] = {}
 

@@ -61,6 +61,7 @@ def serialize_node(node: Any, world: WorldState) -> Dict[str, Any]:
     narrator_input = node.metadata.get("narrator_input_v2")
     if not isinstance(narrator_input, dict):
         narrator_input = {}
+    tick = node.metadata.get("tick", world.tick)
 
     return {
         "id": str(node.id),
@@ -68,7 +69,7 @@ def serialize_node(node: Any, world: WorldState) -> Dict[str, Any]:
         "description": node.description,
         "node_type": node.node_type.value,
         "rendered_text": node.rendered_text,
-        "tick": world.tick,
+        "tick": tick,
         "requires_intervention": node.requires_intervention,
         "intervention_instruction": node.intervention_instruction,
         "parent_ids": node.parent_ids,
