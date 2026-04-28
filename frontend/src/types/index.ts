@@ -245,6 +245,7 @@ export interface SimulationState {
   nodes: StoryNode[];
   telemetry: TelemetryEvent[];
   intervention_context: string | null;
+  intervention_options?: string[];
   error: string | null;
   features: SimulationFeatures;
 }

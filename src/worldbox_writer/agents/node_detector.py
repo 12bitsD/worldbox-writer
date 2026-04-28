@@ -11,6 +11,7 @@ Detection criteria:
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, List, Optional, cast
 
@@ -91,8 +92,9 @@ _DETECTOR_SYSTEM_PROMPT = """你是 WorldBox Writer 的关键节点探测器。
   "urgency": "low|medium|high",
   "reason": "为什么这是关键时刻（展示给用户）",
   "context_summary": "当前故事状态的2-3句摘要",
-  "suggested_options": ["选项1", "选项2", "选项3"]
+  "suggested_options": ["具体的剧情走向选项1（如角色做出什么选择）", "具体的剧情走向选项2", "具体的剧情走向选项3"]
 }
+每个选项应该是具体的剧情方向，不要用"继续推演"之类的通用选项。
 
 需要干预的情况：
 - 角色面临死亡或永久伤害
@@ -138,7 +140,7 @@ class NodeDetector:
                 urgency="high",
                 reason="这是一个故事分歧点，需要你做出决定。",
                 context=node.description,
-                suggested_options=["让故事按当前方向继续", "输入自定义干预指令"],
+                suggested_options=self._derive_branch_options(node.description),
             )
 
         # Fast path 2: Periodic check-in
@@ -148,7 +150,11 @@ class NodeDetector:
                 urgency="low",
                 reason=f"定期检查点（第 {world.tick} 步）。故事已经推演了一段时间。",
                 context=node.description,
-                suggested_options=["继续推演", "调整故事方向", "加速推演"],
+                suggested_options=[
+                    "让故事自然发展",
+                    "给角色施加新的压力",
+                    "引入意外事件",
+                ],
             )
 
         # Fast path 3: High-stakes keyword detection
@@ -158,7 +164,11 @@ class NodeDetector:
                 urgency="high",
                 reason="检测到高风险叙事内容，可能产生不可逆后果。",
                 context=node.description,
-                suggested_options=["允许这件事发生", "阻止这个结果", "修改发生的情境"],
+                suggested_options=[
+                    "让悲剧发生，但角色从中成长",
+                    "阻止最坏结果，但付出代价",
+                    "命运转折：意外援手出现",
+                ],
             )
 
         # Slow path: LLM semantic analysis
@@ -198,6 +208,49 @@ class NodeDetector:
     def _contains_high_stakes_keywords(self, node: StoryNode) -> bool:
         text = (node.title + " " + node.description).lower()
         return any(keyword in text for keyword in _HIGH_STAKES_KEYWORDS)
+
+    def _derive_branch_options(self, description: str) -> List[str]:
+        focus = self._compact_description(description)
+        choices = self._extract_choices(description)
+        if len(choices) >= 2:
+            first, second = choices[:2]
+            return [
+                f"选择{first}，让这条路的后果立即显现",
+                f"选择{second}，让角色承担另一种代价",
+                f"拒绝二选一，围绕「{focus}」开辟第三条路",
+            ]
+
+        return [
+            f"顺势推进「{focus}」，让当前分歧成为事实",
+            f"扭转「{focus}」的直接结果，让角色付出代价",
+            f"引入第三方介入「{focus}」，打开新方向",
+        ]
+
+    def _compact_description(self, description: str) -> str:
+        text = re.sub(r"\s+", " ", description).strip()
+        if not text:
+            return "当前分歧"
+        sentence = re.split(r"[。！？!?；;]", text, maxsplit=1)[0].strip()
+        if not sentence:
+            sentence = text
+        return sentence[:42].rstrip("，,、 ")
+
+    def _extract_choices(self, description: str) -> List[str]:
+        patterns = [
+            r"决定是(.{1,24}?)还是(.{1,24}?)(?:[，。,；;！!？?]|$)",
+            r"是(.{1,24}?)还是(.{1,24}?)(?:[，。,；;！!？?]|$)",
+            r"在(.{1,24}?)与(.{1,24}?)之间",
+            r"在(.{1,24}?)和(.{1,24}?)之间",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, description)
+            if match:
+                return [self._clean_choice(part) for part in match.groups()]
+        return []
+
+    def _clean_choice(self, choice: str) -> str:
+        cleaned = re.sub(r"\s+", "", choice)
+        return cleaned.strip("“”\"'‘’：:，,。；;、 ")
 
     def _evaluate_with_llm(
         self, world: WorldState, node: StoryNode

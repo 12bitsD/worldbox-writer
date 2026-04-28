@@ -229,6 +229,7 @@ def _build_simulation_payload(
             "nodes": [],
             "telemetry": _serialize_telemetry(telemetry_events),
             "intervention_context": intervention_context,
+            "intervention_options": [],
             "error": error,
             "features": _feature_payload(),
         }
@@ -252,6 +253,11 @@ def _build_simulation_payload(
             )
         ),
         "intervention_context": intervention_context,
+        "intervention_options": (
+            world.metadata.get("intervention_options", [])
+            if intervention_context
+            else []
+        ),
         "error": error,
         "features": _feature_payload(),
     }

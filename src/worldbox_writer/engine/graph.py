@@ -1084,6 +1084,8 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
 
     if needs_intervention and signal:
         world.request_intervention(signal.context)
+        if signal.suggested_options:
+            world.metadata["intervention_options"] = signal.suggested_options
         _emit_telemetry(
             state,
             tick=world.tick,
