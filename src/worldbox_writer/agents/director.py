@@ -174,19 +174,20 @@ class DirectorAgent:
             max_spotlight_characters=max_spotlight_characters,
         )
         narrative_pressure = self._resolve_narrative_pressure(world)
-        title = self._derive_scene_title(
-            world,
-            current_node=current_node,
-            spotlight_character_ids=spotlight_character_ids,
-            narrative_pressure=narrative_pressure,
-        )
-        setting = self._derive_scene_setting(world)
         objective = self._derive_scene_objective(
             world,
             current_node=current_node,
             spotlight_character_ids=spotlight_character_ids,
             narrative_pressure=narrative_pressure,
         )
+        title = self._derive_scene_title(
+            world,
+            current_node=current_node,
+            spotlight_character_ids=spotlight_character_ids,
+            narrative_pressure=narrative_pressure,
+            objective=objective,
+        )
+        setting = self._derive_scene_setting(world)
         public_summary = self._derive_public_summary(
             world,
             current_node=current_node,
@@ -496,6 +497,7 @@ class DirectorAgent:
         current_node: Optional[StoryNode],
         spotlight_character_ids: List[str],
         narrative_pressure: str,
+        objective: str,
     ) -> str:
         spotlight_names = self._spotlight_names(world, spotlight_character_ids)
         focus = "、".join(spotlight_names[:2]) if spotlight_names else "局势"
@@ -504,10 +506,29 @@ class DirectorAgent:
             "balanced": "局势推进",
             "intense": "高压对峙",
         }.get(narrative_pressure, "局势推进")
+        fallback_title = (
+            f"第{world.tick + 1}幕：{focus}的{pressure_label}"
+            if current_node and current_node.title
+            else f"第{world.tick + 1}幕：{pressure_label}"
+        )
 
-        if current_node and current_node.title:
-            return f"第{world.tick + 1}幕：{focus}的{pressure_label}"
-        return f"第{world.tick + 1}幕：{pressure_label}"
+        prompt = (
+            "Generate a short evocative Chinese chapter title (3-10 chars) "
+            f"for a story with premise: {world.premise}, characters: {focus}, "
+            f"scene: {objective}. Only output the title, nothing else."
+        )
+        try:
+            generated_title = chat_completion(
+                [{"role": "user", "content": prompt}],
+                role="director",
+                temperature=0.8,
+                max_tokens=50,
+            )
+        except Exception:
+            return fallback_title
+
+        title = generated_title.strip().strip("\"'“”‘’《》").strip()
+        return title or fallback_title
 
     def _derive_scene_objective(
         self,
