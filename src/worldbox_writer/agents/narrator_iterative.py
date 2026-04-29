@@ -16,7 +16,6 @@ from typing import Any, Optional, cast
 from worldbox_writer.agents.narrator import NarratorOutput
 from worldbox_writer.core.dual_loop import NarratorInput, SceneBeat, SceneScript
 from worldbox_writer.core.models import NodeType, StoryNode, WorldState
-from worldbox_writer.evals.llm_judge import objective_metrics
 from worldbox_writer.utils.llm import chat_completion, get_last_llm_call_metadata
 
 _SKELETON_SYSTEM_PROMPT = """你是 WorldBox Writer 的场景骨架师。
@@ -337,7 +336,7 @@ class NarratorIterativeAgent:
         return text or fallback
 
     def _evaluate_stage(self, stage: str, text: str) -> IterativeNarratorStage:
-        metrics = objective_metrics(text)
+        metrics = _draft_stats(text)
         threshold = self.thresholds[stage]
         try:
             raw = self._invoke_judge(self._judge_messages(stage, text, metrics))
@@ -345,8 +344,8 @@ class NarratorIterativeAgent:
             score = self._coerce_score(parsed.get("score"), metrics, stage)
             feedback = str(parsed.get("feedback") or parsed.get("reasoning") or "")
         except Exception as exc:
-            score = self._heuristic_score(metrics, stage)
-            feedback = f"LLM judge unavailable; heuristic score used: {exc}"
+            score = 0.0
+            feedback = f"LLM judge unavailable; no heuristic quality score used: {exc}"
 
         return IterativeNarratorStage(
             stage=stage,
@@ -468,7 +467,6 @@ class NarratorIterativeAgent:
                 "content": (
                     f"阶段：{stage}\n"
                     f"通过阈值：{threshold}\n"
-                    f"客观指标：{json.dumps(metrics, ensure_ascii=False)}\n\n"
                     f"文本：\n{text}\n\n"
                     "请给出 score 和 feedback："
                 ),
@@ -582,14 +580,9 @@ class NarratorIterativeAgent:
         )
 
     def _review_reasons(self, final_stage: IterativeNarratorStage) -> list[str]:
-        metrics = final_stage.metrics
         reasons = []
         if final_stage.judge_score < self.thresholds["polish"]:
             reasons.append("final_judge_score_below_threshold")
-        if int(metrics["word_count"]) < 500:
-            reasons.append("final_word_count_below_500")
-        if float(metrics["dialogue_ratio"]) < 0.05:
-            reasons.append("final_dialogue_ratio_below_0.05")
         return reasons
 
     def _style_notes(
@@ -651,22 +644,10 @@ class NarratorIterativeAgent:
         stage: str,
     ) -> float:
         if isinstance(value, bool):
-            return self._heuristic_score(metrics, stage)
+            return 0.0
         if isinstance(value, (int, float)):
             return min(10.0, max(0.0, float(value)))
-        return self._heuristic_score(metrics, stage)
-
-    def _heuristic_score(self, metrics: dict[str, Any], stage: str) -> float:
-        word_count = int(metrics["word_count"])
-        dialogue_ratio = float(metrics["dialogue_ratio"])
-        metaphor_density = float(metrics["metaphor_density_per_1k"])
-        if stage == "skeleton":
-            return 6.0 if word_count >= 20 else 5.0
-        if stage == "expansion":
-            return min(7.0, 5.0 + word_count / 250 + dialogue_ratio * 3)
-        return min(
-            7.5, 5.0 + word_count / 400 + dialogue_ratio * 4 - metaphor_density / 20
-        )
+        return 0.0
 
     def _format_lines(self, items: list[str]) -> str:
         if not items:
@@ -675,6 +656,38 @@ class NarratorIterativeAgent:
 
 
 IterativeNarratorAgent = NarratorIterativeAgent
+
+
+def _nonspace_length(text: str) -> int:
+    return sum(1 for character in text if not character.isspace())
+
+
+def _dialogue_character_count(text: str) -> int:
+    count = 0
+    closing_quote = ""
+    quote_pairs = {"“": "”", "‘": "’", '"': '"', "'": "'"}
+    for character in text:
+        if closing_quote:
+            if character == closing_quote:
+                closing_quote = ""
+            elif not character.isspace():
+                count += 1
+            continue
+        if character in quote_pairs:
+            closing_quote = quote_pairs[character]
+    return count
+
+
+def _draft_stats(text: str) -> dict[str, Any]:
+    normalized = str(text or "")
+    word_count = _nonspace_length(normalized)
+    dialogue_chars = _dialogue_character_count(normalized)
+    dialogue_ratio = dialogue_chars / word_count if word_count else 0.0
+    return {
+        "word_count": word_count,
+        "dialogue_char_count": dialogue_chars,
+        "dialogue_ratio": round(dialogue_ratio, 4),
+    }
 
 
 if __name__ == "__main__":

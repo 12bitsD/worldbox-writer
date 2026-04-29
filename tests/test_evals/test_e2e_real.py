@@ -44,7 +44,7 @@ def _chapter(index: int) -> dict[str, Any]:
         "scene_script": script,
         "rendered_text": (
             "雨水沿着桥闸往下淌。阿璃说：“再往前一步，旧城门就会听见你的名字。”"
-            "白夜没有拔剑，只把袖口的泥点抹掉，像是在擦去一段旧誓言。"
+            "白夜没有拔剑，只把袖口的泥点抹掉，旧誓言被雨声压在喉间。"
         ),
     }
 
@@ -112,12 +112,6 @@ def test_real_mode_writes_comparable_report_without_real_llm(
                             "sentence_variety": 8.0,
                             "imagery_freshness": 8.0,
                         },
-                        "ai_issues": {"over_metaphor": 7.0},
-                    },
-                    "objective_metrics": {
-                        "word_count": 66,
-                        "dialogue_ratio": 0.32,
-                        "metaphor_density_per_1k": 1.0,
                     },
                     "model": model,
                     "error": None,
@@ -141,10 +135,10 @@ def test_real_mode_writes_comparable_report_without_real_llm(
     assert payload["component_scores"]["overall"]["composite"] == 7.5
     assert payload["overall"]["story"] == 7.0
     assert payload["overall"]["prose"] == 8.0
-    assert payload["overall"]["objective_metrics"]["word_count"] == 264
+    assert "objective_metrics" not in payload["overall"]
+    assert all("objective_metrics" not in chapter for chapter in payload["chapters"])
     assert payload["dimensions"]["story"]["hook"] == 7.0
     assert payload["dimensions"]["prose"]["sentence_variety"] == 8.0
-    assert payload["dimensions"]["ai_issues"]["over_metaphor"] == 7.0
     assert payload["comparison"]["mock_baseline"]["composite"] == 5.0
     assert payload["comparison"]["delta"]["composite"] == 2.5
     assert len(payload["chapters"]) == 4

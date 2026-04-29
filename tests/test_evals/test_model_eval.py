@@ -1,32 +1,42 @@
 from worldbox_writer.evals.model_eval import (
+    DEFAULT_CASES,
     aggregate_case_results,
-    score_case_output,
+    check_case_output,
 )
 
 
-def test_score_case_output_validates_json_and_keywords():
+def test_check_case_output_validates_only_chain_structure():
     case = {
         "expect_json_keys": ["action", "reason"],
-        "must_include": ["action", "reason"],
-        "min_length": 10,
     }
 
-    result = score_case_output(case, '{"action": "撤退", "reason": "保存主力"}')
+    result = check_case_output(case, '{"action": "撤退", "reason": "保存主力"}')
 
-    assert result["score"] == 1.0
+    assert result["passed"] is True
     assert result["detail"]["json_keys_ok"] is True
+    assert result["detail"]["output_non_empty"] is True
+    assert "must_include_hits" not in result["detail"]
+    assert "length_ok" not in result["detail"]
+
+
+def test_default_model_eval_cases_do_not_use_content_heuristic_scoring():
+    for case in DEFAULT_CASES:
+        assert "must_include" not in case
+        assert "min_length" not in case
 
 
 def test_aggregate_case_results_groups_by_route():
     report = aggregate_case_results(
         [
-            {"id": "case-1", "route_group": "logic", "score": 0.8},
-            {"id": "case-2", "route_group": "logic", "score": 1.0},
-            {"id": "case-3", "route_group": "creative", "score": 0.7},
+            {"id": "case-1", "route_group": "logic", "passed": True},
+            {"id": "case-2", "route_group": "logic", "passed": True},
+            {"id": "case-3", "route_group": "creative", "passed": False},
         ],
         thresholds={"logic": 0.75, "creative": 0.72},
     )
 
-    assert report["logic"]["score"] == 0.9
+    assert report["logic"]["pass_rate"] == 1.0
     assert report["logic"]["threshold"] == 0.75
-    assert report["creative"]["score"] == 0.7
+    assert report["logic"]["passed"] is True
+    assert report["creative"]["pass_rate"] == 0.0
+    assert report["creative"]["passed"] is False

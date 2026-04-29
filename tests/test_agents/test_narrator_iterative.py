@@ -81,15 +81,15 @@ def _generation_responses() -> list[str]:
         ]
     )
     expansion = (
-        "雨水落在旧巷的青砖上，像被磨碎的针。阿璃挡住巷口，袖口沾着泥。"
+        "雨水落在旧巷的青砖上，敲出细密的响。阿璃挡住巷口，袖口沾着泥。"
         "她说：“密钥从哪来？”白夜看了一眼她身后的灯，说：“你不该问这个。”"
     )
     polish = (
-        "雨水敲在旧巷瓦檐上，像细碎的铁砂。阿璃没有让开，指节压着伞柄，"
-        "仿佛那把伞才是她真正握住的刀。她说：“密钥从哪来？别说你只是路过。”"
-        "白夜的靴尖停在积水边，如同被一条看不见的线拽住。他低声说："
-        "“你听见钟声了吗？”阿璃抬眼：“我问的是密钥。”他笑了一下，那笑意犹如"
-        "冷灰，贴着雨水散开：“那就别再问第二遍。”"
+        "雨水敲在旧巷瓦檐上，青砖被溅出一排白点。阿璃没有让开，指节压着伞柄。"
+        "她说：“密钥从哪来？别说你只是路过。”"
+        "白夜的靴尖停在积水边。他低声说："
+        "“你听见钟声了吗？”阿璃抬眼：“我问的是密钥。”他笑了一下，"
+        "冷意贴着雨水散开：“那就别再问第二遍。”"
     )
     return [skeleton, expansion, polish]
 
@@ -98,7 +98,7 @@ def _judge_responses() -> list[str]:
     return [
         json.dumps({"score": 5.4, "feedback": "骨架太薄，需要补足对话压力。"}),
         json.dumps({"score": 6.8, "feedback": "草稿可用，但潜台词还不够。"}),
-        json.dumps({"score": 7.2, "feedback": "润色达到原型门槛。"}),
+        json.dumps({"score": 6.8, "feedback": "润色仍未达到门槛。"}),
     ]
 
 
@@ -139,10 +139,6 @@ def test_iterative_narrator_metrics_increase_across_rounds() -> None:
 
     assert metrics[0]["word_count"] < metrics[1]["word_count"]
     assert metrics[1]["word_count"] < metrics[2]["word_count"]
-    assert metrics[0]["dialogue_ratio"] < metrics[1]["dialogue_ratio"]
-    assert metrics[1]["dialogue_ratio"] < metrics[2]["dialogue_ratio"]
-    assert metrics[0]["metaphor_density_per_1k"] < metrics[1]["metaphor_density_per_1k"]
-    assert metrics[1]["metaphor_density_per_1k"] < metrics[2]["metaphor_density_per_1k"]
 
 
 def test_iterative_narrator_marks_review_without_blocking() -> None:
@@ -156,7 +152,7 @@ def test_iterative_narrator_marks_review_without_blocking() -> None:
 
     assert output.prose
     assert output.review_required is True
-    assert "final_word_count_below_500" in output.review_reasons
+    assert "final_judge_score_below_threshold" in output.review_reasons
     assert "needs_human_review" in output.style_notes
 
 

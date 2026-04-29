@@ -74,12 +74,12 @@ def _resolve_judge_model(model: str | None) -> str:
     return model or os.environ.get(JUDGE_MODEL_ENV, DEFAULT_JUDGE_MODEL)
 
 
-def _neutral_scores() -> dict[str, float]:
-    return {key: 5.0 for key in CORE_SCORE_KEYS}
+def _zero_scores() -> dict[str, float]:
+    return {key: 0.0 for key in CORE_SCORE_KEYS}
 
 
-def _neutral_god_tier_scores() -> dict[str, float]:
-    return {key: 5.0 for key in GOD_TIER_SCORE_KEYS}
+def _zero_god_tier_scores() -> dict[str, float]:
+    return {key: 0.0 for key in GOD_TIER_SCORE_KEYS}
 
 
 def _neutral_toxic_flags() -> dict[str, bool]:
@@ -190,7 +190,7 @@ def _json_candidates(raw: str) -> list[str]:
 
 
 def parse_judge_response(raw: str) -> dict[str, Any]:
-    """Parse a judge response, falling back to a neutral parse error result."""
+    """Parse a judge response, returning an error when JSON is invalid."""
     for candidate in _json_candidates(raw):
         if not candidate:
             continue
@@ -200,10 +200,10 @@ def parse_judge_response(raw: str) -> dict[str, Any]:
             continue
         if isinstance(parsed, dict):
             return parsed
-    return {"score": 5.0, "error": "parse_failed", "raw": raw}
+    return {"error": "parse_failed", "raw": raw}
 
 
-def _score(value: Any, default: float = 5.0) -> float:
+def _score(value: Any, default: float = 0.0) -> float:
     if isinstance(value, bool):
         return default
     if isinstance(value, (int, float)):
@@ -211,7 +211,7 @@ def _score(value: Any, default: float = 5.0) -> float:
     return default
 
 
-def _clamped_score(value: Any, default: float = 5.0) -> float:
+def _clamped_score(value: Any, default: float = 0.0) -> float:
     return round(min(10.0, max(0.0, _score(value, default))), 2)
 
 
@@ -226,7 +226,7 @@ def _bool_mapping(value: Any, keys: Sequence[str]) -> dict[str, bool]:
 
 def _float_mapping(value: Any, keys: Sequence[str]) -> dict[str, float]:
     source = _dict_value(value)
-    return {key: _clamped_score(source.get(key, 5.0)) for key in keys}
+    return {key: _clamped_score(source.get(key, 0.0)) for key in keys}
 
 
 def _string_list(value: Any, limit: int = 3) -> list[str]:
@@ -322,7 +322,7 @@ def _normalized_existing_result(
     str,
     float,
 ]:
-    overall = _clamped_score(result.get("overall", result.get("score", 5.0)))
+    overall = _clamped_score(result.get("overall", result.get("score", 0.0)))
     raw_scores = result.get("scores") or result.get("dimensions")
     raw_god_tier_scores = result.get("god_tier_scores")
     scores = (
@@ -414,8 +414,8 @@ def _empty_judge_result(
     weights: Mapping[str, float] | None = None,
 ) -> dict[str, Any]:
     return _build_judge_result(
-        scores=_neutral_scores(),
-        god_tier_scores=_neutral_god_tier_scores(),
+        scores=_zero_scores(),
+        god_tier_scores=_zero_god_tier_scores(),
         toxic_flags=_neutral_toxic_flags(),
         reasoning=reasoning,
         model=model,
@@ -520,6 +520,34 @@ def _normalize_llm_result(
     model: str,
     error: Any = None,
 ) -> dict[str, Any]:
+    expected_fields = {
+        "scores": CORE_SCORE_KEYS,
+        "god_tier_scores": GOD_TIER_SCORE_KEYS,
+        "toxic_flags": TOXIC_FLAG_KEYS,
+    }
+    missing_fields = [
+        field for field in expected_fields if not isinstance(parsed.get(field), dict)
+    ]
+    missing_keys = [
+        f"{field}.{key}"
+        for field, keys in expected_fields.items()
+        if isinstance(parsed.get(field), dict)
+        for key in keys
+        if key not in parsed[field]
+    ]
+    if missing_fields:
+        return _empty_judge_result(
+            model=model,
+            error=error or parsed.get("error") or "invalid_judge_response",
+            reasoning=f"judge response missing fields: {', '.join(missing_fields)}",
+        )
+    if missing_keys:
+        return _empty_judge_result(
+            model=model,
+            error=error or parsed.get("error") or "invalid_judge_response",
+            reasoning=f"judge response missing keys: {', '.join(missing_keys[:5])}",
+        )
+
     scores = _float_mapping(
         parsed.get("scores") or parsed.get("dimensions"),
         CORE_SCORE_KEYS,
@@ -543,57 +571,6 @@ def _normalize_llm_result(
         model=model,
         error=error or parsed.get("error"),
     )
-
-
-def _nonspace_length(text: str) -> int:
-    return sum(1 for character in text if not character.isspace())
-
-
-def _dialogue_character_count(text: str) -> int:
-    count = 0
-    closing_quote = ""
-    quote_pairs = {"“": "”", "‘": "’", '"': '"', "'": "'"}
-    for character in text:
-        if closing_quote:
-            if character == closing_quote:
-                closing_quote = ""
-            elif not character.isspace():
-                count += 1
-            continue
-        if character in quote_pairs:
-            closing_quote = quote_pairs[character]
-    return count
-
-
-def _count_phrase(text: str, phrase: str) -> int:
-    count = 0
-    cursor = 0
-    while True:
-        index = text.find(phrase, cursor)
-        if index == -1:
-            return count
-        count += 1
-        cursor = index + len(phrase)
-
-
-def objective_metrics(text: str) -> dict[str, Any]:
-    """Compute deterministic prose metrics for comparable eval reports."""
-    normalized = str(text or "")
-    word_count = _nonspace_length(normalized)
-    dialogue_chars = _dialogue_character_count(normalized)
-    metaphor_markers = ("仿佛", "好像", "如同", "宛如", "犹如", "像")
-    metaphor_count = sum(
-        _count_phrase(normalized, marker) for marker in metaphor_markers
-    )
-    dialogue_ratio = dialogue_chars / word_count if word_count else 0.0
-    metaphor_density = metaphor_count * 1000 / word_count if word_count else 0.0
-    return {
-        "word_count": word_count,
-        "dialogue_char_count": dialogue_chars,
-        "dialogue_ratio": round(dialogue_ratio, 4),
-        "metaphor_count": metaphor_count,
-        "metaphor_density_per_1k": round(metaphor_density, 2),
-    }
 
 
 def _call_judge_llm(prompt: str, *, model: str, max_tokens: int) -> str:
@@ -742,7 +719,6 @@ def _judge_item(item: dict[str, Any], *, model: str) -> dict[str, Any]:
             "story": story_result,
             "scene_script": scene_script_result,
             "prose": prose_result,
-            "objective_metrics": objective_metrics(rendered_text),
             "model": model,
             "error": composite.get("error"),
         }

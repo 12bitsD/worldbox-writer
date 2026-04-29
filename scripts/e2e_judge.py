@@ -48,18 +48,6 @@ MINIMAL_ALI_ID = UUID("00000000-0000-4000-8000-000000000101")
 MINIMAL_BAIYE_ID = UUID("00000000-0000-4000-8000-000000000102")
 MINIMAL_NODE_ID = UUID("00000000-0000-4000-8000-000000000201")
 MINIMAL_GENERATED_AT = "2026-04-29T00:00:00+00:00"
-CAUSAL_BEAT_TERMS = (
-    "因为",
-    "因此",
-    "所以",
-    "导致",
-    "迫使",
-    "被迫",
-    "使得",
-    "从而",
-    "于是",
-    "因而",
-)
 
 
 def _now_iso() -> str:
@@ -199,108 +187,6 @@ def _comparison_against_mock(
             ),
         },
     }
-
-
-def _aggregate_objective_metrics(
-    chapter_metrics: Sequence[dict[str, Any]], chapter_count: int
-) -> dict[str, Any]:
-    total_words = sum(
-        _coerce_int(metrics.get("word_count")) for metrics in chapter_metrics
-    )
-    dialogue_chars = sum(
-        _coerce_int(metrics.get("dialogue_char_count")) for metrics in chapter_metrics
-    )
-    if dialogue_chars:
-        dialogue_ratio = dialogue_chars / total_words if total_words else 0.0
-    else:
-        dialogue_ratio = _safe_average(
-            [
-                float(metrics.get("dialogue_ratio", 0.0))
-                for metrics in chapter_metrics
-                if isinstance(metrics.get("dialogue_ratio"), (int, float))
-            ]
-        )
-    metaphor_count = sum(
-        _coerce_int(metrics.get("metaphor_count")) for metrics in chapter_metrics
-    )
-    if metaphor_count:
-        metaphor_density = metaphor_count * 1000 / total_words if total_words else 0.0
-    else:
-        metaphor_density = _safe_average(
-            [
-                float(metrics.get("metaphor_density_per_1k", 0.0))
-                for metrics in chapter_metrics
-                if isinstance(metrics.get("metaphor_density_per_1k"), (int, float))
-            ]
-        )
-    causal_beat_count = sum(
-        _coerce_int(metrics.get("causal_beat_count")) for metrics in chapter_metrics
-    )
-    total_beat_count = sum(
-        _coerce_int(metrics.get("beat_count")) for metrics in chapter_metrics
-    )
-    causal_beat_ratio = (
-        causal_beat_count / total_beat_count if total_beat_count else 1.0
-    )
-    checks = {
-        "word_count_min": {
-            "value": total_words,
-            "threshold": chapter_count * 200,
-            "passed": total_words >= chapter_count * 200,
-        },
-        "dialogue_ratio_min": {
-            "value": round(dialogue_ratio, 4),
-            "threshold": 0.05,
-            "passed": dialogue_ratio >= 0.05,
-        },
-        "metaphor_density_max": {
-            "value": round(metaphor_density, 2),
-            "threshold": 3.0,
-            "passed": metaphor_density <= 3.0,
-        },
-        "causal_beat_ratio_min": {
-            "value": round(causal_beat_ratio, 4),
-            "threshold": 0.6,
-            "passed": causal_beat_ratio >= 0.6,
-        },
-    }
-    return {
-        "word_count": total_words,
-        "dialogue_char_count": dialogue_chars,
-        "dialogue_ratio": round(dialogue_ratio, 4),
-        "metaphor_count": metaphor_count,
-        "metaphor_density_per_1k": round(metaphor_density, 2),
-        "beat_count": total_beat_count,
-        "causal_beat_count": causal_beat_count,
-        "causal_beat_ratio": round(causal_beat_ratio, 4),
-        "checks": checks,
-        "checks_passed": sum(1 for check in checks.values() if check["passed"]),
-    }
-
-
-def _scene_script_objective_metrics(scene_script: SceneScript | None) -> dict[str, Any]:
-    if scene_script is None:
-        return {"beat_count": 0, "causal_beat_count": 0, "causal_beat_ratio": 1.0}
-    beat_count = len(scene_script.beats)
-    causal_beat_count = sum(
-        1 for beat in scene_script.beats if _beat_has_causal_outcome(beat)
-    )
-    return {
-        "beat_count": beat_count,
-        "causal_beat_count": causal_beat_count,
-        "causal_beat_ratio": round(
-            causal_beat_count / beat_count if beat_count else 1.0,
-            4,
-        ),
-    }
-
-
-def _beat_has_causal_outcome(beat: SceneBeat) -> bool:
-    summary = str(beat.summary or "").strip().strip("。；;，, ")
-    outcome = str(beat.outcome or "").strip().strip("。；;，, ")
-    if not outcome or outcome == summary:
-        return False
-    return any(term in outcome for term in CAUSAL_BEAT_TERMS)
 
 
 def _minimal_eval_world(
@@ -916,10 +802,6 @@ def _chapter_report(
     story_dimensions = _dict_value(story_result.get("dimensions"))
     prose_dimensions = _dict_value(prose_result.get("dimensions"))
     ai_issues = _dict_value(prose_result.get("ai_issues"))
-    objective = _dict_value(judge_result.get("objective_metrics"))
-    if not objective:
-        objective = llm_judge.objective_metrics(rendered_text)
-    objective.update(_scene_script_objective_metrics(scene_script))
 
     return {
         "chapter": _coerce_int(chapter.get("chapter"), 0),
@@ -958,7 +840,6 @@ def _chapter_report(
             "prose": prose_dimensions,
             "ai_issues": ai_issues,
         },
-        "objective_metrics": objective,
         "judge": judge_result,
     }
 
@@ -1003,9 +884,6 @@ def _build_comparable_simulation_report(
                     "model": model,
                     "error": "mock_baseline_fallback",
                 },
-                "objective_metrics": llm_judge.objective_metrics(
-                    str(chapter.get("rendered_text") or "")
-                ),
                 "model": model,
                 "error": "mock_baseline_fallback",
             }
@@ -1021,10 +899,6 @@ def _build_comparable_simulation_report(
     composite_scores = [
         chapter["component_scores"]["composite"] for chapter in chapter_reports
     ]
-    objective = _aggregate_objective_metrics(
-        [chapter["objective_metrics"] for chapter in chapter_reports],
-        len(chapter_reports),
-    )
     dimensions = {
         "story": _average_mapping(
             [chapter["dimensions"]["story"] for chapter in chapter_reports]
@@ -1046,7 +920,6 @@ def _build_comparable_simulation_report(
         "prose": _safe_average(prose_scores),
         "composite": _safe_average(composite_scores),
         "chapter_count": len(chapter_reports),
-        "objective_metrics": objective,
     }
     comparison = _comparison_against_mock(overall, mock_baseline_path)
     return {

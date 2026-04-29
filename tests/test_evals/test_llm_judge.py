@@ -10,7 +10,6 @@ from worldbox_writer.evals.llm_judge import (
     build_prose_judge_prompt,
     judge_prose,
     judge_scene_script,
-    objective_metrics,
     parse_judge_response,
 )
 
@@ -90,14 +89,14 @@ def test_judge_prose_handles_garbage_response() -> None:
 
     parsed = parse_judge_response(raw)
 
-    assert parsed == {"score": 5.0, "error": "parse_failed", "raw": raw}
+    assert parsed == {"error": "parse_failed", "raw": raw}
 
     with patch("worldbox_writer.evals.llm_judge.chat_completion", return_value=raw):
         result = judge_prose("文本", model="judge-test")
 
-    assert result["score"] == 5.0
+    assert result["score"] == 0.0
     assert result["error"] == "parse_failed"
-    assert result["scores"]["anticipation"] == 5.0
+    assert result["scores"]["anticipation"] == 0.0
     assert result["toxic_flags"]["preachiness"] is False
 
 
@@ -163,7 +162,7 @@ def test_batch_judge_handles_simulation_chapter() -> None:
             )
         ],
     )
-    rendered_text = "阿璃说：“再往前一步。”白夜停住，桥下的雾像冷掉的灰。"
+    rendered_text = "阿璃说：“再往前一步。”白夜停住，桥下的雾压住石阶。"
 
     with patch(
         "worldbox_writer.evals.llm_judge.chat_completion",
@@ -188,9 +187,7 @@ def test_batch_judge_handles_simulation_chapter() -> None:
     assert result["scores"]["anticipation"] == 7.55
     assert result["god_tier_scores"]["foreshadowing_depth"] == 7.55
     assert result["toxic_flags"]["forced_stupidity"] is False
-    assert result["objective_metrics"]["word_count"] > 0
-    assert result["objective_metrics"]["dialogue_ratio"] > 0
-    assert result["objective_metrics"]["metaphor_density_per_1k"] > 0
+    assert "objective_metrics" not in result
 
 
 def test_aggregate_judge_results_applies_veto() -> None:
@@ -211,16 +208,6 @@ def test_aggregate_judge_results_applies_veto() -> None:
     assert toxic_result["vetoed"] is True
     assert toxic_result["toxic_flags"]["forced_stupidity"] is True
     assert toxic_result["overall"] == 0.0
-
-
-def test_objective_metrics_counts_dialogue_and_metaphor_density() -> None:
-    metrics = objective_metrics("阿璃说：“桥还没醒。”雾像一把冷刀。")
-
-    assert metrics["word_count"] > 0
-    assert metrics["dialogue_char_count"] > 0
-    assert metrics["dialogue_ratio"] > 0
-    assert metrics["metaphor_count"] == 1
-    assert metrics["metaphor_density_per_1k"] > 0
 
 
 def test_build_prose_prompt_contains_criteria() -> None:

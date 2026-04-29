@@ -29,7 +29,6 @@ DEFAULT_CASES: list[dict[str, Any]] = [
             },
         ],
         "expect_json_keys": ["action", "reason"],
-        "must_include": ["action", "reason"],
     },
     {
         "id": "logic-memory-summary",
@@ -47,8 +46,6 @@ DEFAULT_CASES: list[dict[str, Any]] = [
                 "content": ("请总结：主角离开宗门、在王城结盟、得知敌人真正身份。"),
             },
         ],
-        "must_include": ["主角", "王城"],
-        "min_length": 18,
     },
     {
         "id": "creative-scene",
@@ -66,8 +63,6 @@ DEFAULT_CASES: list[dict[str, Any]] = [
                 "content": "请写一段王城雨夜中主角与旧友重逢的场景。",
             },
         ],
-        "must_include": ["王城", "主角"],
-        "min_length": 80,
     },
     {
         "id": "creative-worldbuild",
@@ -85,8 +80,6 @@ DEFAULT_CASES: list[dict[str, Any]] = [
                 "content": "补充一个围绕星门、旧王朝和边境军的世界设定。",
             },
         ],
-        "must_include": ["星门", "边境军"],
-        "min_length": 30,
     },
     {
         "id": "creative-dialogue",
@@ -104,14 +97,12 @@ DEFAULT_CASES: list[dict[str, Any]] = [
                 "content": "写一段主角拒绝旧王朝邀请的对话场景。",
             },
         ],
-        "must_include": ["主角"],
-        "min_length": 70,
     },
 ]
 
 
-def score_case_output(case: dict[str, Any], output: str) -> dict[str, Any]:
-    checks: list[float] = []
+def check_case_output(case: dict[str, Any], output: str) -> dict[str, Any]:
+    checks: list[bool] = []
     detail: dict[str, Any] = {"length": len(output)}
 
     expected_keys = case.get("expect_json_keys") or []
@@ -119,27 +110,18 @@ def score_case_output(case: dict[str, Any], output: str) -> dict[str, Any]:
         try:
             payload = json.loads(output)
             has_keys = all(key in payload for key in expected_keys)
-            checks.append(1.0 if has_keys else 0.0)
+            checks.append(has_keys)
             detail["json_keys_ok"] = has_keys
         except json.JSONDecodeError:
-            checks.append(0.0)
+            checks.append(False)
             detail["json_keys_ok"] = False
 
-    must_include = case.get("must_include") or []
-    if must_include:
-        hits = sum(1 for phrase in must_include if phrase in output)
-        include_score = hits / len(must_include)
-        checks.append(include_score)
-        detail["must_include_hits"] = hits
+    output_non_empty = bool(str(output or "").strip())
+    checks.append(output_non_empty)
+    detail["output_non_empty"] = output_non_empty
 
-    min_length = int(case.get("min_length") or 0)
-    if min_length > 0:
-        length_ok = len(output) >= min_length
-        checks.append(1.0 if length_ok else 0.0)
-        detail["length_ok"] = length_ok
-
-    score = round(sum(checks) / len(checks), 4) if checks else 1.0
-    return {"score": score, "detail": detail}
+    passed = all(checks) if checks else True
+    return {"passed": passed, "detail": detail}
 
 
 def aggregate_case_results(
@@ -153,20 +135,22 @@ def aggregate_case_results(
         route = routes.setdefault(
             route_group,
             {
-                "score_sum": 0.0,
+                "passed_count": 0,
                 "count": 0,
                 "cases": [],
                 "threshold": thresholds.get(route_group, 0.8),
             },
         )
-        route["score_sum"] += result["score"]
+        if result["passed"]:
+            route["passed_count"] += 1
         route["count"] += 1
-        route["cases"].append({"id": result["id"], "score": result["score"]})
+        route["cases"].append({"id": result["id"], "passed": result["passed"]})
 
     return {
         route_group: {
-            "score": round(route["score_sum"] / route["count"], 4),
+            "pass_rate": round(route["passed_count"] / route["count"], 4),
             "threshold": route["threshold"],
+            "passed": (route["passed_count"] / route["count"]) >= route["threshold"],
             "cases": route["cases"],
         }
         for route_group, route in routes.items()
@@ -188,13 +172,13 @@ def run_model_eval() -> dict[str, Any]:
             temperature=float(case.get("temperature", 0.4)),
             max_tokens=int(case.get("max_tokens", 220)),
         )
-        evaluation = score_case_output(case, output)
+        evaluation = check_case_output(case, output)
         case_results.append(
             {
                 "id": case["id"],
                 "role": case["role"],
                 "route_group": case["route_group"],
-                "score": evaluation["score"],
+                "passed": evaluation["passed"],
                 "detail": evaluation["detail"],
                 "output_preview": output[:200],
             }
@@ -202,6 +186,7 @@ def run_model_eval() -> dict[str, Any]:
 
     routes = aggregate_case_results(case_results, thresholds=thresholds)
     return {
+        "report_type": "route_health",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "provider": os.environ.get("LLM_PROVIDER", "default"),
         "cases": case_results,
@@ -223,14 +208,14 @@ def main() -> int:
     print(f"Model eval report written to {output_path}")
     for route_group, route in report["routes"].items():
         print(
-            f"- {route_group}: score={route['score']:.2f} "
+            f"- {route_group}: pass_rate={route['pass_rate']:.2f} "
             f"threshold={route['threshold']:.2f}"
         )
 
     failed = [
         route_group
         for route_group, route in report["routes"].items()
-        if route["score"] < route["threshold"]
+        if not route["passed"]
     ]
     if failed:
         print(f"Model eval failed for: {', '.join(failed)}")
