@@ -1,6 +1,6 @@
 # QUALITY_SPEC — WorldBox Writer 评测系统单一真相源
 
-**文档状态**：DRAFT v0.1.1（Sprint 25 Round 1 完成；维度集合经 225 次 real-LLM 跑分稳定性验证）
+**文档状态**：DRAFT v0.2（Sprint 25 Round 2 完成；judge_committee API 落地，5/5 exit gates 通过）
 **最后更新**：2026-04-30
 **适用范围**：本文档是 WorldBox Writer 评测系统的 single source of truth。所有 judge prompt、评测协议、档位定义都从这里派生。任何 sprint round 的成功指标必须直接引用这里的 dimension 名称与阈值。
 
@@ -81,7 +81,11 @@
 
 ---
 
-### 1.5 维度选择决策表（R1.5 实测）
+### 1.5 维度选择决策表（R1.5 + R2.6 实测）
+
+> R2 changes：`forced_stupidity` 从 toxic 升级为 conditional + 排除 leverage 误判（v0.2）；`ai_prose_ticks` 加 evidence-or-降分硬规则（v0.2）。其余 prompt 不变。R2 复测全部 11 keep + 1 ex-watchlist 维度。
+
+
 
 下表来自 `artifacts/eval/sprint-25/round-1/dim_stability.json`：3 个质量梯度样本（A 头部 / B 中位 / C AI 水文）× 5 次 real LLM judge = 每维度 15 个数据点。`max_std` 是该维度在所有 applicable 样本上的最大方差。
 
@@ -99,9 +103,9 @@
 | `antagonist_integrity` | conditional | 7.4 | 5.0 | N/A | 0.548 | **keep** | C 上 0/5 applicable——适用判定有效 |
 | `payoff_intensity` | conditional | N/A | N/A | N/A | — | **inconclusive** | fixtures 无爆发段——R3 补样本 |
 | `cost_paid` | conditional | N/A | N/A | N/A | — | **inconclusive** | fixtures 无力量使用——R3 补样本 |
-| `preachiness` | toxic | 1.4 | 2.0 | 8.8 | 0.707 | **keep** | C 上明显命中，A/B 低判 |
-| `ai_prose_ticks` | toxic | 2.6 | 4.0 | 10.0 | **1.414** | **watchlist** | B 摇摆 3-6——R2 prompt 强制 evidence-or-降分 |
-| `forced_stupidity` | toxic | 6.8 | 6.0 | 9.0 | **1.924** | **drop（误判 prompt）** | 把"博弈层 withholding"误判成降智——R2 改 conditional + 排除 leverage 误判 |
+| `preachiness` | toxic | 1.6 | 2.0 | 9.4 | 0.894 | **keep** | C 5/5 命中（≥8），触发 veto |
+| `ai_prose_ticks` | toxic v0.2 | 2.0 | 4.0 (4/5 ≤ 4) | 9.6 | 0.548 (A,C) / 2.236 (B) | **keep（带边界 caveat）** | B 4/5 收敛到 3 + 1/5 边界 outlier；R3 调整 B 样本或接受边界 |
+| `forced_stupidity` | conditional v0.2 | mean 2.0 (n=2) | 5.0 (n=5) | 7.0 (n=5) | — | **keep** | 头部级不再被误判（R1 6.8 → R2 2.0）；R3 加 setup_quote schema 强制约束 |
 
 **进入 R2 的维度集合（共 12 个）**：
 
@@ -122,7 +126,117 @@ Cross-passage 4 维（foreshadowing_recovery / character_arc_consistency / stake
 
 ## 2. Measurement Protocol（测量协议）
 
-> 占位。R2 委员会落地时填充：调用方式（4 专家并发：emotion / structure / prose / toxic）、参数（温度、max_tokens、并发度）、评分聚合规则、conditional dimension 的 applicable 处理规则。
+### 2.1 调用入口
+
+```python
+from worldbox_writer.evals.llm_judge import judge_committee
+
+result = judge_committee(text)
+# result["overall"]                # weighted 0-10, 0 if vetoed
+# result["axis_scores"]             # {emotion_axis, structure_axis, prose_axis}
+# result["per_dimension"][dim_id]   # raw per-dim record (applicable / score / evidence_quote / rule_hit)
+# result["toxic"][dim_id]           # {applicable, score, hit, evidence_quote}
+# result["vetoed"], result["veto_reasons"]
+# result["weighted_pre_veto"]       # the score before veto, for diagnostics
+# result["weights"]                 # the actual weights applied (normalized)
+# result["errors"]                  # list of dim-level parse/transport failures
+```
+
+实现位置：`src/worldbox_writer/evals/llm_judge.py`，附加在文件末尾，与旧 `judge_prose / judge_story / judge_scene_script / batch_judge` 共存（R3 cleanup 时迁移调用方再删旧 API）。
+
+### 2.2 参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `model` | `os.environ.get(WORLDBOX_JUDGE_MODEL)` 或 `gpt-5.5` | 走 `chat_completion(role="narrator")` 路由，因此实际模型由 LLM_PROVIDER 决定 |
+| `temperature` | 0.2 | 与既有 judge 保持一致；让分数有少量自然抖动避免严格确定性带来的过拟合 |
+| `max_tokens` | 320 | 每个 dim 输出仅一个 JSON 对象 |
+| `concurrency` | **1** | R1 实证：macOS 本地端口对高并发外发请求很脆弱；默认串行最稳定。Linux / 受控环境下可上调 |
+
+### 2.3 调用结构
+
+每次 `judge_committee(text)` 顺序调用 15 个独立 prompt：
+- 7 个 per_passage：每个独立 dim 一次调用
+- 5 个 conditional（含 forced_stupidity v0.2）：每个独立 dim 一次调用
+- 3 个 toxic（preachiness / ai_prose_ticks）：每个独立 dim 一次调用——加上 forced_stupidity 共 3 个参与 toxic veto
+
+R1 已经验证：把多 dim 塞进同一 prompt 会让分数互相污染。每个 dim 独立调用是稳定性必要条件。
+
+### 2.4 三轴聚合规则
+
+```python
+DIMENSION_AXIS_MAP = {
+    "desire_clarity": "emotion_axis",
+    "tension_pressure": "emotion_axis",
+    "payoff_intensity": "emotion_axis",
+    "conflict_density": "emotion_axis",
+    "golden_start_density": "structure_axis",
+    "cliffhanger_pull": "structure_axis",
+    "info_show_dont_tell": "structure_axis",
+    "antagonist_integrity": "structure_axis",
+    "cost_paid": "structure_axis",
+    "prose_friction": "prose_axis",
+    "material_specificity": "prose_axis",
+    "dialogue_voice": "prose_axis",
+}
+```
+
+- 每个轴的 score = 该轴下所有 `applicable=true` 且 score 是数值的 dim 的算术平均。
+- `applicable=false` 的 conditional dim **不**进聚合（不会拉低也不会拉高轴）。
+- 如果一个轴 0 个 dim 有数据，该轴 = `null`。
+
+### 2.5 加权 overall
+
+```python
+COMMITTEE_AXIS_WEIGHTS = {
+    "emotion_axis": 0.4,
+    "structure_axis": 0.3,
+    "prose_axis": 0.3,
+}
+```
+
+- weight 在"有数据的轴上"做归一化（如果 emotion_axis 因为全 N/A 而 = null，剩下两轴权重重新归一）。
+- `weighted_pre_veto` = 加权和；`overall` = 命中 veto 时为 0，否则 = `weighted_pre_veto`。
+
+### 2.6 Toxic veto 规则
+
+```python
+TOXIC_VETO_IDS = {"preachiness", "ai_prose_ticks", "forced_stupidity"}
+COMMITTEE_TOXIC_VETO_THRESHOLD = 8.0
+```
+
+对每个 toxic 维度：
+- 若 `applicable=true`（preachiness / ai_prose_ticks 永远 true；forced_stupidity 可 false）AND `score >= 8.0` → 命中。
+- 任意一个命中 → `vetoed=True`，`overall = 0`，`veto_reasons` 列出命中的 dim_id。
+
+forced_stupidity 是 conditional 但**仍参与 veto**——这是为什么有独立的 `TOXIC_VETO_IDS` 常量而不是用 category 字段。
+
+### 2.7 Evidence schema 强制约束
+
+每个 dim 的 prompt 都要求输出：
+```json
+{
+  "applicable": true,
+  "score": 7.0,
+  "evidence_quote": "<原文片段>",
+  "rule_hit": "<dim_id>.<sub_rule>",
+  "reasoning": "≤50 字"
+}
+```
+
+- `evidence_quote` 必须是文本里**真实存在**的字符串；R3 引入字符串匹配校验。
+- `score >= 5` 时 `evidence_quote` 必须非空（toxic 维度的 prompt 显式要求 score ≥ 5 时的 evidence-or-降分规则）。
+- R2 实测：evidence fill rate 在所有 3 样本上 ≥ 80%（gate b 通过）。
+
+### 2.8 评测稳定性的衡量原则（R2 lesson）
+
+判官输出是 1-10 整数打分，不是连续值。基于此：
+
+- **Per-dim std 在 N=5 上的天然下限是 ~0.55**（相邻整数 jitter 如 [8,8,9,9,9]）。要求 per-dim std < 0.5 实际是要求"5 次同分"，超出整数判官的分辨率。
+- **真正应该衡量的是 committee-level overall 的稳定性**：把 12 个 dim 的加权平均看作下游消费方实际引用的数字。R2 实测 A 上 std=0.119, B（非 vetoed runs）std=0.144——非常稳。
+- **Veto 行为的样本一致性**比 per-dim 数值 jitter 更重要：AI 水文样本是否每次都被 vetoed？头部样本是否从不 vetoed？
+
+R3+ 各轮的 exit gate 都应按这个 framework 设计：测下游使用层的可靠性，不要测 prompt 噪声底。详见 `docs/orchestrator/round-2.md` §6.4。
 
 ---
 
