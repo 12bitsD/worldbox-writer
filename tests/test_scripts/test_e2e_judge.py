@@ -91,13 +91,31 @@ def test_e2e_judge_mock_run(tmp_path, monkeypatch) -> None:
     ) -> dict[str, Any]:
         return {
             "score": 8.0,
+            "overall": 8.0,
+            "scores": {"anticipation": 8.0},
+            "god_tier_scores": {"foreshadowing_depth": 8.0},
+            "toxic_flags": {"forced_stupidity": False},
+            "weights": {},
+            "vetoed": False,
+            "critical_issues": [],
             "script_id": script.script_id,
             "model": model,
             "error": None,
         }
 
     def fake_judge_prose(text: str, model: str | None = None) -> dict[str, Any]:
-        return {"score": 7.0, "model": model, "error": None}
+        return {
+            "score": 7.0,
+            "overall": 7.0,
+            "scores": {"readability": 7.0},
+            "god_tier_scores": {"foreshadowing_depth": 7.0},
+            "toxic_flags": {"forced_stupidity": False},
+            "weights": {},
+            "vetoed": False,
+            "critical_issues": [],
+            "model": model,
+            "error": None,
+        }
 
     monkeypatch.setattr(module.llm_judge, "judge_scene_script", fake_judge_scene_script)
     monkeypatch.setattr(module.llm_judge, "judge_prose", fake_judge_prose)
@@ -112,6 +130,9 @@ def test_e2e_judge_mock_run(tmp_path, monkeypatch) -> None:
     assert payload["scene_script_score"]["score"] == 8.0
     assert payload["prose_score"]["score"] == 7.0
     assert payload["composite"] == 7.5
+    assert "scores" in payload
+    assert "god_tier_scores" in payload
+    assert "toxic_flags" in payload
     assert payload["scene_script"]["source"] == "current_node"
     assert payload["prose"]["source"] == "rendered_node"
     assert payload["warnings"] == []
@@ -130,13 +151,31 @@ def test_e2e_judge_generates_eval_data_when_missing(tmp_path, monkeypatch) -> No
     ) -> dict[str, Any]:
         return {
             "score": 8.0,
+            "overall": 8.0,
+            "scores": {"anticipation": 8.0},
+            "god_tier_scores": {"foreshadowing_depth": 8.0},
+            "toxic_flags": {"forced_stupidity": False},
+            "weights": {},
+            "vetoed": False,
+            "critical_issues": [],
             "script_id": script.script_id,
             "model": model,
             "error": None,
         }
 
     def fake_judge_prose(text: str, model: str | None = None) -> dict[str, Any]:
-        return {"score": 7.0, "model": model, "error": None}
+        return {
+            "score": 7.0,
+            "overall": 7.0,
+            "scores": {"readability": 7.0},
+            "god_tier_scores": {"foreshadowing_depth": 7.0},
+            "toxic_flags": {"forced_stupidity": False},
+            "weights": {},
+            "vetoed": False,
+            "critical_issues": [],
+            "model": model,
+            "error": None,
+        }
 
     monkeypatch.setattr(module.llm_judge, "judge_scene_script", fake_judge_scene_script)
     monkeypatch.setattr(module.llm_judge, "judge_prose", fake_judge_prose)
@@ -160,6 +199,9 @@ def test_e2e_judge_generates_eval_data_when_missing(tmp_path, monkeypatch) -> No
     assert payload["scene_script_score"]["score"] == 8.0
     assert payload["prose_score"]["score"] == 7.0
     assert payload["composite"] == 7.5
+    assert "scores" in payload
+    assert "god_tier_scores" in payload
+    assert "toxic_flags" in payload
     assert payload["scene_script"]["source"] == "current_node"
     assert payload["prose"]["source"] == "rendered_node"
     assert payload["eval_data"]["source"] == "generated_mock"
@@ -184,13 +226,31 @@ def test_e2e_judge_mock_flag_uses_builtin_eval_data(tmp_path, monkeypatch) -> No
     ) -> dict[str, Any]:
         return {
             "score": 8.0,
+            "overall": 8.0,
+            "scores": {"anticipation": 8.0},
+            "god_tier_scores": {"foreshadowing_depth": 8.0},
+            "toxic_flags": {"forced_stupidity": False},
+            "weights": {},
+            "vetoed": False,
+            "critical_issues": [],
             "script_id": script.script_id,
             "model": model,
             "error": None,
         }
 
     def fake_judge_prose(text: str, model: str | None = None) -> dict[str, Any]:
-        return {"score": 7.0, "model": model, "error": None}
+        return {
+            "score": 7.0,
+            "overall": 7.0,
+            "scores": {"readability": 7.0},
+            "god_tier_scores": {"foreshadowing_depth": 7.0},
+            "toxic_flags": {"forced_stupidity": False},
+            "weights": {},
+            "vetoed": False,
+            "critical_issues": [],
+            "model": model,
+            "error": None,
+        }
 
     monkeypatch.setattr(module.llm_judge, "judge_scene_script", fake_judge_scene_script)
     monkeypatch.setattr(module.llm_judge, "judge_prose", fake_judge_prose)
@@ -203,6 +263,9 @@ def test_e2e_judge_mock_flag_uses_builtin_eval_data(tmp_path, monkeypatch) -> No
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["simulation_id"] == module.DEFAULT_EVAL_SIMULATION_ID
     assert payload["composite"] == 7.5
+    assert "scores" in payload
+    assert "god_tier_scores" in payload
+    assert "toxic_flags" in payload
     assert payload["scene_script"]["source"] == "current_node"
     assert payload["eval_data"]["source"] == "builtin_mock"
     assert payload["eval_data"]["mock"] is True

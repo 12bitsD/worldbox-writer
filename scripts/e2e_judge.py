@@ -82,11 +82,14 @@ def _composite_score(
 
 
 def _empty_score(error: str) -> dict[str, Any]:
-    return {
-        "score": 0.0,
-        "error": error,
-        "reasoning": "没有可评测的 simulation 数据。",
-    }
+    result = llm_judge.aggregate_judge_results(
+        [],
+        error=error,
+        reasoning="没有可评测的 simulation 数据。",
+    )
+    result["score"] = 0.0
+    result["overall"] = 0.0
+    return result
 
 
 class RealSimulationTimeout(RuntimeError):
@@ -514,11 +517,33 @@ def _fallback_report(
 ) -> dict[str, Any]:
     scene_score = _empty_score(error)
     prose_score = _empty_score(error)
+    aggregate_judge = llm_judge.aggregate_judge_results(
+        {"scene_script": scene_score, "prose": prose_score},
+        component_weights={"scene_script": 0.5, "prose": 0.5},
+        error=error,
+        reasoning="没有可评测的 simulation 数据。",
+    )
     return {
         "simulation_id": simulation_id or "",
         "scene_script_score": scene_score,
         "prose_score": prose_score,
         "composite": 0.0,
+        "scores": _dict_value(aggregate_judge.get("scores")),
+        "axis_scores": _dict_value(aggregate_judge.get("axis_scores")),
+        "god_tier_scores": _dict_value(aggregate_judge.get("god_tier_scores")),
+        "toxic_flags": {
+            key: bool(value)
+            for key, value in _dict_value(aggregate_judge.get("toxic_flags")).items()
+        },
+        "weights": _dict_value(aggregate_judge.get("weights")),
+        "judge_overall": 0.0,
+        "weighted_score_pre_veto": 0.0,
+        "vetoed": False,
+        "critical_issues": [
+            str(item)
+            for item in aggregate_judge.get("critical_issues", [])
+            if str(item).strip()
+        ],
         "timestamp": _now_iso(),
         "warnings": list(warnings),
     }
@@ -904,11 +929,30 @@ def _chapter_report(
             scene_script.model_dump(mode="json") if scene_script is not None else {}
         ),
         "rendered_text": rendered_text,
-        "scores": {
+        "component_scores": {
             "story": _score_from(story_result),
             "prose": _score_from(prose_result),
             "composite": _score_from(judge_result),
         },
+        "scores": _dict_value(judge_result.get("scores")),
+        "axis_scores": _dict_value(judge_result.get("axis_scores")),
+        "god_tier_scores": _dict_value(judge_result.get("god_tier_scores")),
+        "toxic_flags": {
+            key: bool(value)
+            for key, value in _dict_value(judge_result.get("toxic_flags")).items()
+        },
+        "weights": _dict_value(judge_result.get("weights")),
+        "overall": _score_from(judge_result),
+        "weighted_score_pre_veto": _score_from(
+            {"score": judge_result.get("weighted_score_pre_veto")},
+            _score_from(judge_result),
+        ),
+        "vetoed": bool(judge_result.get("vetoed", False)),
+        "critical_issues": [
+            str(item)
+            for item in judge_result.get("critical_issues", [])
+            if str(item).strip()
+        ],
         "dimensions": {
             "story": story_dimensions,
             "prose": prose_dimensions,
@@ -972,9 +1016,11 @@ def _build_comparable_simulation_report(
         for index, chapter in enumerate(chapters)
         if index < len(judge_results)
     ]
-    story_scores = [chapter["scores"]["story"] for chapter in chapter_reports]
-    prose_scores = [chapter["scores"]["prose"] for chapter in chapter_reports]
-    composite_scores = [chapter["scores"]["composite"] for chapter in chapter_reports]
+    story_scores = [chapter["component_scores"]["story"] for chapter in chapter_reports]
+    prose_scores = [chapter["component_scores"]["prose"] for chapter in chapter_reports]
+    composite_scores = [
+        chapter["component_scores"]["composite"] for chapter in chapter_reports
+    ]
     objective = _aggregate_objective_metrics(
         [chapter["objective_metrics"] for chapter in chapter_reports],
         len(chapter_reports),
@@ -990,6 +1036,11 @@ def _build_comparable_simulation_report(
             [chapter["dimensions"]["ai_issues"] for chapter in chapter_reports]
         ),
     }
+    aggregate_judge = llm_judge.aggregate_judge_results(
+        judge_results,
+        model=model,
+        reasoning="聚合多章节 judge 结果。",
+    )
     overall = {
         "story": _safe_average(story_scores),
         "prose": _safe_average(prose_scores),
@@ -1006,8 +1057,27 @@ def _build_comparable_simulation_report(
         "mode": mode,
         "fallback_used": fallback_used,
         "generated_at": _now_iso(),
-        "scores": {
-            "chapters": [chapter["scores"] for chapter in chapter_reports],
+        "scores": _dict_value(aggregate_judge.get("scores")),
+        "axis_scores": _dict_value(aggregate_judge.get("axis_scores")),
+        "god_tier_scores": _dict_value(aggregate_judge.get("god_tier_scores")),
+        "toxic_flags": {
+            key: bool(value)
+            for key, value in _dict_value(aggregate_judge.get("toxic_flags")).items()
+        },
+        "weights": _dict_value(aggregate_judge.get("weights")),
+        "judge_overall": _score_from(aggregate_judge),
+        "weighted_score_pre_veto": _score_from(
+            {"score": aggregate_judge.get("weighted_score_pre_veto")},
+            _score_from(aggregate_judge),
+        ),
+        "vetoed": bool(aggregate_judge.get("vetoed", False)),
+        "critical_issues": [
+            str(item)
+            for item in aggregate_judge.get("critical_issues", [])
+            if str(item).strip()
+        ],
+        "component_scores": {
+            "chapters": [chapter["component_scores"] for chapter in chapter_reports],
             "overall": {
                 "story": overall["story"],
                 "prose": overall["prose"],
@@ -1104,12 +1174,37 @@ def _build_e2e_judge_report_from_world(
 
     scene_script_score = llm_judge.judge_scene_script(scene_script, model=model)
     prose_score = llm_judge.judge_prose(narrator_output.prose, model=model)
+    aggregate_judge = llm_judge.aggregate_judge_results(
+        {"scene_script": scene_script_score, "prose": prose_score},
+        component_weights={"scene_script": 0.5, "prose": 0.5},
+        model=model,
+        reasoning="聚合单次 e2e 的 SceneScript 与 prose 评测结果。",
+    )
 
     report = {
         "simulation_id": simulation_id,
         "scene_script_score": scene_script_score,
         "prose_score": prose_score,
         "composite": _composite_score(scene_script_score, prose_score),
+        "scores": _dict_value(aggregate_judge.get("scores")),
+        "axis_scores": _dict_value(aggregate_judge.get("axis_scores")),
+        "god_tier_scores": _dict_value(aggregate_judge.get("god_tier_scores")),
+        "toxic_flags": {
+            key: bool(value)
+            for key, value in _dict_value(aggregate_judge.get("toxic_flags")).items()
+        },
+        "weights": _dict_value(aggregate_judge.get("weights")),
+        "judge_overall": _score_from(aggregate_judge),
+        "weighted_score_pre_veto": _score_from(
+            {"score": aggregate_judge.get("weighted_score_pre_veto")},
+            _score_from(aggregate_judge),
+        ),
+        "vetoed": bool(aggregate_judge.get("vetoed", False)),
+        "critical_issues": [
+            str(item)
+            for item in aggregate_judge.get("critical_issues", [])
+            if str(item).strip()
+        ],
         "timestamp": _now_iso(),
         "scene_script": {
             "source": scene_script_source,

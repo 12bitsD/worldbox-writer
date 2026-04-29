@@ -1,7 +1,10 @@
-"""LLM-as-judge evaluation for prose and story quality.
+"""LLM-as-judge evaluation for web-novel quality.
 
-The rubric lives in prompts. This module only calls the model, parses JSON, and
-aggregates scores.
+This module follows docs/product/WEB_NOVEL_CRITERIA.md and
+docs/product/QUALITY_FRAMEWORK.md:
+- 三轴：情绪爽点 / 网文结构 / 商业文笔
+- 神作进阶轴：单独输出，可参与加权
+- 毒点红线：命中任意一条即一票否决
 """
 
 from __future__ import annotations
@@ -9,7 +12,7 @@ from __future__ import annotations
 import json
 import os
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 from worldbox_writer.core.dual_loop import SceneScript
 from worldbox_writer.utils.llm import chat_completion
@@ -17,69 +20,121 @@ from worldbox_writer.utils.llm import chat_completion
 DEFAULT_JUDGE_MODEL = "gpt-5.5"
 JUDGE_MODEL_ENV = "WORLDBOX_JUDGE_MODEL"
 
+CORE_SCORE_KEYS = (
+    "anticipation",
+    "catharsis",
+    "suppression_to_elevation",
+    "golden_start",
+    "cliffhanger",
+    "info_pacing",
+    "readability",
+    "visual_action",
+    "dialogue_webness",
+)
+GOD_TIER_SCORE_KEYS = (
+    "foreshadowing_depth",
+    "antagonist_integrity_iq",
+    "moral_dilemma_humanity_anchor",
+    "cost_paid_rule_combat",
+)
+TOXIC_FLAG_KEYS = (
+    "forced_stupidity",
+    "power_scaling_collapse",
+    "preachiness",
+    "ai_hallucination",
+)
+AXIS_DIMENSIONS = {
+    "emotion_axis": (
+        "anticipation",
+        "catharsis",
+        "suppression_to_elevation",
+    ),
+    "structure_axis": (
+        "golden_start",
+        "cliffhanger",
+        "info_pacing",
+    ),
+    "commercial_prose_axis": (
+        "readability",
+        "visual_action",
+        "dialogue_webness",
+    ),
+}
+DEFAULT_AXIS_WEIGHTS = {
+    "emotion_axis": 0.4,
+    "structure_axis": 0.3,
+    "commercial_prose_axis": 0.3,
+    "god_tier_axis": 0.0,
+}
+SCENE_SCRIPT_COMPONENT_WEIGHTS = {"story": 0.6, "prose": 0.4}
+SIMULATION_CHAPTER_COMPONENT_WEIGHTS = {"scene_script": 0.5, "prose": 0.5}
+
 
 def _resolve_judge_model(model: str | None) -> str:
     return model or os.environ.get(JUDGE_MODEL_ENV, DEFAULT_JUDGE_MODEL)
 
 
-def build_prose_judge_prompt(text: str) -> str:
-    """Build the prose-quality judge prompt."""
-    return f"""你是一位资深中文小说编辑，也是一位严厉的质量把关人。
-请只根据文本本身评估文笔质量。所有分数使用 0-10 分制：
-0=完全失败，5=明显不足但有可修空间，7=合格线（网文可用），8=精品（付费水准），9=出版级，10=经典文学。
-7 分是合格线，不要把流畅但平庸的文本打到 7 分以上。
+def _neutral_scores() -> dict[str, float]:
+    return {key: 5.0 for key in CORE_SCORE_KEYS}
 
-【文笔 12 维评分】
-1. sentence_variety: 句式多样性。判断长短句、句型、停顿和语气是否有变化，是否避免机械重复。
-2. rhythm_flow: 行文流动性。判断句与句之间是否自然推进，停顿、转折和重音是否顺。
-3. pacing_micro: 微观节奏。判断单段内动作、描写、心理和对白的快慢是否有层次。
-4. imagery_freshness: 意象/比喻新鲜度。判断比喻、意象、修辞是否具体、新鲜、贴合场景，是否避免陈词滥调。
-5. description_precision: 描写精准度。判断场景、动作、感官和情绪是否清楚、有可感细节，是否能让画面立住。
-6. sensory_richness: 感官丰富度。判断颜色、质地、声音、气味、温度等是否具体且不过量。
-7. dialogue_distinctiveness: 对话辨识度。判断遮去人名后是否能区分角色口吻，是否符合人物处境。
-8. dialogue_subtext: 对话潜台词。判断角色是否有回避、试探、压抑、误导或言外之意，而不是直白说明。
-9. character_voice_consistency: 角色声音一致性。判断人物口吻、词汇和表达习惯是否稳定。
-10. information_density: 信息密度。判断句子是否承载情节、情绪、关系或氛围信息，是否存在注水废句。
-11. word_economy: 文字经济性。判断是否用尽量少的句子完成有效表达，是否有空泛重复。
-12. tone_consistency: 语调一致性。判断叙述气质、情绪温度和文体选择是否稳定。
 
-【AI 写作问题检测】
-请把以下项目作为质量问题评估，分数越高代表问题越少、控制越好：
-1. over_metaphor: 过度比喻。警惕每句都堆叠比喻、修辞喧宾夺主、像在炫技。
-2. over_parallelism: 过度排比。警惕三连排比成瘾、句式整齐到机械、情绪被格式化。
-3. paragraph_fragmentation: 段落断裂。警惕段落之间突然跳转、因果缺失、时间或视角不连贯。
-4. readability_issue: 可读性问题。判断是否顺畅、清楚、自然，是否存在读不下去的拗口或混乱段落。
-5. ai_flavor: AI味综合。判断整体是否像人类作者有选择地书写，还是显得空泛、平均、模板化。
-6. emotional_flatness: 情绪扁平。警惕情绪只有标签、没有行为细节和情境压力。
-7. show_dont_tell_violation: 展示不足。警惕用“他很悲伤/她很愤怒”直接解释，而不是用动作、对白和细节呈现。
+def _neutral_god_tier_scores() -> dict[str, float]:
+    return {key: 5.0 for key in GOD_TIER_SCORE_KEYS}
 
-请返回严格 JSON，不要 Markdown，不要解释 JSON 之外的内容。字段必须齐全：
+
+def _neutral_toxic_flags() -> dict[str, bool]:
+    return {key: False for key in TOXIC_FLAG_KEYS}
+
+
+def _build_web_novel_judge_prompt(text: str, *, focus: str) -> str:
+    return f"""你是一位极其挑剔的中国网文主编，只能依据给定文本本身评分，禁止脑补缺失设定。
+
+评测标准严格遵循新版“网文三轴 + 神作进阶轴 + 毒点红线”：
+1. 情绪与爽点轴：期待感、爽点爆发、抑扬节奏
+2. 网文结构轴：黄金开局、断章艺术、信息给配
+3. 商业文笔轴：阅读顺滑度、画面感与动作张力、对话网感
+4. 神作进阶轴：故事主线深度、反派塑造与智商、主角两难困境与人性锚点、代价对等与规则博弈
+5. 毒点红线：强行降智、设定/战力崩坏、说教味与爹味、典型 AI 幻觉修辞
+
+本次评测重点：{focus}
+
+评分规则：
+- 所有分数为 1-10 分，5 分=勉强可读，7 分=网文可用，8 分=付费在线，9-10 分=非常强。
+- 黄金开局重点看前段是否快速立危机/立驱动力；若文本不是开篇，也要按“是否快速立住近端目标与生存压力”评分。
+- 断章艺术重点看文本末尾是否停在行动进行中、悬念揭晓前或利益结算前；若文本不是章末，也要按“当前收尾的追读拉力”评分。
+- 只有命中任意 toxic_flags=true，就视为一票否决，客户端会把 overall 归 0。
+- 你只负责按标准输出结构化 JSON，不要输出 Markdown，不要补充说明。
+
+请输出严格 JSON，字段必须齐全：
 {{
-  "score": 7.5,
-  "dimensions": {{
-    "sentence_variety": 7.0,
-    "rhythm_flow": 7.0,
-    "pacing_micro": 7.0,
-    "imagery_freshness": 7.0,
-    "description_precision": 7.0,
-    "sensory_richness": 7.0,
-    "dialogue_distinctiveness": 7.0,
-    "dialogue_subtext": 7.0,
-    "character_voice_consistency": 7.0,
-    "information_density": 7.0,
-    "word_economy": 7.0,
-    "tone_consistency": 7.0
+  "scores": {{
+    "anticipation": 7.0,
+    "catharsis": 7.0,
+    "suppression_to_elevation": 7.0,
+    "golden_start": 7.0,
+    "cliffhanger": 7.0,
+    "info_pacing": 7.0,
+    "readability": 7.0,
+    "visual_action": 7.0,
+    "dialogue_webness": 7.0
   }},
-  "ai_issues": {{
-    "over_metaphor": 7.0,
-    "over_parallelism": 7.0,
-    "paragraph_fragmentation": 7.0,
-    "readability_issue": 7.0,
-    "ai_flavor": 7.0,
-    "emotional_flatness": 7.0,
-    "show_dont_tell_violation": 7.0
+  "god_tier_scores": {{
+    "foreshadowing_depth": 6.0,
+    "antagonist_integrity_iq": 6.0,
+    "moral_dilemma_humanity_anchor": 6.0,
+    "cost_paid_rule_combat": 6.0
   }},
-  "reasoning": "50字以内说明主要优点和最主要问题"
+  "toxic_flags": {{
+    "forced_stupidity": false,
+    "power_scaling_collapse": false,
+    "preachiness": false,
+    "ai_hallucination": false
+  }},
+  "critical_issues": ["最多 3 条，指出最严重问题；若命中毒点必须写明证据"],
+  "best_line": "最抓人的一句；没有则填空字符串",
+  "worst_line": "最出戏或最毒的一句；没有则填空字符串",
+  "one_line_suggestion": "一句话修改建议",
+  "reasoning": "50字以内概括优点与最大短板"
 }}
 
 待评测文本：
@@ -87,54 +142,22 @@ def build_prose_judge_prompt(text: str) -> str:
 {text}
 ---
 """
+
+
+def build_prose_judge_prompt(text: str) -> str:
+    """Build the prose judge prompt under the web-novel rubric."""
+    return _build_web_novel_judge_prompt(
+        text,
+        focus="正文成稿，优先关注商业文笔轴，同时兼顾爽点结构与毒点红线。",
+    )
 
 
 def build_story_judge_prompt(text: str) -> str:
-    """Build the story-quality judge prompt."""
-    return f"""你是一位资深故事编辑，负责评估小说片段或场景脚本的故事力。
-请只根据文本本身评估，不补写设定，不假设缺失内容。所有分数使用 0-10 分制：
-0=完全失败，5=明显不足但有可修空间，7=合格线（网文可用），8=精品（付费水准），9=出版级，10=经典文学。
-7 分是合格线，不要把只是完整但缺少吸引力的文本打到 7 分以上。
-
-【故事力 12 维评分】
-1. hook: 钩子。判断开场或核心信息是否制造阅读欲望，是否让读者想继续读。
-2. inciting_incident_clarity: 诱因清晰度。判断改变局面的触发事件是否明确、有压力且不可忽略。
-3. rising_action_tension: 上升动作张力。判断阻碍是否逐步加码，场景是否越推进越紧。
-4. structural_completeness: 结构完整性。判断开端、发展、变化、收束是否成形，节奏是否塌掉。
-5. conflict_density: 冲突密度。判断外部冲突、人物关系张力、目标阻碍是否充分且集中；同时观察 stakes_clarity 是否足够。
-6. conflict_variety: 冲突类型丰富度。判断是否有行动、关系、价值、信息差等不同层面的冲突。
-7. twist_effectiveness: 反转有效性。判断转折是否意外但合理，并检查 twist_foreshadowing 是否让揭示有伏笔。
-8. character_motivation_consistency: 人物动机一致性。判断人物决策是否能被读者倒推解释，是否符合欲望、恐惧和处境。
-9. character_arc_progression: 人物弧线推进。判断人物是否因事件产生选择、代价、认知或关系上的变化。
-10. antagonist_strength: 对抗力量强度。判断反派、环境、制度或命运压力是否足够具体且有压迫感。
-11. suspense_maintenance: 悬念维持。判断关键问题是否持续牵引读者，是否保留下一步期待。
-12. world_immersion: 世界沉浸感。判断设定、场景和规则是否通过行动显现，而非空泛说明。
-
-请返回严格 JSON，不要 Markdown，不要解释 JSON 之外的内容。字段必须齐全：
-{{
-  "score": 7.5,
-  "dimensions": {{
-    "hook": 7.0,
-    "inciting_incident_clarity": 7.0,
-    "rising_action_tension": 7.0,
-    "structural_completeness": 7.0,
-    "conflict_density": 7.0,
-    "conflict_variety": 7.0,
-    "twist_effectiveness": 7.0,
-    "character_motivation_consistency": 7.0,
-    "character_arc_progression": 7.0,
-    "antagonist_strength": 7.0,
-    "suspense_maintenance": 7.0,
-    "world_immersion": 7.0
-  }},
-  "reasoning": "50字以内说明主要优点和最主要问题"
-}}
-
-待评测文本：
----
-{text}
----
-"""
+    """Build the story judge prompt under the web-novel rubric."""
+    return _build_web_novel_judge_prompt(
+        text,
+        focus="场景脚本/剧情结构，优先关注情绪爽点轴、网文结构轴与神作进阶轴。",
+    )
 
 
 def _fenced_blocks(raw: str) -> list[str]:
@@ -188,8 +211,338 @@ def _score(value: Any, default: float = 5.0) -> float:
     return default
 
 
+def _clamped_score(value: Any, default: float = 5.0) -> float:
+    return round(min(10.0, max(0.0, _score(value, default))), 2)
+
+
 def _dict_value(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _bool_mapping(value: Any, keys: Sequence[str]) -> dict[str, bool]:
+    source = _dict_value(value)
+    return {key: bool(source.get(key, False)) for key in keys}
+
+
+def _float_mapping(value: Any, keys: Sequence[str]) -> dict[str, float]:
+    source = _dict_value(value)
+    return {key: _clamped_score(source.get(key, 5.0)) for key in keys}
+
+
+def _string_list(value: Any, limit: int = 3) -> list[str]:
+    if isinstance(value, str):
+        stripped = value.strip()
+        return [stripped] if stripped else []
+    if isinstance(value, list):
+        items = [str(item).strip() for item in value if str(item).strip()]
+        return items[:limit]
+    return []
+
+
+def _first_nonempty(*values: Any) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _average(values: Sequence[float], default: float = 5.0) -> float:
+    if not values:
+        return round(default, 2)
+    return round(sum(values) / len(values), 2)
+
+
+def _axis_scores(scores: Mapping[str, float]) -> dict[str, float]:
+    return {
+        axis: _average([float(scores[key]) for key in keys], default=5.0)
+        for axis, keys in AXIS_DIMENSIONS.items()
+    }
+
+
+def _god_tier_average(scores: Mapping[str, float]) -> float:
+    return _average([float(scores[key]) for key in GOD_TIER_SCORE_KEYS], default=5.0)
+
+
+def _normalize_named_weights(
+    names: Sequence[str],
+    weights: Mapping[str, float] | None,
+    default_weights: Mapping[str, float] | None = None,
+) -> dict[str, float]:
+    source = {name: 0.0 for name in names}
+    if default_weights is not None:
+        for name in names:
+            source[name] = max(0.0, float(default_weights.get(name, 0.0)))
+    if weights is not None:
+        for name in names:
+            raw = weights.get(name)
+            if isinstance(raw, bool):
+                continue
+            if isinstance(raw, (int, float)):
+                source[name] = max(0.0, float(raw))
+    total = sum(source.values())
+    if total <= 0:
+        fallback = {name: 1.0 for name in names}
+        total = float(len(names))
+        return {name: round(fallback[name] / total, 4) for name in names}
+    return {name: round(source[name] / total, 4) for name in names}
+
+
+def _weighted_score(
+    axis_scores: Mapping[str, float],
+    god_tier_average: float,
+    *,
+    weights: Mapping[str, float] | None = None,
+) -> tuple[float, dict[str, float]]:
+    normalized = _normalize_named_weights(
+        ("emotion_axis", "structure_axis", "commercial_prose_axis", "god_tier_axis"),
+        weights,
+        DEFAULT_AXIS_WEIGHTS,
+    )
+    weighted = (
+        float(axis_scores["emotion_axis"]) * normalized["emotion_axis"]
+        + float(axis_scores["structure_axis"]) * normalized["structure_axis"]
+        + float(axis_scores["commercial_prose_axis"])
+        * normalized["commercial_prose_axis"]
+        + god_tier_average * normalized["god_tier_axis"]
+    )
+    return round(weighted, 2), normalized
+
+
+def _normalized_existing_result(
+    result: Mapping[str, Any],
+) -> tuple[
+    dict[str, float],
+    dict[str, float],
+    dict[str, bool],
+    list[str],
+    str,
+    str,
+    str,
+    str,
+    float,
+]:
+    overall = _clamped_score(result.get("overall", result.get("score", 5.0)))
+    raw_scores = result.get("scores") or result.get("dimensions")
+    raw_god_tier_scores = result.get("god_tier_scores")
+    scores = (
+        _float_mapping(raw_scores, CORE_SCORE_KEYS)
+        if isinstance(raw_scores, dict)
+        else {key: overall for key in CORE_SCORE_KEYS}
+    )
+    god_tier_scores = (
+        _float_mapping(raw_god_tier_scores, GOD_TIER_SCORE_KEYS)
+        if isinstance(raw_god_tier_scores, dict)
+        else {key: overall for key in GOD_TIER_SCORE_KEYS}
+    )
+    toxic_flags = _bool_mapping(
+        result.get("toxic_flags") or result.get("ai_issues"),
+        TOXIC_FLAG_KEYS,
+    )
+    critical_issues = _string_list(result.get("critical_issues"))
+    best_line = _first_nonempty(result.get("best_line"))
+    worst_line = _first_nonempty(result.get("worst_line"))
+    one_line_suggestion = _first_nonempty(result.get("one_line_suggestion"))
+    reasoning = _first_nonempty(result.get("reasoning"))
+    return (
+        scores,
+        god_tier_scores,
+        toxic_flags,
+        critical_issues,
+        best_line,
+        worst_line,
+        one_line_suggestion,
+        reasoning,
+        overall,
+    )
+
+
+def _build_judge_result(
+    *,
+    scores: Mapping[str, float],
+    god_tier_scores: Mapping[str, float],
+    toxic_flags: Mapping[str, bool],
+    critical_issues: Sequence[str] | None = None,
+    best_line: str = "",
+    worst_line: str = "",
+    one_line_suggestion: str = "",
+    reasoning: str = "",
+    model: str | None = None,
+    error: Any = None,
+    weights: Mapping[str, float] | None = None,
+) -> dict[str, Any]:
+    normalized_scores = {key: float(scores[key]) for key in CORE_SCORE_KEYS}
+    normalized_god_tier = {
+        key: float(god_tier_scores[key]) for key in GOD_TIER_SCORE_KEYS
+    }
+    normalized_flags = {key: bool(toxic_flags[key]) for key in TOXIC_FLAG_KEYS}
+    axis_scores = _axis_scores(normalized_scores)
+    god_tier_average = _god_tier_average(normalized_god_tier)
+    weighted_score, normalized_weights = _weighted_score(
+        axis_scores,
+        god_tier_average,
+        weights=weights,
+    )
+    vetoed = any(normalized_flags.values())
+    overall = 0.0 if vetoed else weighted_score
+    return {
+        "score": overall,
+        "overall": overall,
+        "weighted_score_pre_veto": weighted_score,
+        "scores": normalized_scores,
+        "axis_scores": axis_scores,
+        "god_tier_scores": normalized_god_tier,
+        "god_tier_average": god_tier_average,
+        "toxic_flags": normalized_flags,
+        "weights": normalized_weights,
+        "vetoed": vetoed,
+        "critical_issues": list(critical_issues or [])[:3],
+        "best_line": best_line.strip(),
+        "worst_line": worst_line.strip(),
+        "one_line_suggestion": one_line_suggestion.strip(),
+        "reasoning": reasoning.strip(),
+        "model": model,
+        "error": error,
+    }
+
+
+def _empty_judge_result(
+    *,
+    model: str | None = None,
+    error: Any = None,
+    reasoning: str = "",
+    weights: Mapping[str, float] | None = None,
+) -> dict[str, Any]:
+    return _build_judge_result(
+        scores=_neutral_scores(),
+        god_tier_scores=_neutral_god_tier_scores(),
+        toxic_flags=_neutral_toxic_flags(),
+        reasoning=reasoning,
+        model=model,
+        error=error,
+        weights=weights,
+    )
+
+
+def aggregate_judge_results(
+    results: Mapping[str, Mapping[str, Any]] | Sequence[Mapping[str, Any]],
+    *,
+    component_weights: Mapping[str, float] | None = None,
+    axis_weights: Mapping[str, float] | None = None,
+    model: str | None = None,
+    error: Any = None,
+    reasoning: str = "",
+) -> dict[str, Any]:
+    """Aggregate multiple judge results with optional component weights."""
+    if isinstance(results, Mapping):
+        pairs = [(str(label), value) for label, value in results.items()]
+    else:
+        pairs = [(str(index), value) for index, value in enumerate(results, start=1)]
+    if not pairs:
+        return _empty_judge_result(
+            model=model,
+            error=error,
+            reasoning=reasoning,
+            weights=axis_weights,
+        )
+
+    labels = [label for label, _ in pairs]
+    normalized_component_weights = _normalize_named_weights(
+        labels,
+        component_weights,
+    )
+    aggregated_scores = {key: 0.0 for key in CORE_SCORE_KEYS}
+    aggregated_god_tier = {key: 0.0 for key in GOD_TIER_SCORE_KEYS}
+    toxic_flags = _neutral_toxic_flags()
+    critical_issues: list[str] = []
+    best_line = ""
+    worst_line = ""
+    one_line_suggestion = ""
+    reasoning_parts: list[str] = []
+    component_errors: list[str] = []
+
+    for label, result in pairs:
+        (
+            scores,
+            god_tier_scores,
+            component_flags,
+            component_issues,
+            component_best_line,
+            component_worst_line,
+            component_suggestion,
+            component_reasoning,
+            _component_overall,
+        ) = _normalized_existing_result(result)
+        weight = normalized_component_weights[label]
+        for key in CORE_SCORE_KEYS:
+            aggregated_scores[key] += scores[key] * weight
+        for key in GOD_TIER_SCORE_KEYS:
+            aggregated_god_tier[key] += god_tier_scores[key] * weight
+        for key in TOXIC_FLAG_KEYS:
+            toxic_flags[key] = toxic_flags[key] or component_flags[key]
+        for issue in component_issues:
+            if issue not in critical_issues and len(critical_issues) < 3:
+                critical_issues.append(issue)
+        if not best_line and component_best_line:
+            best_line = component_best_line
+        if not worst_line and component_worst_line:
+            worst_line = component_worst_line
+        if not one_line_suggestion and component_suggestion:
+            one_line_suggestion = component_suggestion
+        if component_reasoning:
+            reasoning_parts.append(component_reasoning)
+        component_error = str(result.get("error") or "").strip()
+        if component_error:
+            component_errors.append(component_error)
+
+    merged_reasoning = reasoning.strip() or "；".join(reasoning_parts[:2])
+    return {
+        **_build_judge_result(
+            scores=aggregated_scores,
+            god_tier_scores=aggregated_god_tier,
+            toxic_flags=toxic_flags,
+            critical_issues=critical_issues,
+            best_line=best_line,
+            worst_line=worst_line,
+            one_line_suggestion=one_line_suggestion,
+            reasoning=merged_reasoning,
+            model=model,
+            error=error or (component_errors[0] if component_errors else None),
+            weights=axis_weights,
+        ),
+        "component_weights": normalized_component_weights,
+    }
+
+
+def _normalize_llm_result(
+    parsed: Mapping[str, Any],
+    *,
+    model: str,
+    error: Any = None,
+) -> dict[str, Any]:
+    scores = _float_mapping(
+        parsed.get("scores") or parsed.get("dimensions"),
+        CORE_SCORE_KEYS,
+    )
+    god_tier_scores = _float_mapping(parsed.get("god_tier_scores"), GOD_TIER_SCORE_KEYS)
+    toxic_flags = _bool_mapping(parsed.get("toxic_flags"), TOXIC_FLAG_KEYS)
+    critical_issues = _string_list(parsed.get("critical_issues"))
+    best_line = _first_nonempty(parsed.get("best_line"))
+    worst_line = _first_nonempty(parsed.get("worst_line"))
+    one_line_suggestion = _first_nonempty(parsed.get("one_line_suggestion"))
+    reasoning = _first_nonempty(parsed.get("reasoning"))
+    return _build_judge_result(
+        scores=scores,
+        god_tier_scores=god_tier_scores,
+        toxic_flags=toxic_flags,
+        critical_issues=critical_issues,
+        best_line=best_line,
+        worst_line=worst_line,
+        one_line_suggestion=one_line_suggestion,
+        reasoning=reasoning,
+        model=model,
+        error=error or parsed.get("error"),
+    )
 
 
 def _nonspace_length(text: str) -> int:
@@ -246,7 +599,10 @@ def objective_metrics(text: str) -> dict[str, Any]:
 def _call_judge_llm(prompt: str, *, model: str, max_tokens: int) -> str:
     return chat_completion(
         messages=[
-            {"role": "system", "content": "你是严格的小说质量评委，只输出合法 JSON。"},
+            {
+                "role": "system",
+                "content": "你是严格的中国网文质量评委，只输出合法 JSON。",
+            },
             {"role": "user", "content": prompt},
         ],
         role="narrator",
@@ -257,48 +613,41 @@ def _call_judge_llm(prompt: str, *, model: str, max_tokens: int) -> str:
 
 
 def judge_prose(text: str, model: str | None = None) -> dict[str, Any]:
-    """Judge prose quality with an LLM."""
+    """Judge rendered prose with the unified web-novel rubric."""
     selected_model = _resolve_judge_model(model)
     try:
         raw = _call_judge_llm(
             build_prose_judge_prompt(text),
             model=selected_model,
-            max_tokens=1300,
+            max_tokens=1400,
         )
         parsed = parse_judge_response(raw)
+        return _normalize_llm_result(parsed, model=selected_model)
     except Exception as exc:
-        parsed = {"score": 5.0, "error": "llm_call_failed", "raw": str(exc)}
-
-    return {
-        "score": _score(parsed.get("score")),
-        "dimensions": _dict_value(parsed.get("dimensions")),
-        "ai_issues": _dict_value(parsed.get("ai_issues")),
-        "reasoning": str(parsed.get("reasoning") or ""),
-        "model": selected_model,
-        "error": parsed.get("error"),
-    }
+        return _empty_judge_result(
+            model=selected_model,
+            error="llm_call_failed",
+            reasoning=str(exc),
+        )
 
 
 def judge_story(text: str, model: str | None = None) -> dict[str, Any]:
-    """Judge story quality with an LLM."""
+    """Judge story/script text with the unified web-novel rubric."""
     selected_model = _resolve_judge_model(model)
     try:
         raw = _call_judge_llm(
             build_story_judge_prompt(text),
             model=selected_model,
-            max_tokens=1100,
+            max_tokens=1400,
         )
         parsed = parse_judge_response(raw)
+        return _normalize_llm_result(parsed, model=selected_model)
     except Exception as exc:
-        parsed = {"score": 5.0, "error": "llm_call_failed", "raw": str(exc)}
-
-    return {
-        "score": _score(parsed.get("score")),
-        "dimensions": _dict_value(parsed.get("dimensions")),
-        "reasoning": str(parsed.get("reasoning") or ""),
-        "model": selected_model,
-        "error": parsed.get("error"),
-    }
+        return _empty_judge_result(
+            model=selected_model,
+            error="llm_call_failed",
+            reasoning=str(exc),
+        )
 
 
 def _scene_script_story_text(script: SceneScript) -> str:
@@ -322,33 +671,36 @@ def _scene_script_beat_texts(script: SceneScript) -> list[str]:
 
 
 def judge_scene_script(script: SceneScript, model: str | None = None) -> dict[str, Any]:
-    """Judge a SceneScript by combining story and beat-level prose scores."""
+    """Judge a SceneScript by aggregating story text and beat-level prose."""
     selected_model = _resolve_judge_model(model)
     story = judge_story(_scene_script_story_text(script), model=selected_model)
-
-    prose_results = [
+    beat_results = [
         judge_prose(beat_text, model=selected_model)
         for beat_text in _scene_script_beat_texts(script)
     ]
-    prose_score = (
-        sum(result["score"] for result in prose_results) / len(prose_results)
-        if prose_results
-        else 5.0
+    prose_aggregate = aggregate_judge_results(
+        beat_results,
+        model=selected_model,
+        reasoning="聚合 SceneScript beats 的正文评测结果。",
     )
-    composite_score = round(story["score"] * 0.6 + prose_score * 0.4, 2)
-
+    composite = aggregate_judge_results(
+        {"story": story, "prose": prose_aggregate},
+        component_weights=SCENE_SCRIPT_COMPONENT_WEIGHTS,
+        model=selected_model,
+        reasoning="按 story 0.6 + prose 0.4 聚合 SceneScript 评测。",
+    )
     return {
-        "score": composite_score,
-        "composite_score": composite_score,
+        **composite,
+        "composite_score": composite["overall"],
         "script_id": script.script_id,
         "scene_id": script.scene_id,
         "story": story,
         "prose": {
-            "score": round(prose_score, 2),
-            "beat_results": prose_results,
+            **prose_aggregate,
+            "beat_results": beat_results,
         },
         "model": selected_model,
-        "error": story.get("error"),
+        "error": composite.get("error"),
     }
 
 
@@ -360,7 +712,7 @@ def _judge_item(item: dict[str, Any], *, model: str) -> dict[str, Any]:
         script = item.get("script")
         if isinstance(script, SceneScript):
             return judge_scene_script(script, model=model)
-        return {"score": 5.0, "model": model, "error": "invalid_script"}
+        return _empty_judge_result(model=model, error="invalid_script")
     if item_type == "simulation_chapter":
         script = item.get("scene_script") or item.get("script")
         if isinstance(script, dict):
@@ -370,34 +722,29 @@ def _judge_item(item: dict[str, Any], *, model: str) -> dict[str, Any]:
                 script = None
         rendered_text = str(item.get("rendered_text") or item.get("text") or "")
         if not isinstance(script, SceneScript):
-            story_result = {
-                "score": 5.0,
-                "dimensions": {},
-                "reasoning": "",
-                "model": model,
-                "error": "invalid_script",
-            }
+            story_result = _empty_judge_result(model=model, error="invalid_script")
             scene_script_result = {
-                "score": 5.0,
+                **story_result,
                 "story": story_result,
-                "model": model,
-                "error": "invalid_script",
             }
         else:
             scene_script_result = judge_scene_script(script, model=model)
             story_result = _dict_value(scene_script_result.get("story"))
         prose_result = judge_prose(rendered_text, model=model)
-        story_score = _score(story_result.get("score"))
-        prose_score = _score(prose_result.get("score"))
-        composite_score = round((story_score + prose_score) / 2, 2)
+        composite = aggregate_judge_results(
+            {"scene_script": scene_script_result, "prose": prose_result},
+            component_weights=SIMULATION_CHAPTER_COMPONENT_WEIGHTS,
+            model=model,
+            reasoning="按 scene_script 0.5 + prose 0.5 聚合章节评测。",
+        )
         return {
-            "score": composite_score,
+            **composite,
             "story": story_result,
             "scene_script": scene_script_result,
             "prose": prose_result,
             "objective_metrics": objective_metrics(rendered_text),
             "model": model,
-            "error": scene_script_result.get("error") or prose_result.get("error"),
+            "error": composite.get("error"),
         }
     return judge_prose(str(item.get("text") or ""), model=model)
 

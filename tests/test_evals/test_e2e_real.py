@@ -78,6 +78,30 @@ def test_real_mode_writes_comparable_report_without_real_llm(
             results.append(
                 {
                     "score": 7.5,
+                    "overall": 7.5,
+                    "scores": {
+                        "anticipation": 7.5,
+                        "catharsis": 7.5,
+                        "suppression_to_elevation": 7.5,
+                        "golden_start": 7.5,
+                        "cliffhanger": 7.5,
+                        "info_pacing": 7.5,
+                        "readability": 7.5,
+                        "visual_action": 7.5,
+                        "dialogue_webness": 7.5,
+                    },
+                    "god_tier_scores": {
+                        "foreshadowing_depth": 7.0,
+                        "antagonist_integrity_iq": 7.0,
+                        "moral_dilemma_humanity_anchor": 7.0,
+                        "cost_paid_rule_combat": 7.0,
+                    },
+                    "toxic_flags": {
+                        "forced_stupidity": False,
+                        "power_scaling_collapse": False,
+                        "preachiness": False,
+                        "ai_hallucination": False,
+                    },
                     "story": {
                         "score": 7.0,
                         "dimensions": {"hook": 7.0, "conflict_density": 7.0},
@@ -111,7 +135,10 @@ def test_real_mode_writes_comparable_report_without_real_llm(
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["mode"] == "real"
     assert payload["simulation_id"] == "real-test"
-    assert payload["scores"]["overall"]["composite"] == 7.5
+    assert payload["scores"]["anticipation"] == 7.5
+    assert payload["god_tier_scores"]["foreshadowing_depth"] == 7.0
+    assert payload["toxic_flags"]["forced_stupidity"] is False
+    assert payload["component_scores"]["overall"]["composite"] == 7.5
     assert payload["overall"]["story"] == 7.0
     assert payload["overall"]["prose"] == 8.0
     assert payload["overall"]["objective_metrics"]["word_count"] == 264
