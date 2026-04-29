@@ -1,46 +1,58 @@
 {
-  "current_phase": "Phase 0: 能用",
-  "current_tier": "L1",
+  "current_phase": "Sprint 25: 评测体系重建",
+  "current_tier": "TBD (R4 重测后定档)",
   "target_tier": "L2",
-  "sprint": 24,
-  "round": 10,
-  "consecutive_no_improvement": 3,
-  "last_round_goal": "SceneScript 故事力因果推进（冲突设计、因果 beats、动机可见）",
-  "last_round_action": "Codex Round 10 完成，Director/GM/Actor 因果链改造 + 23 测试通过。真实 LLM 验证因 DNS 不可达未完成。",
-  "dual_axis_latest": {
-    "story": {
-      "hook": 6,
-      "conflict_density": 5,
-      "twist_effectiveness": 7,
-      "character_motivation_consistency": 6,
-      "suspense_maintenance": 5,
-      "structural_completeness": 6,
-      "avg": 5.8
-    },
-    "prose": {
-      "sentence_variety": 6,
-      "imagery_freshness": 6,
-      "description_precision": 5,
-      "pacing": 6,
-      "dialogue_distinctiveness": 5,
-      "information_density": 6,
-      "avg": 5.7
-    }
+  "sprint": 25,
+  "round": 1,
+  "consecutive_no_improvement": 0,
+  "last_round_goal": "维度词汇定型 + 头部网文调研 + 稳定性实证",
+  "last_round_action": "Sprint 25 R1 完成 — 11 维 keep / 1 watchlist / 1 drop / 2 inconclusive；fixtures + dimension_prompts + dim_stability runner 落地；real LLM 225/225 success",
+  "evaluation_system": {
+    "spec_doc": "docs/product/QUALITY_SPEC.md",
+    "spec_version": "v0.1.1",
+    "stability_artifact": "artifacts/eval/sprint-25/round-1/dim_stability.json",
+    "kept_dimensions": [
+      "desire_clarity",
+      "tension_pressure",
+      "info_show_dont_tell",
+      "prose_friction",
+      "material_specificity",
+      "dialogue_voice",
+      "conflict_density",
+      "golden_start_density",
+      "cliffhanger_pull",
+      "antagonist_integrity",
+      "preachiness"
+    ],
+    "watchlist_dimensions": ["ai_prose_ticks"],
+    "dropped_dimensions": ["forced_stupidity"],
+    "inconclusive_dimensions_need_more_samples": ["payoff_intensity", "cost_paid"],
+    "cross_passage_dimensions_pending_R5": [
+      "foreshadowing_recovery",
+      "character_arc_consistency",
+      "stakes_escalation",
+      "setting_consistency"
+    ]
   },
   "gap_list": [
-    "Narrator 输出质量（文笔 - 句式/意象/对话）",
-    "SceneScript 质量（故事力 - 冲突密度/悬念）— 代码已改，待真实 LLM 验证",
-    "前端体验（易用性 - 非直接双轴但影响产品可用性）",
-    "干预体验（故事力 - 结构完整性）",
-    "真实 LLM 评测基线缺失（环境/DNS 间歇性问题）"
+    "R2: forced_stupidity prompt 重设计为 conditional + 排除 leverage-as-stupidity 误判",
+    "R2: ai_prose_ticks 强制 evidence-or-降分（toxic ≥ 5 必须给 evidence_quote）",
+    "R2: 4 专家委员会并发实现（emotion / structure / prose / toxic）",
+    "R2: evidence schema 强制约束（rule_hit + evidence_quote 字段）",
+    "R3: calibration 样本扩展——含非开篇中段 / 爆发瞬间 / 力量使用代价 三段，验证 4 个 conditional 维度",
+    "R3: 5-10 段人工评分 calibration anchor 入库",
+    "R4: 重测当前生产系统取得真实基线，重写 QUALITY_SPEC 第 3 章档位",
+    "R5: multi-chapter judge 实现 + 4 个 cross-passage 维度验证 + 毒点注入回归集",
+    "R6: 删除 WEB_NOVEL_CRITERIA.md / QUALITY_FRAMEWORK.md 内容（变索引页），CLAUDE.md/AGENTS.md 同步新词汇"
   ],
   "decisions": [
-    "Round 10 因真实 LLM 不可达未获得有效双轴分数，不能计入连续无提升"
+    "评测调用默认 concurrency=1——首跑 concurrency=6 + 重试导致 macOS 端口耗尽；后续 evaluation runner 一律单线程顺序，避免重蹈",
+    "单段判官在 11 维上稳定（max std ≤ 0.55 远低于 1.0 阈值），相对排序对 A/B/C 100% 正确，幅度差距 ≥ 4.5——评测尺有可信判别力",
+    "forced_stupidity v0.1 prompt 把'博弈层 withholding'误判为降智，R2 必须重写为 conditional"
   ],
-  "baseline": {
-    "test_passed": 217,
-    "test_deselected": 57,
-    "coverage": "73%",
-    "lint": "OK"
+  "next_round": {
+    "round": 2,
+    "topic": "judge 委员会落地 + evidence schema + forced_stupidity / ai_prose_ticks prompt 加固",
+    "exit_criteria": "委员会版本上同 3 样本 5 次：所有保留 dim std < 0.5；非满分维度 evidence_quotes 非空率 ≥ 80%；forced_stupidity v0.2 在 A 样本上 std < 1.0 且 score ≤ 4 (不再误判头部级文本)"
   }
 }

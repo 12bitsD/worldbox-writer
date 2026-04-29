@@ -4,7 +4,8 @@
 
 ## 保留文件
 
-- `SPRINT_24.md`：当前 Sprint — 全链路 Agent 质量治理 + LLM-as-judge 评测基建
+- `SPRINT_25.md`：当前 Sprint — 评测体系重建（Eval-as-Goal-Language）
+- `SPRINT_24.md`：上一 Sprint，延期归档至 Sprint 25 R3 cleanup round
 
 ## 归档说明
 
