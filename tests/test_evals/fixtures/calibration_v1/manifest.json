@@ -1,0 +1,174 @@
+{
+  "schema_version": "calibration-v1",
+  "purpose": "Sprint 25 R3 calibration anchor set. 10 samples spanning quality tiers + 3 conditional triggers, with authoring-intent ranking used to verify judge_committee discrimination. NOT human-rated — Claude-authored with deliberate quality gradients. R6+ should layer in human-rated samples to break the AI-self-loop bias.",
+  "created_at": "2026-04-30",
+  "ranking_authority": "claude-authoring-intent",
+  "ranking_caveat": "Same model wrote samples and writes the prompts that judge them. A passing rank correlation here is necessary but NOT sufficient evidence of judge generalization — it could reflect AI fingerprint matching rather than universal web-novel quality signal. R6+ work must add external human-rated samples.",
+  "authoring_intent_ranking": [
+    "G4_tier4_topshelf",
+    "F_power_cost",
+    "E_payoff_burst",
+    "G3_tier3_solid",
+    "A_head_tier",
+    "D_mid_arc",
+    "B_mid_tier",
+    "G2_tier2_midcommon",
+    "C_ai_water",
+    "G1_tier1_severe"
+  ],
+  "mandatory_pairs_must_not_reverse": [
+    ["G4_tier4_topshelf", "G2_tier2_midcommon"],
+    ["G4_tier4_topshelf", "G1_tier1_severe"],
+    ["G4_tier4_topshelf", "C_ai_water"],
+    ["F_power_cost", "G2_tier2_midcommon"],
+    ["F_power_cost", "C_ai_water"],
+    ["E_payoff_burst", "G2_tier2_midcommon"],
+    ["E_payoff_burst", "G1_tier1_severe"],
+    ["G3_tier3_solid", "G2_tier2_midcommon"],
+    ["G3_tier3_solid", "G1_tier1_severe"],
+    ["A_head_tier", "B_mid_tier"],
+    ["A_head_tier", "G1_tier1_severe"],
+    ["A_head_tier", "C_ai_water"],
+    ["B_mid_tier", "C_ai_water"],
+    ["B_mid_tier", "G1_tier1_severe"],
+    ["G2_tier2_midcommon", "G1_tier1_severe"],
+    ["D_mid_arc", "G1_tier1_severe"]
+  ],
+  "samples": [
+    {
+      "id": "G4_tier4_topshelf",
+      "path": "G4_tier4_topshelf.txt",
+      "tier": 4,
+      "authoring_intent": "literary top-tier (猫腻 / 烽火戏诸侯 / 爱潜水的乌贼 风骨)；克制 + 物件承载情绪 + 角色弧线初现",
+      "expected_signals": [
+        "desire_clarity: high — 师父遗物 + 母亲秘密 + 三叔铜钱多层欲望",
+        "tension_pressure: high — 七年归来的隐忍内劲",
+        "material_specificity: very high — 歪枣树/麻绳/缺口瓷碗/温酒/雪水/铜钱/白头发",
+        "dialogue_voice: high — 三叔与他对话各自有节奏与停顿",
+        "info_show_dont_tell: very high — 师父之死/母亲秘密通过物件与停顿暗示",
+        "ai_prose_ticks: very low",
+        "preachiness: false",
+        "forced_stupidity: applicable=false (无智商基线 + 违背反差，情境不适用)"
+      ]
+    },
+    {
+      "id": "F_power_cost",
+      "path": "F_power_cost.txt",
+      "tier": 4,
+      "authoring_intent": "head-tier 力量使用 + 不可逆代价（视神经断/三指残/寿命减/漏风），cost_paid 触发样本",
+      "conditional_trigger": "cost_paid",
+      "expected_signals": [
+        "cost_paid: applicable=true, score >= 7（多层不可逆代价：视神经/三指/寿命/漏风）",
+        "tension_pressure: high — 越级出招的物理代价",
+        "material_specificity: high — 三道封/绷紧的弦/烂树枝",
+        "ai_prose_ticks: low",
+        "golden_start_density: applicable=false（中段战斗后场景）"
+      ]
+    },
+    {
+      "id": "E_payoff_burst",
+      "path": "E_payoff_burst.txt",
+      "tier": 4,
+      "authoring_intent": "head-tier 爽点爆发瞬间：底牌揭晓 + 配角 (3+2) 反应 + 反派崩溃，payoff_intensity 触发样本",
+      "conditional_trigger": "payoff_intensity",
+      "expected_signals": [
+        "payoff_intensity: applicable=true, score >= 7（认知逆转级，配角震惊在 500 字内）",
+        "tension_pressure: high",
+        "material_specificity: high — 铜钱/白头发/酒坛砸地/刀掉",
+        "antagonist_integrity: applicable=true（铁霸天有可信反派塑造）"
+      ]
+    },
+    {
+      "id": "G3_tier3_solid",
+      "path": "G3_tier3_solid.txt",
+      "tier": 3,
+      "authoring_intent": "扎实头部网文：物质感 + 对话辨识度 + 节奏稳",
+      "expected_signals": [
+        "desire_clarity: high — 二弟发带 + 押胡人",
+        "material_specificity: high — 青砖/水袋/胡地/马粪味",
+        "dialogue_voice: high — 张元 vs 宋砚",
+        "info_show_dont_tell: high",
+        "tension_pressure: high — 三天前的发带 + 今晚要做的事",
+        "ai_prose_ticks: very low"
+      ]
+    },
+    {
+      "id": "A_head_tier",
+      "path": "A_head_tier.txt",
+      "tier": 3,
+      "authoring_intent": "head-tier 紧致网文（v0 baseline）",
+      "expected_signals": [
+        "desire_clarity: high",
+        "tension_pressure: high",
+        "material_specificity: high",
+        "ai_prose_ticks: low",
+        "cliffhanger_pull: applicable=true, high"
+      ]
+    },
+    {
+      "id": "D_mid_arc",
+      "path": "D_mid_arc.txt",
+      "tier": 2,
+      "authoring_intent": "中段场景，角色与冲突已建立。golden_start_density 应正确判 applicable=false",
+      "conditional_trigger": "golden_start_density_negative",
+      "expected_signals": [
+        "golden_start_density: applicable=false（明显中段，引用 13 天前/前天/昨晚等先前事件）",
+        "info_show_dont_tell: medium — 通过 callback 而非旁白展开",
+        "tension_pressure: medium — 倒计时存在但被对话稀释",
+        "material_specificity: low-medium",
+        "ai_prose_ticks: low"
+      ]
+    },
+    {
+      "id": "B_mid_tier",
+      "path": "B_mid_tier.txt",
+      "tier": 2,
+      "authoring_intent": "中位 (v0 baseline)：模板化 + 概念化",
+      "expected_signals": [
+        "desire_clarity: medium",
+        "material_specificity: low",
+        "dialogue_voice: low",
+        "ai_prose_ticks: borderline — 1 处 expository 痕迹"
+      ]
+    },
+    {
+      "id": "G2_tier2_midcommon",
+      "path": "G2_tier2_midcommon.txt",
+      "tier": 2,
+      "authoring_intent": "中位常见网文：功能化对话 + 概念化场景",
+      "expected_signals": [
+        "desire_clarity: medium",
+        "material_specificity: low — 概念化（'步伐稳健 / 眼神锐利'）",
+        "dialogue_voice: low — 角色台词功能化",
+        "ai_prose_ticks: low",
+        "preachiness: false",
+        "info_show_dont_tell: low — 通过对话直接交代设定"
+      ]
+    },
+    {
+      "id": "C_ai_water",
+      "path": "C_ai_water.txt",
+      "tier": 1,
+      "authoring_intent": "AI 水文 (v0 baseline)：过度比喻 + 排比 + 翻译腔 + 段尾说教",
+      "expected_signals": [
+        "ai_prose_ticks: very high",
+        "preachiness: high — 段尾'真正的责任与担当'",
+        "material_specificity: very low",
+        "tension_pressure: low — 被修辞稀释"
+      ]
+    },
+    {
+      "id": "G1_tier1_severe",
+      "path": "G1_tier1_severe.txt",
+      "tier": 1,
+      "authoring_intent": "毒草级 AI 水文：多类毒点齐发（比喻 + 排比 + 翻译腔 + 解释性对话 + 段尾说教 + 反派死于话多）",
+      "expected_signals": [
+        "ai_prose_ticks: very high (multi-subtype hits)",
+        "preachiness: very high — 段尾'真正的强大' / '心魔'",
+        "forced_stupidity: applicable=true, high — 反派长篇嘲讽并交代阵法关键",
+        "material_specificity: very low — 形容词堆砌",
+        "dialogue_voice: very low — 翻译腔 + 解释性"
+      ]
+    }
+  ]
+}

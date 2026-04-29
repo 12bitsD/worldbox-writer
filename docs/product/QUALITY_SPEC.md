@@ -1,6 +1,6 @@
 # QUALITY_SPEC — WorldBox Writer 评测系统单一真相源
 
-**文档状态**：DRAFT v0.2（Sprint 25 Round 2 完成；judge_committee API 落地，5/5 exit gates 通过）
+**文档状态**：DRAFT v0.3（Sprint 25 Round 3 完成 partial；calibration_v1 入库 + schema 修复；ranking gate 暴露两个 prompt-级 bug 待 R4 修）
 **最后更新**：2026-04-30
 **适用范围**：本文档是 WorldBox Writer 评测系统的 single source of truth。所有 judge prompt、评测协议、档位定义都从这里派生。任何 sprint round 的成功指标必须直接引用这里的 dimension 名称与阈值。
 
@@ -248,7 +248,49 @@ R3+ 各轮的 exit gate 都应按这个 framework 设计：测下游使用层的
 
 ## 4. Calibration Anchors（校准基线指针）
 
-> 占位。R3 完成 5–10 段人工标注样本入库后填充：样本路径、人工评分结构、judge 排序一致性的验证脚本。
+### 4.1 当前 calibration set v1
+
+路径：`tests/test_evals/fixtures/calibration_v1/`
+入库时间：Sprint 25 Round 3（2026-04-30）
+样本数：10（含 3 段 v0 baseline + 7 段 R3 新增）
+
+| Sample | Tier (intent) | 备注 |
+|---|---|---|
+| `G4_tier4_topshelf` | 4 | 文学型 head-tier（猫腻 / 烽火戏诸侯 风骨） |
+| `F_power_cost` | 4 | head-tier + 不可逆代价（cost_paid 触发样本） |
+| `E_payoff_burst` | 4 | head-tier + 爽点爆发（payoff_intensity 触发样本） |
+| `G3_tier3_solid` | 3 | 扎实 head-tier（守关 / 内劲对话） |
+| `A_head_tier` | 3 | head-tier baseline（v0） |
+| `D_mid_arc` | 2 | 中段场景（golden_start_density 反向触发） |
+| `B_mid_tier` | 2 | 中位 baseline（v0） |
+| `G2_tier2_midcommon` | 2 | 中位常见网文 |
+| `C_ai_water` | 1 | AI 水文 baseline（v0） |
+| `G1_tier1_severe` | 1 | 多毒点齐发 AI 水文 |
+
+manifest 含：`authoring_intent_ranking` + `mandatory_pairs_must_not_reverse` + 每段 `expected_signals`。
+
+### 4.2 ranking 验证机制
+
+脚本：`scripts/eval/calibration_ranking.py`
+退出阈值：Spearman ρ ≥ 0.95 + mandatory pair 0 反转。
+
+每轮迭代（包括 R4 re-baseline 之前）应跑一次 calibration ranking 检查，若不达标必须先修 prompt / 维度 / 权重。
+
+### 4.3 已知 calibration 限制（R3 实测）
+
+**重要**：当前 calibration set 是 Claude 自己写的——同一个模型既写样本又写判官 prompt。这意味着：
+
+- 排序一致性通过（Spearman ≥ 0.95）是**必要条件**，不是**充分条件**。
+- 通过未必证明判官在外部数据上有判别力，可能只是 AI fingerprint 自匹配。
+- R6+ 必须引入**外部人工标注样本**（猫腻 / 烽火 / 起点头部 真实片段）才能真正打破自循环偏差。
+
+R3 实测排序 Spearman ρ = 0.5606（远低于阈值），说明即使在自写样本上 calibration 也没通过——这反而是好消息：评测系统暴露了自己的盲区，不是过拟合到自己写的样本。
+
+**已知 prompt-级 bug（R3 揭示，R4 优先修）**：
+1. `forced_stupidity` 把"反派被合理底牌击溃"误判为降智（~20% 概率）。
+2. `cost_paid` rubric anchoring failure：reasoning 命中 9-10 锚点描述时仍默认输出 4-6 mid tier 分。
+
+详细 root cause 见 `docs/orchestrator/round-3.md` §6.3 / §6.4。
 
 ---
 
