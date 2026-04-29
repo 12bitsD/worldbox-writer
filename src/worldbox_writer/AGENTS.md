@@ -46,5 +46,5 @@ High-risk areas:
 
 - `../../AGENTS.md`
 - `../../docs/development/TYPECHECK_BASELINE.md`
-- `../../docs/development/CI_SETUP.md`
+- `../../docs/development/DEVELOPMENT.md`
 - `../../docs/architecture/DESIGN.md`

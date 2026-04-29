@@ -34,6 +34,15 @@ from worldbox_writer.utils.llm import chat_completion, get_last_llm_call_metadat
 # Prompt templates
 # ---------------------------------------------------------------------------
 
+_SCENE_PLAN_PROMPT = """ScenePlan objective 质量要求：
+- objective 必须包含具体冲突：写清谁 vs 谁/什么，以及双方为了什么发生冲突。
+- objective 必须包含时空锚点：写清冲突发生在哪里、什么时候。
+- objective 必须包含赌注：写清角色赢/输分别会得到或失去什么。
+- 禁止概括性 objective，例如“推动故事”“发展情节”“解决矛盾”“推进主线”。
+- 每个 scene plan 必须至少有一个核心冲突，conflict_type 只能是 external、relationship、value、information_gap 之一。
+- 每个 scene 结尾必须有 suspense_hook，留下一个未解决的问题，不能把本幕冲突完全封口。
+- 每个 scene plan 必须至少有一个显性冲突和一个隐性张力；显性冲突是场面上可见的阻碍，隐性张力是信息差、旧承诺、关系裂痕、恐惧或秘密。"""
+
 _WORLD_INIT_SYSTEM_PROMPT = """你是 WorldBox Writer 多智能体小说创作系统的导演 Agent。
 你的任务是解析用户的故事前提，生成结构化的世界初始化数据。
 
@@ -78,7 +87,7 @@ JSON 结构如下：
 - 至少添加一个关于故事弧线的叙事约束
 - 生成 2-4 个角色，1-2 个开场节点
 - 角色 name 必须像真实人物姓名，角色定位放入 description，不要把角色定位当名字
-"""
+""" + "\n\n" + _SCENE_PLAN_PROMPT
 
 _INTENT_UPDATE_SYSTEM_PROMPT = """你是 WorldBox Writer 的导演 Agent。用户在故事推演过程中提出了干预指令。
 你的任务是将这个指令转化为：
@@ -174,11 +183,22 @@ class DirectorAgent:
             max_spotlight_characters=max_spotlight_characters,
         )
         narrative_pressure = self._resolve_narrative_pressure(world)
+        conflict_type = self._scene_conflict_type(
+            world,
+            spotlight_character_ids=spotlight_character_ids,
+        )
+        suspense_hook = self._scene_suspense_hook(
+            world,
+            current_node=current_node,
+            spotlight_character_ids=spotlight_character_ids,
+        )
         objective = self._derive_scene_objective(
             world,
             current_node=current_node,
             spotlight_character_ids=spotlight_character_ids,
             narrative_pressure=narrative_pressure,
+            conflict_type=conflict_type,
+            suspense_hook=suspense_hook,
         )
         title = self._derive_scene_title(
             world,
@@ -200,6 +220,8 @@ class DirectorAgent:
             tick=world.tick,
             title=title,
             objective=objective,
+            conflict_type=conflict_type,
+            suspense_hook=suspense_hook,
             setting=setting,
             public_summary=public_summary,
             spotlight_character_ids=spotlight_character_ids,
@@ -211,6 +233,8 @@ class DirectorAgent:
             metadata={
                 "planning_mode": "heuristic-scene-planner-v1",
                 "pressure_guidance": pressure_guidance,
+                "conflict_type": conflict_type,
+                "suspense_hook": suspense_hook,
                 "spotlight_names": self._spotlight_names(
                     world, spotlight_character_ids
                 ),
@@ -537,30 +561,224 @@ class DirectorAgent:
         current_node: Optional[StoryNode],
         spotlight_character_ids: List[str],
         narrative_pressure: str,
+        conflict_type: str,
+        suspense_hook: str,
     ) -> str:
         spotlight_names = self._spotlight_names(world, spotlight_character_ids)
         focus = "、".join(spotlight_names) if spotlight_names else "主要角色"
+        anchor = self._scene_space_time_anchor(world, current_node=current_node)
+        explicit_conflict = self._scene_explicit_conflict(
+            world,
+            spotlight_character_ids=spotlight_character_ids,
+        )
+        contested_goal = self._scene_contested_goal(
+            world,
+            current_node=current_node,
+            spotlight_character_ids=spotlight_character_ids,
+        )
+        stakes = self._scene_stakes(
+            narrative_pressure,
+            contested_goal=contested_goal,
+        )
+        hidden_tension = self._scene_hidden_tension(
+            world,
+            spotlight_character_ids=spotlight_character_ids,
+        )
+        pressure_goal = self._scene_pressure_goal(narrative_pressure)
+        continuity = self._scene_continuity(world, current_node=current_node)
+        conflict_label = self._conflict_type_label(conflict_type)
 
+        return (
+            f"围绕{focus}在{anchor}展开显性冲突："
+            f"{explicit_conflict}为{contested_goal}正面施压；"
+            f"冲突类型：{conflict_label}（{conflict_type}）；赌注：{stakes}；"
+            f"隐性张力：{hidden_tension}；悬念钩子：{suspense_hook}；"
+            f"{pressure_goal}，承接线索：{continuity}"
+        )
+
+    def _scene_conflict_type(
+        self,
+        world: WorldState,
+        *,
+        spotlight_character_ids: List[str],
+    ) -> str:
+        for character_id in spotlight_character_ids:
+            character = world.get_character(character_id)
+            if character and any(
+                _has_information_gap_signal(memory) for memory in character.memory[-3:]
+            ):
+                return "information_gap"
+            if character and any(
+                relationship.note for relationship in character.relationships.values()
+            ):
+                return "relationship"
+
+        active_rules = " ".join(
+            [constraint.rule for constraint in world.active_constraints()[:3]]
+            + list(world.world_rules[:3])
+        )
+        if any(keyword in active_rules for keyword in ("必须", "不得", "只能", "代价")):
+            return "value"
+
+        visible_characters = [
+            character_id
+            for character_id in spotlight_character_ids
+            if world.get_character(character_id) is not None
+        ]
+        if len(visible_characters) >= 2:
+            return "external"
+        return "external"
+
+    def _conflict_type_label(self, conflict_type: str) -> str:
+        return {
+            "external": "外部阻碍",
+            "relationship": "关系裂痕",
+            "value": "价值/规则冲突",
+            "information_gap": "信息差",
+        }.get(conflict_type, "外部阻碍")
+
+    def _scene_suspense_hook(
+        self,
+        world: WorldState,
+        *,
+        current_node: Optional[StoryNode],
+        spotlight_character_ids: List[str],
+    ) -> str:
+        spotlight_names = self._spotlight_names(world, spotlight_character_ids)
+        focus = "、".join(spotlight_names[:2]) if spotlight_names else "主要角色"
+        contested_goal = self._scene_contested_goal(
+            world,
+            current_node=current_node,
+            spotlight_character_ids=spotlight_character_ids,
+        )
+        hidden_tension = self._scene_hidden_tension(
+            world,
+            spotlight_character_ids=spotlight_character_ids,
+        )
+        return (
+            f"未解决的问题：{focus}是否能夺回{contested_goal}的主动权，"
+            f"还是{hidden_tension}会先改变局势？"
+        )
+
+    def _scene_space_time_anchor(
+        self, world: WorldState, *, current_node: Optional[StoryNode]
+    ) -> str:
+        place = ""
+        for location in world.locations:
+            place = str(location.get("name") or "").strip()
+            if place:
+                break
+        if not place and current_node and current_node.title:
+            place = f"“{current_node.title}”事件现场"
+        if not place:
+            place = world.title or "当前主线现场"
+        return f"第{world.tick + 1}幕，{place}"
+
+    def _scene_explicit_conflict(
+        self,
+        world: WorldState,
+        *,
+        spotlight_character_ids: List[str],
+    ) -> str:
+        characters: List[Character] = []
+        for character_id in spotlight_character_ids:
+            character = world.get_character(character_id)
+            if character is not None:
+                characters.append(character)
+        if len(characters) >= 2:
+            return f"{characters[0].name} vs {characters[1].name}"
+
+        protagonist = characters[0].name if characters else "主要角色"
+        for character_id, character in world.characters.items():
+            if character_id not in spotlight_character_ids:
+                return f"{protagonist} vs {character.name}"
+
+        pressure = "世界规则"
+        active_constraints = world.active_constraints()
+        if active_constraints:
+            pressure = active_constraints[0].name
+        elif world.world_rules:
+            pressure = world.world_rules[0]
+        return f"{protagonist} vs {pressure}"
+
+    def _scene_contested_goal(
+        self,
+        world: WorldState,
+        *,
+        current_node: Optional[StoryNode],
+        spotlight_character_ids: List[str],
+    ) -> str:
+        goals: List[str] = []
+        for character_id in spotlight_character_ids:
+            character = world.get_character(character_id)
+            if character and character.goals:
+                goals.append(character.goals[0].strip())
+            if len(goals) >= 2:
+                break
+        if goals:
+            return "与".join(goal for goal in goals if goal)
         if current_node and current_node.description:
-            if narrative_pressure == "calm":
-                return (
-                    f"围绕{focus}消化上一幕余波，推进关系、调查或准备，"
-                    f"承接线索：{current_node.description}"
-                )
-            if narrative_pressure == "intense":
-                return (
-                    f"围绕{focus}把局势推向更高风险的冲突、揭露或正面碰撞，"
-                    f"承接线索：{current_node.description}"
-                )
-            return (
-                f"围绕{focus}承接上一幕并制造新的选择、阻力或推进，"
-                f"承接线索：{current_node.description}"
-            )
-
+            return self._compact_text(current_node.description)
         if world.premise:
-            return f"围绕{focus}继续推进主线前提：{world.premise}"
+            return self._compact_text(world.premise)
+        return "下一步行动主动权"
 
-        return f"围绕{focus}推进下一幕，并保持人物目标与世界约束一致。"
+    def _scene_stakes(self, narrative_pressure: str, *, contested_goal: str) -> str:
+        if narrative_pressure == "calm":
+            return f"赢则保住{contested_goal}的准备窗口，输则关系信任或关键线索继续流失"
+        if narrative_pressure == "intense":
+            return (
+                f"赢则夺回{contested_goal}的现场主动权，"
+                "输则付出不可逆的身份、盟友或生存代价"
+            )
+        return (
+            f"赢则获得{contested_goal}的下一步选择权，"
+            "输则让对手掌握节奏并迫使角色让步"
+        )
+
+    def _scene_hidden_tension(
+        self,
+        world: WorldState,
+        *,
+        spotlight_character_ids: List[str],
+    ) -> str:
+        for character_id in spotlight_character_ids:
+            character = world.get_character(character_id)
+            if character and character.memory:
+                return self._compact_text(character.memory[-1])
+            if character:
+                for relationship in character.relationships.values():
+                    if relationship.note:
+                        return self._compact_text(relationship.note)
+
+        active_constraints = world.active_constraints()
+        if active_constraints:
+            return self._compact_text(active_constraints[0].rule)
+        if world.world_rules:
+            return self._compact_text(world.world_rules[0])
+        return "信息差、旧承诺或未公开秘密正在削弱角色之间的信任"
+
+    def _scene_pressure_goal(self, narrative_pressure: str) -> str:
+        if narrative_pressure == "calm":
+            return "目标是让角色在低压铺垫中做出带代价的准备或试探"
+        if narrative_pressure == "intense":
+            return "目标是把冲突前置为不可回避的高风险碰撞"
+        return "目标是在选择、阻力和关系变化之间制造清晰推进"
+
+    def _scene_continuity(
+        self, world: WorldState, *, current_node: Optional[StoryNode]
+    ) -> str:
+        if current_node and current_node.description:
+            return self._compact_text(current_node.description)
+        if world.premise:
+            return self._compact_text(world.premise)
+        return "人物目标与世界约束"
+
+    def _compact_text(self, text: str, max_chars: int = 72) -> str:
+        compacted = " ".join(text.split()).strip()
+        if len(compacted) <= max_chars:
+            return compacted
+        return compacted[:max_chars].rstrip("，,。；;、 ") + "…"
 
     def _derive_scene_setting(self, world: WorldState) -> str:
         location_names = [
@@ -606,3 +824,21 @@ class DirectorAgent:
         return [line.strip() for line in memory_context.splitlines() if line.strip()][
             -2:
         ]
+
+
+def _has_information_gap_signal(text: str) -> bool:
+    return any(
+        keyword in text
+        for keyword in (
+            "秘密",
+            "线索",
+            "知道",
+            "发现",
+            "看见",
+            "藏",
+            "裂纹",
+            "真相",
+            "密信",
+            "误会",
+        )
+    )

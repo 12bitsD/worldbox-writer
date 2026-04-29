@@ -309,10 +309,10 @@ def _merge_rendered_nodes_from_world(
         merged.append({**existing_by_id.get(node_id, {}), **serialized})
         seen.add(node_id)
 
-    for node in nodes_rendered:
-        node_id = str(node.get("id", ""))
+    for rendered_node in nodes_rendered:
+        node_id = str(rendered_node.get("id", ""))
         if node_id and node_id not in seen:
-            merged.append(dict(node))
+            merged.append(dict(rendered_node))
             seen.add(node_id)
 
     return merged

@@ -1,168 +1,93 @@
 # 运行手册
 
-**文档状态**：Active (v0.6.0+)  
-**最后更新**：2026-04-22
+本地开发与联调中常见问题的处理方式。
 
-本文档记录本地开发和联调中最常见的问题与处理方式。
+---
 
-## 1. 基本启动命令
-
-后端：
+## 基本命令
 
 ```bash
-make dev-api
+make dev-api       # 启动后端
+make dev-web       # 启动前端
+make lint          # 格式 + 静态检查
+make test          # 默认测试（L1）
 ```
 
-前端：
+---
 
-```bash
-make dev-web
-```
+## 常见问题
 
-常规检查：
+### `make setup` 失败
+1. Python 是否为 3.11+
+2. Node.js 是否可用（推荐 20）
+3. `corepack` / `pnpm` 是否可执行
+4. PyPI / npm registry 网络
 
-```bash
-make lint
-make test
-```
-
-## 2. 常见问题
-
-### 2.1 `make setup` 失败
-
-排查顺序：
-
-1. 检查 Python 是否为 3.11+
-2. 检查 Node.js 是否可用，推荐 20
-3. 检查 `corepack` 或 `pnpm` 是否可执行
-4. 检查网络是否能访问 PyPI / npm registry
-
-### 2.2 后端启动失败
-
-重点检查：
-
+### 后端启动失败
 - `.env` 是否存在
-- `LLM_PROVIDER` / `LLM_API_KEY` 是否配置正确
-- `worldbox.db` 是否有权限问题
-- 端口 `8000` 是否已被占用
+- `LLM_PROVIDER` / `LLM_API_KEY` 是否配置
+- `worldbox.db` 权限
+- 端口 `8000` 是否占用
 
-验证命令：
+验证：
 
 ```bash
 curl http://localhost:8000/api/health
 ```
 
-### 2.3 前端启动但页面空白
+### 前端启动但页面空白
+- 后端是否正常
+- 浏览器控制台接口请求错误
+- `frontend/src/types` 是否与后端响应漂移
 
-重点检查：
-
-- 后端是否正常启动
-- 浏览器控制台是否有接口请求错误
-- `frontend/src/types` 是否与后端返回结构漂移
-
-### 2.4 SSE 流无数据
-
-重点检查：
-
+### SSE 流无数据
 - 推演是否真实进入运行态
 - `/api/simulate/{id}/stream` 是否返回 200
-- 后端是否有异常中断
+- 后端异常中断日志
 
-### 2.5 `make test` 失败
+### `make test` 失败
+- 后端：`artifacts/reports/backend/pytest.xml`、`coverage.xml`
+- 前端：`artifacts/reports/frontend/vitest.xml`
 
-后端失败时先看：
+---
 
-- `artifacts/reports/backend/pytest.xml`
-- `artifacts/reports/backend/coverage.xml`
+## 紧急止损：Feature Flags
 
-前端失败时先看：
+核心能力由环境变量控制，出现事故时可快速关闭，系统退回安全路径。
 
-- `artifacts/reports/frontend/vitest.xml`
-- `frontend` 构建错误输出
+| 能力 | Flag | 关闭后行为 |
+|----|----|----|
+| 双循环链路（Critic / GM / 分级 Narrator） | `FEATURE_DUAL_LOOP_ENABLED=0` | 退回 legacy Actor candidate event 路径；已有 SceneScript / 正文不删除 |
+| Branching（分支并行推演） | `FEATURE_BRANCHING_ENABLED=0` | `/branch/*` 接口返回"功能已关闭"；主线推演不受影响 |
 
-### 2.6 Sprint 8 分支能力需要紧急止损
-
-Sprint 8 的 branching loop 由环境变量 `FEATURE_BRANCHING_ENABLED` 控制。
-
-关闭方式：
-
-```bash
-FEATURE_BRANCHING_ENABLED=0 make dev-api
-```
-
-或在现有服务环境里显式注入：
-
-```bash
-export FEATURE_BRANCHING_ENABLED=0
-```
-
-关闭后的预期行为：
-
-- `POST /api/simulate/{id}/branch`
-- `POST /api/simulate/{id}/branch/switch`
-- `POST /api/simulate/{id}/branch/pacing`
-- `GET /api/simulate/{id}/branch/compare`
-
-这些接口会返回可解释错误，系统退回单主线安全行为。
-
-止损验证步骤：
-
-1. 访问 `GET /api/health`，确认服务已重启且无启动错误。
-2. 打开一个已有会话，确认 `GET /api/simulate/{id}` 仍可读取主线。
-3. 调用任一 branch 接口，确认返回“分支功能当前已关闭”。
-4. 继续执行一次普通单主线推演，确认 `start / intervene / export` 不受影响。
-
-恢复方式：
-
-```bash
-export FEATURE_BRANCHING_ENABLED=1
-make dev-api
-```
-
-### 2.7 Sprint 18 双循环链路需要紧急止损
-
-双循环链路由环境变量 `FEATURE_DUAL_LOOP_ENABLED` 控制。
-
-关闭方式：
+关闭示例：
 
 ```bash
 FEATURE_DUAL_LOOP_ENABLED=0 make dev-api
+# 或
+export FEATURE_BRANCHING_ENABLED=0
 ```
 
-或在现有服务环境里显式注入：
+事故响应步骤：
+1. `GET /api/health` 确认服务重启无错
+2. 打开任一已有会话，确认主线可读
+3. 新建一次推演，确认 `start / intervene / export` 正常
+4. 双循环事故补跑：`python -m worldbox_writer.evals.dual_loop_compare <sim_id>` 归档报告
+5. 若为模型质量问题，补跑 `make model-eval` 记录 provider / model / route
 
-```bash
-export FEATURE_DUAL_LOOP_ENABLED=0
-```
+完整灰度与恢复流程见 [DUAL_LOOP_ROLLOUT.md](./DUAL_LOOP_ROLLOUT.md)。
 
-关闭后的预期行为：
+---
 
-- 新推演退回 legacy Actor candidate event 路径
-- 已有 `SceneScript` / `NarratorInput` / rendered text 不会被删除
-- `/api/simulate/{id}/dual-loop/compare` 仍可读取已有证据，用于事故分析
-
-止损验证步骤：
-
-1. 访问 `GET /api/health`，确认服务已重启且无启动错误。
-2. 新建一次普通推演，确认能生成故事节点和正文。
-3. 对事故会话执行 `python -m worldbox_writer.evals.dual_loop_compare <sim_id>`，保存报告。
-4. 若是模型质量问题，补跑 `make model-eval` 并记录 provider / model / route 信息。
-
-完整灰度与恢复流程见 [Dual-loop Rollout Runbook](DUAL_LOOP_ROLLOUT.md)。
-
-## 3. 数据与路径
-
-当前默认数据文件：
+## 数据与路径
 
 - SQLite：`worldbox.db`
-- 本地环境变量：`.env`
-- CI 报告目录：`artifacts/reports/`
+- 环境变量：`.env`
+- CI 报告：`artifacts/reports/`
 
-## 4. 已知告警
+---
 
-当前本地测试中已知但不阻塞的告警：
+## 已知告警（不阻塞）
 
 - FastAPI `on_event` deprecation warning
-- coverage 的 `module-not-measured` warning
-
-这些问题应在后续稳定性迭代中清理，但不属于当前最小落地包范围。
+- coverage `module-not-measured` warning

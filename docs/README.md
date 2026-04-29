@@ -1,9 +1,8 @@
 # 文档导航
 
-**文档状态**：Active (v0.6.0+)  
-**最后更新**：2026-04-22
+仓库文档入口索引。新成员先读根 [README.md](../README.md) 和 [AGENTS.md](../AGENTS.md)。
 
-本文档用于整理仓库内的文档入口，避免信息分散在多个目录中难以查找。
+---
 
 ## 1. 初次进入项目
 
@@ -13,56 +12,35 @@
 - [安全策略](../SECURITY.md)
 - [变更记录](../CHANGELOG.md)
 
-## 2. 开发与交付
+## 2. 架构与设计
 
-- [开发流程说明](development/DEV_WORKFLOW.md)
-- [CI 配置说明](development/CI_SETUP.md)
-- [敏捷开发指南](development/AGILE_GUIDE.md)
+- [系统架构设计](architecture/DESIGN.md) — 三层架构、双循环数据流、技术栈、关键决策
+- [双循环推演引擎设计](architecture/DUAL_LOOP_ENGINE_DESIGN.md) — ScenePlan → Actor → Critic → GM → Narrator 协议
+
+## 3. 开发与交付
+
+- [开发指南](development/DEVELOPMENT.md) — 环境、命令、CI 门禁、Secrets、分支提交规范
+- [敏捷开发指南](development/AGILE_GUIDE.md) — 测试分层 L1/L2/L3、DoD、Sprint 规则
+- [运行手册](development/RUNBOOK.md) — 常见故障排查、Feature Flag 止损
+- [Dual-loop Rollout Runbook](development/DUAL_LOOP_ROLLOUT.md) — 双循环灰度与恢复流程
 - [发布流程](development/RELEASE_PROCESS.md)
-- [运行手册](development/RUNBOOK.md)
-- [Dual-loop Rollout Runbook](development/DUAL_LOOP_ROLLOUT.md)
-- [Secrets Policy](development/SECRETS_POLICY.md)
 - [类型检查基线](development/TYPECHECK_BASELINE.md)
 
-## 3. 架构与协议
+## 4. 产品与质量
 
-- [系统架构设计](architecture/DESIGN.md)
-- [关系结构协议 v1](architecture/RELATIONSHIP_SCHEMA_V1.md)
-- [Telemetry 协议 v1](architecture/TELEMETRY_SCHEMA_V1.md)
+- [产品策略](product/PRODUCT_STRATEGY.md) — 定位、竞品、差距分析、差异化策略、路线图
+- [质量评估框架](product/QUALITY_FRAMEWORK.md) — 评测协议、LLM-as-judge、AI 味检测
 
-## 4. 产品与规划
+## 5. 迭代编排
 
-- [产品演进规划](product/PRODUCT_PLANNING.md)
-- [产品演进规划 v2（双循环推演引擎）](product/PRODUCT_PLANNING_V2.md)
-- [产品评审报告](product/PRODUCT_REVIEW.md)
-- [长期路线图](product/FUTURE_ROADMAP.md)
-- [用户故事与 Backlog](product/USER_STORIES.md)
+- [Orchestrator 总控手册](orchestrator/README.md) — 北极星、双轴评估、四档标准、迭代主流程
+- [当前状态快照](orchestrator/state.json)
 
-## 5. 历史 Sprint 记录
+## 6. Sprint 记录
 
-- [Sprint 0](sprints/SPRINT_0.md)
-- [Sprint 1](sprints/SPRINT_1.md)
-- [Sprint 2-4](sprints/SPRINT_2_4.md)
-- [Sprint 6 计划](sprints/SPRINT_6.md)
-- [Sprint 6 Demo Script](sprints/SPRINT_6_DEMO_SCRIPT.md)
-- [Sprint 7-9 计划](sprints/FINAL_SPRINT_7_8_9_PLAN.md)
-- [Sprint 7 任务拆解](sprints/SPRINT_7_TASK_BREAKDOWN.md)
-- [Sprint 8 任务拆解](sprints/SPRINT_8_TASK_BREAKDOWN.md)
-- [Sprint 8.5 计划](sprints/SPRINT_8_5_PLAN.md)
-- [Sprint 8.5 任务拆解](sprints/SPRINT_8_5_TASK_BREAKDOWN.md)
-- [Sprint 9 任务拆解](sprints/SPRINT_9_TASK_BREAKDOWN.md)
-- [Sprint 10 计划](sprints/SPRINT_10.md)
-- [Sprint 11 计划](sprints/SPRINT_11.md)
-- [Sprint 12 计划](sprints/SPRINT_12.md)
-- [Sprint 13 计划](sprints/SPRINT_13.md)
-- [Sprint 14 计划](sprints/SPRINT_14.md)
-- [Sprint 15 计划](sprints/SPRINT_15.md)
-- [Sprint 16 计划](sprints/SPRINT_16.md)
-- [Sprint 17 计划](sprints/SPRINT_17.md)
-- [Sprint 18 计划](sprints/SPRINT_18.md)
-- [Sprint 19 计划](sprints/SPRINT_19.md)
-- [Sprint 20 计划](sprints/SPRINT_20.md)
+- [Sprint 文档清单与清理策略](sprints/README.md)
+- [Sprint 24 计划](sprints/SPRINT_24.md)
 
-## 6. 实验与模板
+## 7. 模板
 
 - [Model Eval Workflow 模板](ci/model-eval.yml.template)

@@ -63,7 +63,7 @@ def test_plan_scene_falls_back_to_alive_characters_when_no_scene_cast() -> None:
     scene_plan = director.plan_scene(world)
 
     assert scene_plan.title
-    assert scene_plan.objective.startswith("围绕")
+    assert scene_plan.objective.strip()
     assert scene_plan.spotlight_character_ids == [str(alice.id), str(bob.id)]
     assert scene_plan.public_summary == "当前聚焦角色：阿璃、白夜"
     assert scene_plan.metadata["planning_mode"] == "heuristic-scene-planner-v1"

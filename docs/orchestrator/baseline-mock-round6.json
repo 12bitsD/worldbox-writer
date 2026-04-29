@@ -1,0 +1,15 @@
+{
+  "schema_version": "worldbox-mock-baseline-v1",
+  "round": 6,
+  "scene_script_score": {
+    "score": 5.0,
+    "story": 5.0,
+    "prose": 5.0
+  },
+  "prose_score": {
+    "score": 5.0,
+    "story": 5.0,
+    "prose": 5.0
+  },
+  "composite": 5.0
+}

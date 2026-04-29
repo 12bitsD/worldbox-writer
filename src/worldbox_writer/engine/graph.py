@@ -1075,9 +1075,7 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
     # Only trigger intervention on ticks where tick % 3 == 1 (ticks 1, 4, 7, 10...)
     frequency_gate = world.tick % 3 == 1
     needs_intervention = (
-        signal is not None
-        and signal.urgency in ["high", "critical"]
-        and frequency_gate
+        signal is not None and signal.urgency in ["high", "critical"] and frequency_gate
     )
     new_node.requires_intervention = needs_intervention
     detector_fields = _llm_telemetry_fields(detector.last_call_metadata)

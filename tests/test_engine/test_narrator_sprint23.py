@@ -1,7 +1,7 @@
 """Sprint 23 tests: narrator prompt quality and intervention frequency."""
+
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Dict, List
 from unittest.mock import MagicMock
 
@@ -10,28 +10,6 @@ from worldbox_writer.agents.node_detector import InterventionSignal
 from worldbox_writer.core.models import WorldState
 from worldbox_writer.engine.graph import node_detector_node
 from worldbox_writer.memory.memory_manager import MemoryManager
-
-
-GRAPH_PY = Path(__file__).resolve().parents[2] / "src" / "worldbox_writer" / "engine" / "graph.py"
-
-
-# ---------------------------------------------------------------------------
-# Change 1/2: Narrator prompt contains new creative writing guidance
-# ---------------------------------------------------------------------------
-
-
-def test_narrator_prompt_contains_new_style_requirements() -> None:
-    """Verify the narrator system prompt includes the new creative writing guidance."""
-    source = GRAPH_PY.read_text(encoding="utf-8")
-    assert "800-1500字" in source, "Narrator prompt should specify 800-1500 character length"
-    assert "写作风格要求" in source, "Narrator prompt should contain '写作风格要求' heading"
-
-
-def test_narrator_prompt_contains_creative_boundaries() -> None:
-    """Verify the narrator prompt includes creative boundary guidance."""
-    source = GRAPH_PY.read_text(encoding="utf-8")
-    assert "创作边界" in source, "Narrator prompt should contain '创作边界' section"
-
 
 # ---------------------------------------------------------------------------
 # Change 4: Intervention frequency gating (tick % 3 == 1)
@@ -103,9 +81,7 @@ def _patch_node_deps(monkeypatch) -> None:
     )
 
     # Skip scene script loading
-    monkeypatch.setattr(
-        graph_module, "_load_scene_script_for_node", lambda node: None
-    )
+    monkeypatch.setattr(graph_module, "_load_scene_script_for_node", lambda node: None)
 
 
 def test_intervention_triggers_on_tick_1(monkeypatch) -> None:

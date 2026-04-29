@@ -177,6 +177,8 @@ export interface ScenePlan {
   tick: number;
   title: string;
   objective: string;
+  conflict_type: string;
+  suspense_hook: string;
   setting: string;
   public_summary: string;
   spotlight_character_ids: string[];

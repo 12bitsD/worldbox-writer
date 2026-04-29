@@ -26,7 +26,7 @@ make integration
 更多背景请参考：
 
 - [README](README.md)
-- [开发流程说明](docs/development/DEV_WORKFLOW.md)
+- [开发指南](docs/development/DEVELOPMENT.md)
 - [敏捷开发指南](docs/development/AGILE_GUIDE.md)
 
 ## 2. 分支与提交规范
@@ -84,8 +84,7 @@ feat(api): add waiting-state world edit endpoint
 常见目标文档：
 
 - [README](README.md)
-- [CI 配置说明](docs/development/CI_SETUP.md)
-- [开发流程说明](docs/development/DEV_WORKFLOW.md)
+- [开发指南](docs/development/DEVELOPMENT.md)
 - [发布流程](docs/development/RELEASE_PROCESS.md)
 - [运行手册](docs/development/RUNBOOK.md)
 

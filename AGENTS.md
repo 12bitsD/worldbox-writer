@@ -74,8 +74,7 @@ Change-coupling rules:
   - `.github/workflows/*`
   - `Makefile`
   - `scripts/ci/*`
-  - `docs/development/CI_SETUP.md`
-  - `docs/development/DEV_WORKFLOW.md`
+  - `docs/development/DEVELOPMENT.md`
 - If you change release or contribution expectations, check:
   - `CONTRIBUTING.md`
   - `CHANGELOG.md`
@@ -106,8 +105,7 @@ Use these files as the next layer of truth:
 - Project overview: `README.md`
 - Docs index: `docs/README.md`
 - Contribution rules: `CONTRIBUTING.md`
-- Development workflow: `docs/development/DEV_WORKFLOW.md`
-- CI behavior: `docs/development/CI_SETUP.md`
+- Development workflow & CI behavior: `docs/development/DEVELOPMENT.md`
 - Typecheck baseline: `docs/development/TYPECHECK_BASELINE.md`
 - Runbook: `docs/development/RUNBOOK.md`
 - Release process: `docs/development/RELEASE_PROCESS.md`

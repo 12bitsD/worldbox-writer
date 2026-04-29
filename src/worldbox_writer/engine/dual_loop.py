@@ -291,7 +291,13 @@ def invoke_isolated_actor_intent(
                 '  "rationale": "为什么这个角色会这样做，一句话",\n'
                 '  "target_character_names": ["可见目标角色名"],\n'
                 '  "confidence": 0.0\n'
-                "}"
+                "}\n\n"
+                "summary 写作约束：\n"
+                "- 不要使用模板短语，例如“围绕...”“承接上一幕...”"
+                "“采取具体行动...”“制造新的选择...”。\n"
+                "- 不要写“处理危机”“应对挑战”这类概括性描述，必须具体到动作和对象。\n"
+                "- 不要使用排比句式，不要解释角色动机，动机应由行为体现。\n"
+                "- 必须包含具体动作、具体对象和时空信息，并用一句话写完。"
             ),
         },
         {"role": "user", "content": prompt_trace.assembled_prompt},
@@ -619,21 +625,22 @@ def _fallback_actor_summary(
 
     if any(keyword in goal for keyword in ("阻止", "压制", "扩大", "夺取")):
         return (
-            f"{name}围绕“{goal}”主动设置阻碍，借“{scene_focus}”逼迫对方"
-            "暴露选择与代价。"
+            f"{name}此刻在“{scene_focus}”现场挡住退路，点出与“{goal}”"
+            "有关的证物，逼对方当场回应。"
         )
     if scene_plan.narrative_pressure == "intense":
         return (
-            f"{name}围绕“{goal}”直接逼近冲突核心，沿“{scene_focus}”" "抛出高风险选择。"
+            f"{name}此刻冲到“{scene_focus}”的最危险位置，抓住与“{goal}”"
+            "有关的关键物件，当场逼出结果。"
         )
     if scene_plan.narrative_pressure == "calm":
         return (
-            f"{name}围绕“{goal}”整理上一幕线索，沿“{scene_focus}”"
-            "推进一次可验证的准备行动。"
+            f"{name}此刻留在“{scene_focus}”现场翻检脚边痕迹，记录与“{goal}”"
+            "有关的可疑物件。"
         )
     return (
-        f"{name}围绕“{goal}”采取具体行动，沿“{scene_focus}”推进线索，"
-        "并制造新的阻力或选择。"
+        f"{name}此刻走到“{scene_focus}”现场的关键位置，拿起与“{goal}”"
+        "有关的物件交给同伴核对。"
     )
 
 

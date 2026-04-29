@@ -102,6 +102,8 @@ class ScenePlan(BaseModel):
     tick: int = 0
     title: str = ""
     objective: str = ""
+    conflict_type: str = "external"
+    suspense_hook: str = ""
     setting: str = ""
     public_summary: str = ""
     spotlight_character_ids: List[str] = Field(default_factory=list)

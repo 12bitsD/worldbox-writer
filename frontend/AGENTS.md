@@ -39,5 +39,5 @@ High-risk areas:
 
 - `../AGENTS.md`
 - `../CONTRIBUTING.md`
-- `../docs/development/DEV_WORKFLOW.md`
+- `../docs/development/DEVELOPMENT.md`
 - `../docs/development/RUNBOOK.md`

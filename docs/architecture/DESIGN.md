@@ -1,282 +1,166 @@
-# WorldBox Writer 架构设计与技术选型
+# WorldBox Writer 架构设计
 
-**文档状态**：Active (Sprint 1 Updated)
-**作者**：Manus AI
+**文档状态**：Active  
+**最后更新**：2026-04-29
 
-## 1. 系统核心理念 (Core Architecture Principles)
+本文档描述 WorldBox Writer 的整体架构与技术选型。
+双循环推演引擎的详细设计与第一性原理推导，见 [DUAL_LOOP_ENGINE_DESIGN.md](DUAL_LOOP_ENGINE_DESIGN.md)。
 
-本系统不再是一个单纯的"文本生成器"，而是一个"事件推演引擎"。
-所有的故事发展，首先在底层数据结构中以**有向无环图（DAG）**的形式推演并固化，然后才交由大语言模型（LLM）进行文学性渲染。
+---
 
-这种架构设计的目的是为了解决长篇小说生成中的**逻辑一致性**与**用户干预持久性**问题。
+## 1. 核心理念
 
-## 2. 核心模块与组件
+系统不是"文本生成器"，而是"事件推演引擎"。
 
-系统分为三个主要层级：**世界推演层（World Simulation Layer）**、**边界与意图层（Constraint & Intent Layer）**、**表现与渲染层（Presentation Layer）**。
+所有故事发展先在底层以**有向无环图（DAG）**形式推演并固化，再交由 LLM 进行文学性渲染。
 
-### 2.1 世界推演层 (World Simulation Layer)
+目的：解决长篇小说生成的**逻辑一致性**与**用户干预持久性**问题。
 
-负责维护世界的物理规律、历史背景以及角色的自主行动。
+---
 
-- **World Builder (世界构建师 Agent)**：
-  - 维护全局知识库（Global Context）。
-  - 当新区域被探索或新势力出现时，动态生成设定并存入向量数据库（Vector DB）。
-- **Actor (角色扮演者 Agent 集群)**：
-  - 每个核心角色是一个独立的 Agent 实例。
-  - 维护个人的属性面板、好感度矩阵以及短期/长期记忆。
-  - 基于当前世界状态和自身目标，向调度中心提交"行动意图"（Action Proposal）。
+## 2. 三层架构
 
-### 2.2 边界与意图层 (Constraint & Intent Layer)
+### 2.1 世界推演层
 
-这是系统的"大脑"和"裁判"，负责处理人类干预，并确保世界不会崩溃。
+维护世界物理规律、历史背景与角色自主行动。
 
-- **Gate Keeper (边界守卫 Agent)**：
-  - 接收并解析用户的"神谕"（自然语言干预指令）。
-  - 将用户意图转化为硬性约束（Hard Constraints）或软性倾向（Soft Preferences）。
-  - 拦截所有违反世界规则或叙事红线的 Actor 行动意图。
-- **Logic Manager (逻辑校验者 Agent)**：
-  - 维护事件的有向无环图（Event DAG）。
-  - 确保因果关系成立（例如：A 必须先获得钥匙，才能打开宝箱）。
-  - 解决并发冲突（例如：两个 Actor 同时试图杀死同一个目标）。
+- **Director**：产出 `ScenePlan`，决定每一幕的 objective、spotlight cast、叙事压力
+- **WorldBuilder**：扩写世界规则、势力、地理，维护全局知识库（Vector DB）
+- **Actor × N**：每个角色是独立 Agent，基于私有记忆与 ScenePlan 产出 `ActionIntent`
 
-### 2.3 表现与渲染层 (Presentation Layer)
+### 2.2 边界与结算层
 
-负责将底层的结构化数据转化为人类可读的内容。
+系统的"大脑"与"裁判"，处理人类干预、保证世界不崩坏。
 
-- **Narrator (叙述者 Agent)**：
-  - 读取已确认的 Event DAG 节点序列。
-  - 结合参与角色的性格和历史记忆，将结构化事件渲染为带有对话、心理活动和环境描写的文学正文。
-- **Dashboard API (前端接口)**：
-  - 提供实时更新的事件流（Event Stream）、人物关系图谱数据和全局状态快照。
+- **Critic**：意图级 LLM 策略审查，产出 `IntentCritique`（accepted / rejected）
+- **GateKeeper**：节点级硬约束校验，HARD 违反阻断推演
+- **GM**：结算 accepted intent，产出唯一 `SceneScript` 作为事实源
+- **NodeDetector**：识别关键分歧节点，触发用户干预
 
-## 3. 核心数据流转 (Data Flow)
+### 2.3 表现与渲染层
 
-1. **初始化**：Director Agent 接收用户的一句话需求，生成初始世界设定（存入 Vector DB）和初始矛盾（生成首个 DAG 节点）。
-2. **提议阶段**：Actor Agents 观察当前 DAG 末端节点，结合自身记忆，各自生成下一步行动提议。
-3. **校验阶段**：Gate Keeper 和 Logic Manager 对所有提议进行审查，剔除不合逻辑或违背用户意图的行动。
-4. **决议阶段**：系统根据权重或随机概率，从合法提议中选出一个或多个，固化为新的 DAG 节点。
-5. **渲染阶段**：
-   - **精细模式**：Narrator Agent 立即将新节点渲染为小说正文。
-   - **快进模式**：跳过 Narrator，直接进入下一轮提议，仅输出结构化摘要。
-6. **干预中断**：当系统检测到即将生成的节点属于"关键分歧点"（如主角生死、重大结盟）时，暂停推演，向用户发起交互请求（Prompt for Intervention）。
+将结构化数据转化为可读内容。
 
-## 4. 技术栈选型 (Tech Stack Selection)
+- **Narrator**：消费 `SceneScript` 与三层记忆上下文，渲染小说正文（`NarratorInput v2`）
+- **Dashboard API**：提供实时事件流（SSE）、关系图谱与全局状态快照
 
-### 4.1 后端与 Agent 编排 (Backend & Orchestration)
-- **语言**：Python 3.11+
-- **Agent 框架**：LangGraph（Sprint 1 Spike 选型确认）。
-  - *理由*：LangGraph 提供有状态的图执行模型，天然支持循环、条件分支和人机交互暂停（`interrupt_before`），完全契合本项目的"推演-校验-干预"循环。相比之下，CrewAI 偏向线性任务流，AutoGen 状态管理复杂度过高。
-- **API 框架**：FastAPI。
-  - *理由*：支持异步非阻塞 I/O，适合处理长时间运行的 Agent 推演任务和 Server-Sent Events (SSE) 流式输出。
+---
 
-### 4.2 数据存储 (Data Storage)
-- **图数据库 (Graph DB)**：Neo4j。
-  - *用途*：存储事件的有向无环图（Event DAG）以及动态更新的人物关系网络（Social Graph）。
-- **向量数据库 (Vector DB)**：Chroma 或 Milvus。
-  - *用途*：存储世界观设定集（Wiki）、角色的长期记忆（Long-term Memory），支持语义检索（RAG）。
-- **关系型数据库 (RDBMS)**：PostgreSQL 或 SQLite。
-  - *用途*：存储用户账户、项目元数据、存档快照（Save States）。
+## 3. 核心数据流
 
-#### Sprint 8 补充：Branch Seed Snapshot v1
+```
+Director.plan_scene()
+      │  产出 ScenePlan
+      ▼
+Actor fan-out (spotlight)
+      │  每个角色私有 prompt → ActionIntent
+      ▼
+Critic.review_intents()
+      │  accepted / rejected verdict
+      ▼
+GM.settle()
+      │  SceneScript (单一事实源)
+      ▼
+GateKeeper.validate() ──┐
+      │                 │ HARD 违反
+      ▼                 ▼
+NodeDetector         revision_hint / 阻断
+      │
+      ▼
+Narrator.render()  ← SceneScript + 三层记忆
+      │
+      ▼
+StoryNode.rendered_text
+```
 
-为支撑时间线分叉，SQLite 在原有 `sessions.state_json` 之外，补充了按 `sim_id + node_id + branch_id` 建模的 `branch_seed_snapshots` 表。
+1. **初始化**：Director 接收用户前提，生成初始世界（WorldBuilder 异步补全）
+2. **推演循环**：Actor 提议 → Critic 审查 → GM 结算 → GateKeeper 校验 → 固化节点
+3. **渲染**：Narrator 立即将 SceneScript 渲染为正文，或跳过进入下一轮（快进模式）
+4. **干预**：NodeDetector 检测到关键分歧时暂停，向用户请求干预
 
-- **seed 形态**：v1 直接保存完整 `WorldState` JSON snapshot，而不是 diff。
-- **写入时机**：每次会话持久化时，如果当前世界存在 `current_node_id`，就为该历史节点 upsert 一份 snapshot。
-- **恢复语义**：后续 `fork_at_node()` 必须从对应节点的 snapshot 恢复，而不是重放整条 LLM 历史。
-- **兼容策略**：旧会话若不存在对应 snapshot，系统应显式返回“该节点暂不支持分叉”，而不是静默降级或伪造支线。
+---
 
-当前不采用“回放整条历史再从中途分叉”的原因很直接：LLM 推演并非严格确定性过程。即使提示词和历史节点文本相同，重放得到的中间世界状态、角色记忆和后续候选事件也可能发生漂移。对于 Sprint 8 的首个 branching release，优先级是**可恢复、可验证、可解释**，而不是最小存储占用。
+## 4. 技术栈
 
-#### Sprint 8.5 补充：先做 Progressive Feedback，再评估服务拆分
+### 4.1 后端
 
-当前首屏等待问题并不主要来自“FastAPI 和 LLM 编排必须立即拆成两个服务”，而主要来自两件事：
+| 组件 | 选型 | 理由 |
+| :--- | :--- | :--- |
+| 语言 | Python 3.11+ | 类型系统与生态匹配 |
+| Agent 框架 | **LangGraph** | 有状态图执行，原生支持循环、分支、`interrupt_before` |
+| API 框架 | **FastAPI** | 异步非阻塞，天然支持 SSE |
 
-- 首个可见反馈暴露得太晚
-- `WorldBuilder` 位于第一幕正文之前的关键路径上
+相比之下，CrewAI 偏线性任务流，AutoGen 状态管理复杂度过高。
 
-因此 Sprint 8.5 的架构决策是：
+### 4.2 存储
 
-- **短期**：继续保持单体后端 + 线程池后台任务模型，先把初始化 Telemetry、SSE 首包和主区域进度反馈做顺。
-- **短期**：把 `WorldBuilder` 延后到第一幕开始可见之后执行，让首个正文 token 更早出现。
-- **中期**：若这一轮后仍证明体验不可接受，再演进到 `API / Session Service + Simulation Worker` 的双层组织形式。
+| 用途 | 当前选型 | 备注 |
+| :--- | :--- | :--- |
+| 持久化 | SQLite | `sessions.state_json` + `memory_entries` + `branch_seed_snapshots` |
+| 向量检索 | ChromaDB (default `auto`) | 可 fallback 到 SQLite BM25 |
+| 分支快照 | `branch_seed_snapshots` | 按 `sim_id + node_id + branch_id` 存完整 WorldState |
 
-这项决策的重点是先验证：在不新增队列、缓存和跨进程状态同步复杂度的前提下，仅靠关键路径裁剪和更早暴露进度，是否已经足够改善首次推演体验。
+分支恢复采用 **snapshot 直接恢复**，不采用"重放历史"，因为 LLM 推演非确定性。
 
-#### Sprint 9 补充：先冻结 Durable Memory / Routing Contract，再谈外部向量库
+### 4.3 LLM 接入
 
-Sprint 9 的首要任务不是立刻接入新的向量数据库，而是先把 **记忆持久化契约** 和 **模型路由契约** 固化下来：
+- **云端**：MIMO（默认）/ Kimi / OpenAI / Anthropic
+- **本地**：Ollama + Llama 3 / Qwen 2
+- 支持 `logic / creative / role` 三级路由覆盖
 
-- **Durable Memory**：`memory_entries` 继续复用 SQLite，但升级为 branch-aware、可归档的持久化表；旧事件可被摘要压缩为 summary entry，而不是只停留在内存窗口里。
-- **Routing Contract**：LLM 调用支持 `logic / creative / role` 三级覆盖，先解决“不同链路可配置、可诊断、可 fallback”的问题。
-- **Eval / Perf Guard**：模型评估与容量门禁优先作为手动工作流落地，不直接塞入默认 PR gate。
+### 4.4 前端
 
-这样做的原因是：如果 Durable Memory / Routing 的契约都还不稳定，那么无论接 ChromaDB、做更复杂的工作流编辑器还是上更重的 CI 评估矩阵，后续都会反复返工。
+- **框架**：React 18 + Vite + TypeScript
+- **样式**：TailwindCSS
+- **测试**：Vitest + Testing Library
 
-#### Sprint 11 补充：先让 Director 成为 Scene Planner，再做角色隔离运行时
+---
 
-在双循环路线里，最容易犯的错误是过早把主图直接切成“多 Actor 并发”，但 Director 还没有稳定地产出场景级真相源。
+## 5. 关键架构决策
 
-Sprint 11 的架构决策因此是：
+### 5.1 逻辑先于渲染
 
-- **先补 Scene Planner**：Director 不再只负责初始化世界，而是每一幕都要输出 `ScenePlan`，显式决定 scene objective、spotlight cast、public summary 与 narrative pressure。
-- **先补 graph state contract**：`ScenePlan` 必须进入 LangGraph shared state，并写回 `world.metadata["current_scene_plan"]`，作为后续 compatibility snapshot、diagnostics 与下一轮 Actor runtime 的共同来源。
-- **Actor 先消费，不先隔离**：本 Sprint 允许 legacy `actor_node` 读取 `ScenePlan` 来收敛目标和聚光灯，但不提前做 fan-out / fan-in，也不在本 Sprint 引入 Critic / GM。
-- **世界细化仍保持异步补全定位**：`WorldBuilder` 继续作为首幕可见后的延迟步骤存在，不重新塞回逻辑主链前端。
+- 逻辑层只生成精简 JSON（意图/事件），Token 短、幻觉率低
+- 渲染层消费结构化事实源（`SceneScript`），不凭空发挥
+- 拒绝的 intent 明确不能写入正文（prompt guard）
 
-这样切的原因很直接：
+### 5.2 角色隔离推演
 
-- 没有稳定 `ScenePlan`，Sprint 12 的 isolated actors 会缺少统一的导演输入。
-- 没有 graph-state 持久化，Sprint 10 做出来的 dual-loop contract 只会停留在 compatibility 层，无法进入真实运行时。
-- 先让 Actor 在单链路上消费 `ScenePlan`，可以在不放大爆炸半径的前提下验证“Director 场控”是否真的改善失焦和流水账问题。
+- 每个 spotlight Actor 独立组装 prompt
+- 只能看到自己的属性、目标、记忆片段和公开场景信息
+- 在物理层面杜绝"偷看剧本"
 
-#### Sprint 12 补充：先让隔离 Actor 意图真实进入主链，再引入 Critic / GM
+### 5.3 分支意识内建
 
-Sprint 12 的架构决策是：
+- `StoryNode.branch_id` / `merged_from_ids` 从 Sprint 8 起贯穿架构
+- `fork_at_node()` 从 `branch_seed_snapshots` 恢复，不重放历史
 
-- **Actor fan-out/fan-in 先行**：`ScenePlan.spotlight_character_ids` 作为本轮 Actor 唤醒名单，每个角色独立组装 prompt 并产出 `ActionIntent`。
-- **私有上下文边界先行**：Actor prompt 只包含公开场景信息、可见角色、自身目标、自身短期记忆和该角色相关的持久记忆片段，不再把所有角色状态打包进同一个共享 prompt。
-- **legacy bridge 保守接入**：多个 `ActionIntent` 暂时合成为一个 legacy candidate event，继续复用 `GateKeeper -> NodeDetector -> Narrator`，不在本 Sprint 提前切换事实提交模型。
-- **trace 先沉淀**：`PromptTrace`、`MemoryRecallTrace` 和 `ActionIntent` 被写入 runtime metadata / node metadata，为后续 Critic、GM 和 Inspector 提供可追踪输入。
+### 5.4 渐进式发布护栏
 
-这样切的原因同样直接：
+- 双循环链路由 `FEATURE_DUAL_LOOP_ENABLED` 控制，可一键回滚
+- `/api/simulate/{id}/dual-loop/compare` 产出 readiness 报告与 rollback runbook
+- 详见 [DUAL_LOOP_ROLLOUT.md](../development/DUAL_LOOP_ROLLOUT.md)
 
-- 没有真实 `ActionIntent`，Sprint 13 的 Critic 只能审查旧式共享候选事件，无法验证角色认知边界。
-- 没有隔离 prompt trace，Sprint 16 的 Inspector 只能展示黑盒日志，不能定位“角色为什么知道了不该知道的信息”。
-- 保留 legacy bridge 可以把最大风险控制在 Actor 阶段，让 GateKeeper、NodeDetector、Narrator 的既有回归继续发挥保护作用。
+### 5.5 Prompt 外部化
 
-#### Sprint 13 补充：Critic 先审查单个 Intent，GateKeeper 继续守住节点边界
+- Actor / Narrator 等 prompt 模板放在 `src/worldbox_writer/prompts/`
+- 通过 `prompting/registry.py` 加载，支持 `PROMPT_TEMPLATE_DIR` 覆盖
+- Inspector API 不重新组装 prompt，只展示运行时已沉淀的 `PromptTrace`
 
-Sprint 13 的架构决策是：
+---
 
-- **Critic 前置到结算前**：`ActionIntent` 进入 legacy candidate bridge 前，必须先生成 `IntentCritique`，明确 accepted / rejected、原因码、严重级别和修正提示。
-- **职责拆分而不是替换 GateKeeper**：`CriticAgent` 聚焦单个角色意图的世界规则、角色状态、认知边界与荒诞行为；`GateKeeper` 继续校验合成后的候选事件是否违反节点级约束。
-- **只桥接合法意图**：被 Critic 拒绝的 intent 保留在 metadata / diagnostics 中，但不会进入当前 candidate event 合成。
-- **兼容层继续沉淀 SceneScript 映射**：compatibility snapshot 使用 Critic verdict 生成 `accepted_intent_ids` 和 `rejected_intent_ids`，但暂不接管 `NodeDetector` 的事实提交。
+## 6. 可观测性
 
-这样切的原因很直接：
+- **Telemetry**：每次 LLM 调用记录 `trace_id` / `request_id` / `provider` / `model` / `duration_ms`
+- **PromptTrace / MemoryRecallTrace**：Actor 的 prompt 与三层记忆召回记录
+- **Inspector API**：`/api/simulate/{id}/inspector` 暴露 ScenePlan / SceneScript / ActionIntent / IntentCritique / PromptTrace
 
-- 没有逐 intent verdict，Sprint 14 的 GM 无法知道哪些角色意图可以参与结算。
-- 如果只审查合成后的候选事件，系统无法定位“是哪一个角色越界或偷看了不可见信息”。
-- 保留 GateKeeper 后置保护可以继续兜住合成文本层面的约束问题，降低双循环迁移风险。
+---
 
-#### Sprint 14 补充：GM 结算成为 SceneScript 的主来源
+## 7. 相关文档
 
-Sprint 14 的架构决策是：
-
-- **GM 接在 Critic 之后**：`GMAgent` 只消费 `ActionIntent` 与 `IntentCritique`，把通过审查的合法意图结算成唯一 `SceneScript`。
-- **SceneScript 先成为事实源，不立刻替换所有下游**：主链 candidate event 来自 `SceneScript.summary`，但 `GateKeeper`、`NodeDetector` 和 `Narrator` 继续保留现有执行职责。
-- **提交时保留 lineage**：`StoryNode.metadata["scene_script"]`、`accepted_intent_ids`、`rejected_intent_ids` 和 beats 一起持久化，后续 Inspector / export / rendering 都能追溯来源。
-- **diagnostics 优先读运行时脚本**：compatibility snapshot 先复用 `world.metadata["last_scene_script"]` 或已提交节点 metadata，再回退到兼容层合成脚本。
-
-这样切的原因是：
-
-- Sprint 17 前，Narrator 仍可消费单段事件文本，但这段文本必须已经来自场景级逻辑结算。
-- Sprint 15 的记忆写回需要稳定事实源，否则会把被拒绝的角色意图写入长期记忆。
-- 保留 legacy 提交链可以让 SceneScript 先落地并被验证，再逐步替换渲染和导出层。
-
-#### Sprint 15 补充：SceneScript 驱动三层认知记忆
-
-Sprint 15 的架构决策是：
-
-- **不新增独立记忆表**：继续复用 `memory_entries`，通过 `entry_kind=reflection` 和 tags 表达反思层，避免破坏 Sprint 9 的 durable memory contract。
-- **SceneScript accepted beats 是反思写回来源**：只有 GM 结算后的 accepted beats 会写入角色反思，Critic 拒绝的 intent 不进入长期认知。
-- **PromptTrace 暴露三层召回诊断**：`MemoryRecallTrace` 继续承载 working / episodic / reflective 三层内容，并在 metadata 中记录 layer counts 与 retrieval backend。
-- **角色 metadata 保留轻量反思缓存**：`Character.metadata["reflection_notes"]` 作为下一轮 Actor prompt 的快速反思上下文，durable memory 作为持久来源。
-
-这样切的原因是：
-
-- 如果反思层直接从 raw intent 写回，会把被拒绝或荒诞的行动污染角色认知。
-- 如果 Sprint 15 先做独立 memory schema，会放大存储迁移风险，并拖慢 Inspector / rendering 闭环。
-- 三层 trace 先稳定下来，Sprint 16 才能把“为什么召回这些记忆”做成可解释面板。
-
-#### Sprint 16 补充：Inspector 独立于 diagnostics，Prompt 模板文件化
-
-Sprint 16 的架构决策是：
-
-- **Inspector API 独立出来**：`/api/simulate/{sim_id}/inspector` 返回当前场景的 `ScenePlan`、`SceneScript`、`ActionIntent`、`IntentCritique` 和 `PromptTrace`，而 diagnostics 继续聚焦聚合计数。
-- **前端先展示关键链路，不做编辑器**：Creative Studio 的 Prompt Inspector 只展示 prompt 数、intent 数、critic rejected 数和三层记忆计数，避免提前引入模板编辑权限。
-- **Prompt registry 每次读文件**：Actor system prompt 从 packaged template 或 `PROMPT_TEMPLATE_DIR` 读取，默认不缓存，满足本地 hot reload contract v1。
-- **PromptTrace 仍是事实来源**：Inspector 不重新组装 prompt，而是展示运行时已经沉淀的 trace，避免 UI 与后端 prompt 逻辑出现第二套真相源。
-
-这样切的原因是：
-
-- PromptOps 的第一步不是在线编辑，而是可定位和可复现。
-- 独立 Inspector API 让后续分页、权限和历史节点查看有演进空间。
-- 模板文件化后，后续可以逐步加版本管理，而不需要再改 Agent prompt 入口。
-
-#### Sprint 17 补充：Narrator 消费 SceneScript，而不是旧事件文本
-
-Sprint 17 的架构决策是：
-
-- **新增 NarratorInput v2 合同**：Narrator 渲染前把 `SceneScript`、三层记忆上下文、角色摘要和地点上下文组装成显式输入，并写回 `StoryNode.metadata["narrator_input_v2"]`。
-- **SceneScript 是渲染事实源**：当节点持有 `metadata["scene_script"]` 时，prompt 优先使用 summary、public facts 和 accepted beats；`StoryNode.description` 只作为 legacy fallback。
-- **拒绝意图不进入正文**：prompt 明确禁止写入 `rejected_intent_ids` 对应的内容，避免 Critic 已拒绝的行为被文笔层“复活”。
-- **API 只暴露轻量 lineage**：故事节点 payload 增加 `scene_script_id`、`scene_script_summary` 和 `narrator_input_source`，不把完整 prompt 或 rejected intent 细节推给故事流。
-- **导出继续依赖 rendered_text**：导出 bundle 不引入第二套渲染格式，保证旧 TXT / Markdown / HTML / DOCX / PDF 路径兼容。
-
-这样切的原因是：
-
-- 如果直接改写 `StoryNode.description`，逻辑事实、legacy 描述和渲染输入会混在一起。
-- 如果导出层直接消费 SceneScript，编辑器修订后的 `rendered_text` 会失去优先级。
-- 渲染层先有稳定输入合同后，Sprint 18 才能做 rollout compare 和 eval guardrails。
-
-#### Sprint 18 补充：双循环上线前必须有 compare 和 rollback 证据
-
-Sprint 18 的架构决策是：
-
-- **compare helper 是单一事实源**：`build_dual_loop_compare_report()` 负责统计 legacy path 与 dual-loop path 的节点、SceneScript、NarratorInput、Critic verdict、PromptTrace 和 reflection 证据，API 与 CLI 共用它。
-- **readiness 显式区分 required / optional**：feature flag、SceneScript lineage、NarratorInput v2 和 rollback path 是 required；Critic verdict 与 PromptTrace 在旧会话上缺失只给 warning。
-- **回滚信息随报告返回**：报告直接暴露 `FEATURE_DUAL_LOOP_ENABLED=0` 和 rollout runbook，避免事故时再去文档中猜开关。
-- **model-eval 是发布护栏，不是默认 PR gate**：默认 CI 继续保持 `make lint` / `make test`，真实模型质量评估由发布流程或显式模型评估任务触发。
-
-这样切的原因是：
-
-- 没有 compare report，双循环只能算实验路径，无法给上线决策提供证据。
-- 没有 CLI，评估结果不能纳入发布脚本或事故归档。
-- 没有明确 rollback flag，灰度发布会在模型异常时放大恢复成本。
-
-#### Sprint 19 补充：关键节点必须保护阅读主线
-
-Sprint 19 的前端架构决策是：
-
-- **等待态默认是提示条，不是工作台**：关键节点只在底部保留 compact bar，避免大面板抢占故事正文。
-- **干预和设定编辑共享抽屉**：`InterventionPanel` 统一承载干预指令和 embedded `EditPanel`，避免等待态堆叠两个控制区。
-- **故事正文优先于逻辑证据**：`StoryFeed` 默认先展示 `rendered_text` / `streaming_text`，把 `description` 和 `SceneScript` 收到折叠区。
-- **旁路信息可收起**：右侧推演信息仍保留可观测性，但用户可收起它来释放横向阅读空间。
-
-这样切的原因是：
-
-- 关键节点的交互目标是“打断推演”，不是“打断阅读”。
-- 用户需要在看完上下文后决定是否干预，默认界面必须把故事内容放在最高优先级。
-- SceneScript 和 telemetry 是创作者调试证据，不应该在普通阅读路径中压过小说正文。
-
-#### Sprint 20 补充：内循环控制台和外循环阅读器必须分屏
-
-Sprint 20 的前端架构决策是：
-
-- **StoryFeed 变成 split-view workspace**：左侧承载导演、内循环、SceneScript 和用户干预，右侧只承载小说正文。
-- **两侧共享节点锚点**：console 和 reader 都以 `StoryNode.id` 作为锚点，点击任一侧会滚动并高亮另一侧。
-- **实体提及是设定入口**：角色名由世界角色表驱动识别，点击后原地展示 Prompt 属性卡、目标和最近记忆，并复用角色编辑 API 保存。
-- **工程状态进入控制台**：最近 telemetry 事件转为状态胶囊，让等待时间变成可解释的工作流。
-- **关系图谱进入可编辑状态**：在 waiting / complete / error 等可编辑阶段，拖拽角色节点可以建立或修改关系边。
-
-这样切的原因是：
-
-- 内循环逻辑和外循环正文是不同产物，必须在视觉层级上分离。
-- 创作者需要边读正文边看逻辑因果，而不是在两个页面之间切换。
-- 设定修改应发生在实体出现的位置，而不是要求用户跳到单独表单中寻找对象。
-- 透明 telemetry 可以降低“系统卡死”的误判，也能暴露 GateKeeper / Critic / retry 等质量护栏的价值。
-
-### 4.3 大语言模型接入 (LLM Integration)
-- **云端 API**：OpenAI (GPT-4o), Anthropic (Claude 3.5 Sonnet)。
-  - *用途*：用于复杂的逻辑推理、边界校验和高质量文本渲染。
-- **本地部署**：Ollama + Llama 3 / Qwen 2。
-  - *用途*：为关注隐私的用户提供纯本地运行方案，用于轻量级的 Actor 决策和意图提议。
-
-### 4.4 前端 (Frontend - 规划中)
-- **框架**：React 18+ (Vite)
-- **状态管理**：Zustand
-- **可视化库**：
-  - React Flow：用于展示事件 DAG 和故事树。
-  - ECharts / D3.js：用于渲染人物好感度矩阵和势力分布图。
+- [双循环推演引擎设计](DUAL_LOOP_ENGINE_DESIGN.md)
+- [开发指南](../development/DEVELOPMENT.md)
+- [双循环灰度 Runbook](../development/DUAL_LOOP_ROLLOUT.md)
+- [运行手册](../development/RUNBOOK.md)
+- [质量评估框架](../product/QUALITY_FRAMEWORK.md)

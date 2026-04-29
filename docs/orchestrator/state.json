@@ -1,0 +1,46 @@
+{
+  "current_phase": "Phase 0: 能用",
+  "current_tier": "L1",
+  "target_tier": "L2",
+  "sprint": 24,
+  "round": 10,
+  "consecutive_no_improvement": 3,
+  "last_round_goal": "SceneScript 故事力因果推进（冲突设计、因果 beats、动机可见）",
+  "last_round_action": "Codex Round 10 完成，Director/GM/Actor 因果链改造 + 23 测试通过。真实 LLM 验证因 DNS 不可达未完成。",
+  "dual_axis_latest": {
+    "story": {
+      "hook": 6,
+      "conflict_density": 5,
+      "twist_effectiveness": 7,
+      "character_motivation_consistency": 6,
+      "suspense_maintenance": 5,
+      "structural_completeness": 6,
+      "avg": 5.8
+    },
+    "prose": {
+      "sentence_variety": 6,
+      "imagery_freshness": 6,
+      "description_precision": 5,
+      "pacing": 6,
+      "dialogue_distinctiveness": 5,
+      "information_density": 6,
+      "avg": 5.7
+    }
+  },
+  "gap_list": [
+    "Narrator 输出质量（文笔 - 句式/意象/对话）",
+    "SceneScript 质量（故事力 - 冲突密度/悬念）— 代码已改，待真实 LLM 验证",
+    "前端体验（易用性 - 非直接双轴但影响产品可用性）",
+    "干预体验（故事力 - 结构完整性）",
+    "真实 LLM 评测基线缺失（环境/DNS 间歇性问题）"
+  ],
+  "decisions": [
+    "Round 10 因真实 LLM 不可达未获得有效双轴分数，不能计入连续无提升"
+  ],
+  "baseline": {
+    "test_passed": 217,
+    "test_deselected": 57,
+    "coverage": "73%",
+    "lint": "OK"
+  }
+}

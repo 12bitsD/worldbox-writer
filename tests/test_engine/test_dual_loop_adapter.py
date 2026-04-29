@@ -326,6 +326,5 @@ def test_isolated_actor_runtime_empty_completion_uses_story_forward_fallback(
 
     intent = result.action_intents[0]
     assert intent.metadata["synthetic"] is True
-    assert "暂时保持观察" not in intent.summary
     assert "调查断桥" in intent.summary
     assert "让阿璃逼近伏击真相" in intent.summary

@@ -13,7 +13,7 @@ import math
 import os
 import time
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from typing import Any, Callable, Optional, cast
 from uuid import uuid4
@@ -607,8 +607,11 @@ def chat_completion(
     stream: bool = False,
     on_token: Optional[Callable[[str], None]] = None,
     top_p: Optional[float] = None,
+    model: Optional[str] = None,
 ) -> str:
     resolved_route = resolve_llm_route(role)
+    if model:
+        resolved_route = replace(resolved_route, model=model)
     client = get_llm_client(resolved_route)
     extra_body = _get_extra_body(resolved_route.provider)
     request_id = f"llm_{uuid4().hex[:12]}"
