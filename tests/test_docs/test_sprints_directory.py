@@ -9,6 +9,7 @@ def test_sprints_directory_only_has_recent_files() -> None:
     expected = {
         "README.md",
         "SPRINT_24.md",
+        "SPRINT_25.md",
     }
 
     actual = {path.name for path in SPRINTS_DIR.iterdir() if path.is_file()}

@@ -1,0 +1,52 @@
+{
+  "schema_version": "calibration-v0",
+  "purpose": "Sprint 25 Round 1 dimension stability fixture; same scene rendered in three voices for std-of-judge experiments. Quality labels are Claude's authoring intent, not human-validated rankings — R3 will replace this with human-rated calibration anchors.",
+  "created_at": "2026-04-29",
+  "samples": [
+    {
+      "id": "A_head_tier",
+      "path": "A_head_tier.txt",
+      "authoring_intent": "head-tier (起点头部签约作 / 烽火戏诸侯式紧致网文)",
+      "expected_signals": [
+        "desire_clarity: high — 玉佩 / 妹妹 / 名册三层欲望叠加",
+        "tension_pressure: high — 三更倒计时 + 赵屠多人压力 + 独守",
+        "material_specificity: high — 灯油/刀鞘毛刺/笠檐雪/掌心温度",
+        "dialogue_voice: high — 哑嗓 vs 沉默",
+        "conflict_density: high — 每段一个新钩子",
+        "ai_prose_ticks: low",
+        "preachiness: false",
+        "cliffhanger_pull: applicable, high — 停在更鼓第一声"
+      ]
+    },
+    {
+      "id": "B_mid_tier",
+      "path": "B_mid_tier.txt",
+      "authoring_intent": "mid-tier (起点中位执行平庸作)",
+      "expected_signals": [
+        "desire_clarity: medium — 想要保住但不具体",
+        "tension_pressure: medium",
+        "material_specificity: low — 概念化（'警觉按住''皱起眉头'）",
+        "dialogue_voice: low — 人物说话趋同，模板化对白",
+        "conflict_density: medium",
+        "ai_prose_ticks: low (轻度)",
+        "preachiness: false",
+        "cliffhanger_pull: applicable, medium"
+      ]
+    },
+    {
+      "id": "C_ai_water",
+      "path": "C_ai_water.txt",
+      "authoring_intent": "AI-water (典型 GPT/Claude 默认风格 = 过度比喻 + 排比 + 翻译腔 + 解释性对话 + 段尾说教)",
+      "expected_signals": [
+        "desire_clarity: low — 抽象化",
+        "tension_pressure: low — 被修辞稀释",
+        "material_specificity: very low — 形容词堆砌",
+        "dialogue_voice: very low — 神秘人一次说完背景",
+        "conflict_density: low — 大量氛围铺陈",
+        "ai_prose_ticks: very high — 宛如/仿佛/排比/翻译腔全集",
+        "preachiness: true — '注定不会平静''真正的责任与担当'",
+        "cliffhanger_pull: applicable, low — 段尾被升华段冲淡"
+      ]
+    }
+  ]
+}
