@@ -295,15 +295,68 @@ COST_PAID = _conditional(
 # Toxic flags
 # ---------------------------------------------------------------------------
 
-FORCED_STUPIDITY = _toxic(
+_FORCED_STUPIDITY_SYSTEM = """你是 WorldBox Writer 评测系统的「强行降智」毒点专家。
+你只判定这一个毒点，**不**评其他维度或毒点。这是一个 conditional 毒点——必须先判定是否适用本片段。
+
+## 适用判定（applicability）
+
+强行降智的本质是「片段内已建立的能力/智商水平」与「当前动作」的反差。
+要适用必须**同时**满足：
+1. 片段内能观察到至少一个角色"已建立的能力/智商水平"——例如"宗师/智将/老祖"等显性身份；或前文行动已经体现的精明、克制、布局能力。
+2. 该角色在同一片段内做出明显违背该水平的动作。
+
+如果片段内既没有可观察的智商基线，也没有明显违背的动作，返回 `applicable: false`，不要勉强判命中。
+
+## 命中（HIT）样例
+
+- 反派占据绝对优势时不补刀，反而长篇嘲讽并主动漏出关键情报／阴谋（"死于话多"）；
+- 自称智将/老祖/谋主的角色轻信来路不明的情报，不验证就行动；
+- 主角在没有任何制约或交易的情况下，主动放走必然带来后患的死敌（"圣母癌"）；
+- 全员目睹明显陷阱却集体踩进去；
+- 反派明知主角有底牌/刚展示过实力，依然贴脸嘲讽。
+
+## 不命中（NOT HIT）样例——务必排除以下"看起来像降智实际不是"的情况
+
+- **博弈层 withholding**：角色故意不追问、不解释、不暴露自己掌握的信息——这是聪明的信息博弈，不是降智。例：'他没问对方怎么知道宁安的事。问就输了。' 这是聪明，不是 forced_stupidity。
+- **性格层沉默/克制**：角色沉默、不接话、按住情绪——这是性格刻画，不是智商问题。
+- **信息不对等的合理判断**：角色基于自己当前掌握的信息做出合理选择，但读者上帝视角能看见"如果他知道 X 就该做 Y"——这不是降智，是信息差。
+- **作者刻意的悬念铺设**：角色明显在隐藏什么或留有后手，读者还不知道——观望，不要判降智。
+- **战术撤退/示弱**：角色暂时认输、退让、佯装无能——这是战略选择。
+
+## 评分（仅当 applicable=true 时使用，1-10）
+
+- 1-2：完全没有命中迹象。
+- 3-4：极轻微痕迹但未达毒点门槛（例：角色判断略有疏漏，但不至于人设崩塌）。
+- 5-7：摇摆地带（保留判断时倾向偏低）。
+- 8-9：明显命中——能找到 HIT 样例对应的具体行为，且与片段内已建立的智商水平形成明确反差。
+- 10：极典型，多处证据。
+
+## 输出 schema
+
+```json
+{
+  "applicable": true | false,
+  "score": <1-10 数值；applicable=false 时为 null>,
+  "evidence_quote": "<命中行为的原文片段，applicable=false 或 score ≤ 4 时可空>",
+  "setup_quote": "<体现已建立智商水平的原文片段，仅 applicable=true 时给>",
+  "rule_hit": "forced_stupidity.<sub_rule>",
+  "reasoning": "≤50 字"
+}
+```
+
+## 关键约束
+
+- score ≥ 5 必须给非空 evidence_quote AND 非空 setup_quote；缺一项强制 score ≤ 4。
+- 如果只能找到 evidence_quote 但找不到对应的 setup_quote（智商基线），说明无法判断这是"降智"还是"角色一贯如此"，applicable=false。
+- 不要把 withholding（聪明保留信息）当成降智。
+- rule_hit sub_rule 用英文短词：villain_monologuing / illogical_trust / mercy_no_constraint / vile_glance_with_known_card / collective_trap_step_in。
+"""
+
+FORCED_STUPIDITY = DimensionPrompt(
     dim_id="forced_stupidity",
-    name="强行降智",
-    definition="反派/智将做出与人设智商严重不符的行为；或主角'圣母癌'放走必有后患的死敌。证据必须是片段内的具体行为或台词。",
-    hit_examples=(
-        "- 反派占据绝对优势时不补刀，反复嘲讽并漏出关键情报；\n"
-        "- 高智商人设的人物轻信来路不明的情报，不查就行动；\n"
-        "- 主角无逻辑支撑放走死敌。"
-    ),
+    category="conditional",  # promoted from toxic in v0.2 — needs applicability gating
+    chinese_name="强行降智",
+    system_prompt=_FORCED_STUPIDITY_SYSTEM,
 )
 
 PREACHINESS = _toxic(
@@ -318,22 +371,57 @@ PREACHINESS = _toxic(
     ),
 )
 
-AI_PROSE_TICKS = _toxic(
+_AI_PROSE_TICKS_SYSTEM = """你是 WorldBox Writer 评测系统的「AI 水文修辞癖」毒点专家。
+你只判定这一个毒点，**不**评其他维度或毒点。Per-passage 检测，applicable 永远 true。
+
+## 定义（命中条件）
+
+下列任意子类型出现且密度超阈即命中：
+- **over_metaphor**：每 2-3 句一个"宛如/仿佛/犹如/如同/像一座/又像/像是"。
+- **parallel**：三连及以上排比渲染情绪或铺陈背景（"X，Y，Z"重复结构）。
+- **translation_tone**：翻译腔——"哦/我的天/这真是/上帝啊/天哪"。
+- **expository_dialogue**：角色一次性说完动机+背景+结论，像在背景介绍——典型表现是反派/神秘人在登场即告知自己的全部计划。
+
+## 命中样例
+
+- '宛如一座沉默的雕像，又仿佛一杆永不倒下的旗帜'（over_metaphor）。
+- '关乎着江湖的格局，关乎着千万人的生死，更关乎着王朝的未来'（parallel）。
+- '哦，我的天，这真是出人意料的夜晚'（translation_tone）。
+- '我此行的目的，乃是为了那本至关重要的名册。这本名册关乎着……'（expository_dialogue）。
+
+## 评分（1-10）
+
+- 1-2：完全没有命中迹象。
+- 3-4：极轻微痕迹但未达毒点门槛（例：偶尔一个比喻/翻译腔，但不构成 pattern）。
+- 5-7：摇摆地带——**不应停留在此区间**。如果你打 5-7，你必须给出 evidence_quote 证据，否则强制降到 4 以下。
+- 8-9：明显命中——能找到至少一处典型证据。
+- 10：极典型，多处不同子类型证据。
+
+## 输出 schema
+
+```json
+{
+  "applicable": true,
+  "score": <1-10>,
+  "evidence_quote": "<原文证据片段；score ≥ 5 必须非空>",
+  "rule_hit": "ai_prose_ticks.<sub_rule>",
+  "reasoning": "≤50 字"
+}
+```
+
+## 关键约束（HARD RULE）
+
+- **score ≥ 5 时 evidence_quote 必须非空**。如果你想打 ≥ 5 但找不到具体的原文证据，**强制把分数降到 4 以下**（典型选 3）。
+- evidence_quote 必须是文本里**真实存在**的字符串，禁止改写、总结、转述。
+- rule_hit sub_rule 用英文短词：over_metaphor / parallel / translation_tone / expository_dialogue。如果同时命中多个，选最严重的一个写进 rule_hit，证据写最严重的那一处。
+- 这是命中检测，宁可漏检不可误判：拿不准就给 ≤ 4 分。
+"""
+
+AI_PROSE_TICKS = DimensionPrompt(
     dim_id="ai_prose_ticks",
-    name="AI 水文修辞癖",
-    definition=(
-        "下列任意子类型出现密度超出阈值：\n"
-        "- over_metaphor：每 2-3 句一个'宛如/仿佛/犹如'；\n"
-        "- parallel：三连排比渲染情绪/铺陈背景；\n"
-        "- translation_tone：'哦/我的天/这真是'式翻译腔；\n"
-        "- expository_dialogue：人物一次性说完动机+背景+结论。"
-    ),
-    hit_examples=(
-        "- '宛如一座沉默的雕像，又仿佛一杆永不倒下的旗帜'；\n"
-        "- '关乎着江湖的格局，关乎着千万人的生死，更关乎着王朝的未来'；\n"
-        "- '哦，我的天，这真是出人意料的夜晚'；\n"
-        "- 神秘人一段话说完所有背景。"
-    ),
+    category="toxic",
+    chinese_name="AI 水文修辞癖",
+    system_prompt=_AI_PROSE_TICKS_SYSTEM,
 )
 
 
@@ -357,12 +445,20 @@ CONDITIONAL_DIMENSIONS: tuple[DimensionPrompt, ...] = (
     CLIFFHANGER_PULL,
     ANTAGONIST_INTEGRITY,
     COST_PAID,
+    FORCED_STUPIDITY,  # v0.2: promoted from toxic to conditional with applicability gate
 )
 
 TOXIC_DIMENSIONS: tuple[DimensionPrompt, ...] = (
-    FORCED_STUPIDITY,
     PREACHINESS,
     AI_PROSE_TICKS,
+)
+
+# Dimensions whose high score triggers a veto on the overall passage judgement.
+# "toxic" here is a behavior (high = bad) independent of the structural category
+# (conditional vs always-applicable). forced_stupidity is conditional but still
+# vetoes when it does fire.
+TOXIC_VETO_IDS: frozenset[str] = frozenset(
+    {"preachiness", "ai_prose_ticks", "forced_stupidity"}
 )
 
 ALL_DIMENSIONS: tuple[DimensionPrompt, ...] = (
@@ -370,6 +466,27 @@ ALL_DIMENSIONS: tuple[DimensionPrompt, ...] = (
     *CONDITIONAL_DIMENSIONS,
     *TOXIC_DIMENSIONS,
 )
+
+
+# Axis grouping for emotion / structure / prose aggregation (used by judge_committee).
+# Conditional dims that return applicable=false are excluded from their axis average.
+DIMENSION_AXIS_MAP: dict[str, str] = {
+    # Emotion axis
+    "desire_clarity": "emotion_axis",
+    "tension_pressure": "emotion_axis",
+    "payoff_intensity": "emotion_axis",
+    "conflict_density": "emotion_axis",
+    # Structure axis
+    "golden_start_density": "structure_axis",
+    "cliffhanger_pull": "structure_axis",
+    "info_show_dont_tell": "structure_axis",
+    "antagonist_integrity": "structure_axis",
+    "cost_paid": "structure_axis",
+    # Prose axis
+    "prose_friction": "prose_axis",
+    "material_specificity": "prose_axis",
+    "dialogue_voice": "prose_axis",
+}
 
 
 def build_user_message(text: str) -> str:

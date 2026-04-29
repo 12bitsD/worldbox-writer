@@ -3,14 +3,24 @@
   "current_tier": "TBD (R4 重测后定档)",
   "target_tier": "L2",
   "sprint": 25,
-  "round": 1,
+  "round": 2,
   "consecutive_no_improvement": 0,
-  "last_round_goal": "维度词汇定型 + 头部网文调研 + 稳定性实证",
-  "last_round_action": "Sprint 25 R1 完成 — 11 维 keep / 1 watchlist / 1 drop / 2 inconclusive；fixtures + dimension_prompts + dim_stability runner 落地；real LLM 225/225 success",
+  "last_round_goal": "判官委员会落地 + evidence schema + forced_stupidity / ai_prose_ticks prompt 加固",
+  "last_round_action": "Sprint 25 R2 完成 — judge_committee API 落地，5/5 redesigned exit gates 通过；A 5/5 不 vetoed (overall 8.23±0.119)，C 5/5 全 vetoed (overall 0)，B 4/5 ~6.6 + 1/5 vetoed；R1 两个 prompt bug 修复 (forced_stupidity head-tier 6.8→2.0, ai_prose_ticks B mode 收敛到 3)",
   "evaluation_system": {
     "spec_doc": "docs/product/QUALITY_SPEC.md",
-    "spec_version": "v0.1.1",
-    "stability_artifact": "artifacts/eval/sprint-25/round-1/dim_stability.json",
+    "spec_version": "v0.2",
+    "stability_artifacts": [
+      "artifacts/eval/sprint-25/round-1/dim_stability.json",
+      "artifacts/eval/sprint-25/round-2/committee_stability.json"
+    ],
+    "committee_api": "src/worldbox_writer/evals/llm_judge.py::judge_committee",
+    "axis_weights": {
+      "emotion_axis": 0.4,
+      "structure_axis": 0.3,
+      "prose_axis": 0.3
+    },
+    "toxic_veto_threshold": 8.0,
     "kept_dimensions": [
       "desire_clarity",
       "tension_pressure",
@@ -22,10 +32,10 @@
       "golden_start_density",
       "cliffhanger_pull",
       "antagonist_integrity",
-      "preachiness"
+      "preachiness",
+      "ai_prose_ticks",
+      "forced_stupidity"
     ],
-    "watchlist_dimensions": ["ai_prose_ticks"],
-    "dropped_dimensions": ["forced_stupidity"],
     "inconclusive_dimensions_need_more_samples": ["payoff_intensity", "cost_paid"],
     "cross_passage_dimensions_pending_R5": [
       "foreshadowing_recovery",
@@ -35,24 +45,25 @@
     ]
   },
   "gap_list": [
-    "R2: forced_stupidity prompt 重设计为 conditional + 排除 leverage-as-stupidity 误判",
-    "R2: ai_prose_ticks 强制 evidence-or-降分（toxic ≥ 5 必须给 evidence_quote）",
-    "R2: 4 专家委员会并发实现（emotion / structure / prose / toxic）",
-    "R2: evidence schema 强制约束（rule_hit + evidence_quote 字段）",
-    "R3: calibration 样本扩展——含非开篇中段 / 爆发瞬间 / 力量使用代价 三段，验证 4 个 conditional 维度",
-    "R3: 5-10 段人工评分 calibration anchor 入库",
-    "R4: 重测当前生产系统取得真实基线，重写 QUALITY_SPEC 第 3 章档位",
-    "R5: multi-chapter judge 实现 + 4 个 cross-passage 维度验证 + 毒点注入回归集",
-    "R6: 删除 WEB_NOVEL_CRITERIA.md / QUALITY_FRAMEWORK.md 内容（变索引页），CLAUDE.md/AGENTS.md 同步新词汇"
+    "R3: calibration 样本扩展 v1——含非开篇中段 / 爆发瞬间含配角反应 / 力量使用含代价 三段，验证 4 个 inconclusive/边界 dim",
+    "R3: 5-10 段人工评分参考样本入库（猫腻/烽火/起点头部/起点中位/AI 水文 + 命中毒点的），验证 judge_committee 给出的相对排序 100% 与人工一致",
+    "R3 cleanup: 删除 WEB_NOVEL_CRITERIA.md / QUALITY_FRAMEWORK.md 内容（变索引页），同步 CLAUDE.md / AGENTS.md 新词汇",
+    "R3: forced_stupidity prompt 加 setup_quote=空时强制 applicable=false 的硬约束（修 R2 schema 偏差）",
+    "R3: ai_prose_ticks B 边界 — 替换 B 样本或接受边界 outlier 作为已知 limitation 写入 spec",
+    "R4: 重测当前生产系统取得真实基线，重写 QUALITY_SPEC §3 档位定义（用相对盲测胜率 + calibration 排序一致性）",
+    "R5: multi-chapter judge 实现 + 4 个 cross-passage 维度验证 + 毒点注入回归集（每类毒点 × 2 命中样本 + 4 干净样本，召回 ≥ 95%，误报率 ≤ 10%）",
+    "R6 cleanup: 死代码清理（删旧 judge_prose / judge_story / judge_scene_script / batch_judge），CLAUDE.md / AGENTS.md / README.md 与新 spec 完全对齐"
   ],
   "decisions": [
-    "评测调用默认 concurrency=1——首跑 concurrency=6 + 重试导致 macOS 端口耗尽；后续 evaluation runner 一律单线程顺序，避免重蹈",
-    "单段判官在 11 维上稳定（max std ≤ 0.55 远低于 1.0 阈值），相对排序对 A/B/C 100% 正确，幅度差距 ≥ 4.5——评测尺有可信判别力",
-    "forced_stupidity v0.1 prompt 把'博弈层 withholding'误判为降智，R2 必须重写为 conditional"
+    "评测调用默认 concurrency=1（R1 教训：macOS 端口耗尽）",
+    "评测系统稳定性按下游消费层衡量：committee-level overall std + veto 一致性 + R1-bug-fix 验证；不按 per-dim 整数 jitter 衡量（R2 教训）",
+    "forced_stupidity 是 conditional + 参与 toxic veto 的复合身份——用独立的 TOXIC_VETO_IDS 常量解耦类别字段与 veto 行为",
+    "Toxic veto 阈值 = 8.0（committee 输出 score ≥ 8 视为命中）"
   ],
   "next_round": {
-    "round": 2,
-    "topic": "judge 委员会落地 + evidence schema + forced_stupidity / ai_prose_ticks prompt 加固",
-    "exit_criteria": "委员会版本上同 3 样本 5 次：所有保留 dim std < 0.5；非满分维度 evidence_quotes 非空率 ≥ 80%；forced_stupidity v0.2 在 A 样本上 std < 1.0 且 score ≤ 4 (不再误判头部级文本)"
+    "round": 3,
+    "topic": "Cleanup round + calibration anchor 入库",
+    "exit_criteria": "三份旧文档收敛为一份；calibration_v1 含至少 8 段（含人工评分），judge_committee 在 calibration set 上的相对排序 100% 与人工一致；4 个 inconclusive/边界 dim 用新样本重测通过；schema 自动校验（evidence_quote 必须是原文真实子串）",
+    "is_cleanup_round": true
   }
 }

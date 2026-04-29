@@ -740,3 +740,277 @@ def batch_judge(
                 items,
             )
         )
+
+
+# ===========================================================================
+# Sprint 25 R2 — judge_committee API (new)
+# ===========================================================================
+#
+# The committee runs each kept dimension as an independent prompt (per R1's
+# stability findings — single-prompt-multi-dim smears scores). Default
+# concurrency is 1 to avoid macOS ephemeral-port exhaustion (see round-1.md
+# §5.4 lessons). Aggregation produces three axis averages (emotion / structure
+# / prose) and a separate toxic veto path.
+#
+# The legacy judge_prose / judge_story / judge_scene_script / batch_judge stay
+# above as deprecation shims until R3 cleanup migrates callers.
+
+import time as _time  # local alias to avoid colliding with anything above
+
+from worldbox_writer.evals.dimension_prompts import (
+    ALL_DIMENSIONS,
+    DIMENSION_AXIS_MAP,
+    TOXIC_VETO_IDS,
+    DimensionPrompt,
+    build_user_message,
+)
+
+COMMITTEE_SCHEMA_VERSION = "committee-v0.2"
+COMMITTEE_AXIS_WEIGHTS: dict[str, float] = {
+    "emotion_axis": 0.4,
+    "structure_axis": 0.3,
+    "prose_axis": 0.3,
+}
+COMMITTEE_TOXIC_VETO_THRESHOLD = 8.0
+
+
+def _committee_call_one(
+    dim: DimensionPrompt,
+    text: str,
+    *,
+    model: str | None,
+    temperature: float,
+    max_tokens: int,
+) -> dict[str, Any]:
+    """Run one dimension prompt against text and return a normalized record."""
+    started = _time.time()
+    messages = [
+        {"role": "system", "content": dim.system_prompt},
+        {"role": "user", "content": build_user_message(text)},
+    ]
+    raw = ""
+    error: str | None = None
+    try:
+        raw = chat_completion(
+            messages,
+            role="narrator",
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}"
+
+    parsed = parse_judge_response(raw) if raw else {"error": error or "no_response"}
+
+    parse_status = "ok"
+    applicable: bool | None = None
+    score: float | None = None
+    if isinstance(parsed.get("error"), str) and "applicable" not in parsed:
+        parse_status = "parse_failed"
+    elif "applicable" not in parsed:
+        parse_status = "missing_fields"
+    else:
+        applicable = bool(parsed.get("applicable"))
+
+    raw_score = parsed.get("score")
+    if isinstance(raw_score, (int, float)) and not isinstance(raw_score, bool):
+        score = round(min(10.0, max(0.0, float(raw_score))), 2)
+
+    elapsed_ms = int((_time.time() - started) * 1000)
+    return {
+        "dim_id": dim.dim_id,
+        "category": dim.category,
+        "applicable": applicable,
+        "score": score,
+        "evidence_quote": str(parsed.get("evidence_quote") or "")[:240],
+        "setup_quote": str(parsed.get("setup_quote") or "")[:240],
+        "rule_hit": str(parsed.get("rule_hit") or ""),
+        "reasoning": str(parsed.get("reasoning") or "")[:120],
+        "raw_excerpt": raw[:240],
+        "parse_status": parse_status,
+        "error": error,
+        "elapsed_ms": elapsed_ms,
+    }
+
+
+def _committee_axis_aggregate(
+    per_dim: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Average applicable+scored dims into three axis means.
+
+    Conditional dims that returned applicable=false are excluded — they don't
+    drag the axis up or down.
+    """
+    buckets: dict[str, list[float]] = {axis: [] for axis in COMMITTEE_AXIS_WEIGHTS}
+    n_applicable: dict[str, int] = {axis: 0 for axis in COMMITTEE_AXIS_WEIGHTS}
+    n_total: dict[str, int] = {axis: 0 for axis in COMMITTEE_AXIS_WEIGHTS}
+
+    for dim_id, axis in DIMENSION_AXIS_MAP.items():
+        record = per_dim.get(dim_id)
+        if record is None:
+            continue
+        n_total[axis] += 1
+        if record.get("applicable") and isinstance(record.get("score"), (int, float)):
+            buckets[axis].append(float(record["score"]))
+            n_applicable[axis] += 1
+
+    axis_scores = {
+        axis: round(sum(scores) / len(scores), 2) if scores else None
+        for axis, scores in buckets.items()
+    }
+    return {
+        "axis_scores": axis_scores,
+        "n_applicable_per_axis": n_applicable,
+        "n_total_per_axis": n_total,
+    }
+
+
+def _committee_toxic_summary(
+    per_dim: Mapping[str, Mapping[str, Any]],
+) -> tuple[dict[str, Any], list[str]]:
+    """Return per-toxic-dim summary and list of dims that triggered veto."""
+    summary: dict[str, Any] = {}
+    veto_reasons: list[str] = []
+    for dim_id in sorted(TOXIC_VETO_IDS):
+        record = per_dim.get(dim_id)
+        if record is None:
+            summary[dim_id] = {
+                "applicable": None,
+                "score": None,
+                "hit": False,
+                "evidence_quote": "",
+                "rule_hit": "",
+            }
+            continue
+        applicable = record.get("applicable")
+        score = record.get("score")
+        # For conditional toxic dims (e.g., forced_stupidity v0.2): only counts
+        # as a hit if applicable=true AND score >= threshold.
+        # For always-applicable toxic dims (preachiness, ai_prose_ticks):
+        # applicable is always true, so just score-based.
+        is_hit = (
+            isinstance(score, (int, float))
+            and applicable is not False
+            and float(score) >= COMMITTEE_TOXIC_VETO_THRESHOLD
+        )
+        summary[dim_id] = {
+            "applicable": applicable,
+            "score": score,
+            "hit": is_hit,
+            "evidence_quote": record.get("evidence_quote", ""),
+            "rule_hit": record.get("rule_hit", ""),
+        }
+        if is_hit:
+            veto_reasons.append(dim_id)
+    return summary, veto_reasons
+
+
+def _committee_overall(
+    axis_scores: Mapping[str, float | None],
+    weights: Mapping[str, float],
+) -> tuple[float, dict[str, float]]:
+    """Compute weighted overall, normalizing weights over axes that have data."""
+    valid = {
+        axis: float(weights.get(axis, 0.0))
+        for axis, score in axis_scores.items()
+        if score is not None and weights.get(axis, 0.0) > 0
+    }
+    total_weight = sum(valid.values())
+    if not valid or total_weight <= 0:
+        return 0.0, {axis: 0.0 for axis in weights}
+    normalized = {axis: w / total_weight for axis, w in valid.items()}
+    overall = sum(float(axis_scores[axis]) * normalized[axis] for axis in normalized)
+    full_weights = {axis: 0.0 for axis in weights}
+    full_weights.update(normalized)
+    return round(overall, 2), full_weights
+
+
+def judge_committee(
+    text: str,
+    *,
+    model: str | None = None,
+    temperature: float = 0.2,
+    max_tokens: int = 320,
+    concurrency: int = 1,
+    weights: Mapping[str, float] | None = None,
+) -> dict[str, Any]:
+    """Score a passage by running every kept dimension as an independent judge.
+
+    Default concurrency=1 because R1 showed that high-concurrency real-LLM
+    runs exhaust macOS ephemeral ports. Override only if running on Linux or
+    with infrastructure that supports it.
+    """
+    started = _time.time()
+    selected_model = _resolve_judge_model(model)
+    effective_weights = dict(COMMITTEE_AXIS_WEIGHTS)
+    if weights:
+        for axis, value in weights.items():
+            if axis in effective_weights and isinstance(value, (int, float)):
+                effective_weights[axis] = max(0.0, float(value))
+
+    workers = max(1, int(concurrency))
+    if workers == 1:
+        records = [
+            _committee_call_one(
+                dim,
+                text,
+                model=selected_model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            for dim in ALL_DIMENSIONS
+        ]
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            records = list(
+                executor.map(
+                    lambda dim: _committee_call_one(
+                        dim,
+                        text,
+                        model=selected_model,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    ),
+                    ALL_DIMENSIONS,
+                )
+            )
+
+    per_dim = {record["dim_id"]: record for record in records}
+    axis_aggregate = _committee_axis_aggregate(per_dim)
+    toxic_summary, veto_reasons = _committee_toxic_summary(per_dim)
+    weighted_pre_veto, normalized_weights = _committee_overall(
+        axis_aggregate["axis_scores"],
+        effective_weights,
+    )
+    vetoed = bool(veto_reasons)
+    overall = 0.0 if vetoed else weighted_pre_veto
+
+    errors = [
+        {
+            "dim_id": record["dim_id"],
+            "parse_status": record["parse_status"],
+            "error": record["error"],
+        }
+        for record in records
+        if record["parse_status"] != "ok" or record["error"]
+    ]
+
+    elapsed = round(_time.time() - started, 2)
+    return {
+        "schema_version": COMMITTEE_SCHEMA_VERSION,
+        "model": selected_model,
+        "text_chars": len(text),
+        "per_dimension": per_dim,
+        "axis_scores": axis_aggregate["axis_scores"],
+        "n_applicable_per_axis": axis_aggregate["n_applicable_per_axis"],
+        "n_total_per_axis": axis_aggregate["n_total_per_axis"],
+        "toxic": toxic_summary,
+        "vetoed": vetoed,
+        "veto_reasons": veto_reasons,
+        "weighted_pre_veto": weighted_pre_veto,
+        "weights": normalized_weights,
+        "overall": overall,
+        "errors": errors,
+        "elapsed_seconds": elapsed,
+    }
