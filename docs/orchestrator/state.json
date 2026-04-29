@@ -3,17 +3,22 @@
   "current_tier": "TBD (R4 重测后定档)",
   "target_tier": "L2",
   "sprint": 25,
-  "round": 2,
+  "round": 3,
   "consecutive_no_improvement": 0,
-  "last_round_goal": "判官委员会落地 + evidence schema + forced_stupidity / ai_prose_ticks prompt 加固",
-  "last_round_action": "Sprint 25 R2 完成 — judge_committee API 落地，5/5 redesigned exit gates 通过；A 5/5 不 vetoed (overall 8.23±0.119)，C 5/5 全 vetoed (overall 0)，B 4/5 ~6.6 + 1/5 vetoed；R1 两个 prompt bug 修复 (forced_stupidity head-tier 6.8→2.0, ai_prose_ticks B mode 收敛到 3)",
+  "last_round_goal": "Cleanup round + calibration anchor 入库",
+  "last_round_action": "Sprint 25 R3 完成 partial — calibration_v1 (10 段) + schema 修复 (forced_stupidity coercion / evidence 子串校验) + 旧文档合并 (WEB_NOVEL_CRITERIA & QUALITY_FRAMEWORK 变索引页, SPRINT_24 删)；ranking gate FAIL (Spearman ρ=0.56)，但失败信号有强诊断价值——揭示了 forced_stupidity 反派合理崩溃误判 + cost_paid rubric anchoring 两个 prompt-级 bug，R4 必须优先修",
   "evaluation_system": {
     "spec_doc": "docs/product/QUALITY_SPEC.md",
-    "spec_version": "v0.2",
+    "spec_version": "v0.3",
     "stability_artifacts": [
       "artifacts/eval/sprint-25/round-1/dim_stability.json",
-      "artifacts/eval/sprint-25/round-2/committee_stability.json"
+      "artifacts/eval/sprint-25/round-2/committee_stability.json",
+      "artifacts/eval/sprint-25/round-3/calibration_ranking.json",
+      "artifacts/eval/sprint-25/round-3/conditional_triggers.json"
     ],
+    "calibration_set": "tests/test_evals/fixtures/calibration_v1/",
+    "calibration_set_size": 10,
+    "calibration_set_authority": "claude-authoring-intent (R6+ 必须叠加外部人工评分以打破自循环偏差)",
     "committee_api": "src/worldbox_writer/evals/llm_judge.py::judge_committee",
     "axis_weights": {
       "emotion_axis": 0.4,
@@ -36,34 +41,32 @@
       "ai_prose_ticks",
       "forced_stupidity"
     ],
-    "inconclusive_dimensions_need_more_samples": ["payoff_intensity", "cost_paid"],
-    "cross_passage_dimensions_pending_R5": [
-      "foreshadowing_recovery",
-      "character_arc_consistency",
-      "stakes_escalation",
-      "setting_consistency"
-    ]
+    "calibration_status": {
+      "spearman_correlation": 0.5606,
+      "spearman_threshold": 0.95,
+      "passed": false,
+      "mandatory_pair_violations": 1,
+      "reason": "evidence-bearing-failure: forced_stupidity 反派合理崩溃误判 (~20% 概率) + cost_paid rubric anchoring 缺陷"
+    }
   },
   "gap_list": [
-    "R3: calibration 样本扩展 v1——含非开篇中段 / 爆发瞬间含配角反应 / 力量使用含代价 三段，验证 4 个 inconclusive/边界 dim",
-    "R3: 5-10 段人工评分参考样本入库（猫腻/烽火/起点头部/起点中位/AI 水文 + 命中毒点的），验证 judge_committee 给出的相对排序 100% 与人工一致",
-    "R3 cleanup: 删除 WEB_NOVEL_CRITERIA.md / QUALITY_FRAMEWORK.md 内容（变索引页），同步 CLAUDE.md / AGENTS.md 新词汇",
-    "R3: forced_stupidity prompt 加 setup_quote=空时强制 applicable=false 的硬约束（修 R2 schema 偏差）",
-    "R3: ai_prose_ticks B 边界 — 替换 B 样本或接受边界 outlier 作为已知 limitation 写入 spec",
-    "R4: 重测当前生产系统取得真实基线，重写 QUALITY_SPEC §3 档位定义（用相对盲测胜率 + calibration 排序一致性）",
+    "R4 priority 1: forced_stupidity prompt 加 NOT-HIT 例 \"反派被合理底牌击溃 = payoff 段，不算降智\" + 反例对照样例。验证：E_payoff_burst N=5×3 重测 0 由 forced_stupidity 触发的 veto",
+    "R4 priority 2: cost_paid prompt rubric 重设计——让 reasoning 命中 9-10 锚点描述时模型不再保守落在 4-6（可能改 example-based scoring 替换 description-based）。验证：F_power_cost mean ≥ 7",
+    "R4 priority 3: 修完 prompt 后重跑 calibration_ranking，达到 Spearman ρ ≥ 0.95 + 0 mandatory pair reversal",
+    "R4 priority 4: 在通过 calibration 后才开始重测当前生产系统取得真实基线，重写 QUALITY_SPEC §3 档位定义",
     "R5: multi-chapter judge 实现 + 4 个 cross-passage 维度验证 + 毒点注入回归集（每类毒点 × 2 命中样本 + 4 干净样本，召回 ≥ 95%，误报率 ≤ 10%）",
-    "R6 cleanup: 死代码清理（删旧 judge_prose / judge_story / judge_scene_script / batch_judge），CLAUDE.md / AGENTS.md / README.md 与新 spec 完全对齐"
+    "R6 cleanup: 死代码清理（删旧 judge_prose / judge_story / judge_scene_script / batch_judge）；引入外部人工标注样本（猫腻/烽火/起点头部真实片段）打破 AI 自循环偏差",
+    "R6+: 考虑文学型 head-tier 是否需要单独评测路径（目前评测对网文紧致风格 A/G3 偏好，对文学型 G4 评分偏低）"
   ],
   "decisions": [
-    "评测调用默认 concurrency=1（R1 教训：macOS 端口耗尽）",
-    "评测系统稳定性按下游消费层衡量：committee-level overall std + veto 一致性 + R1-bug-fix 验证；不按 per-dim 整数 jitter 衡量（R2 教训）",
-    "forced_stupidity 是 conditional + 参与 toxic veto 的复合身份——用独立的 TOXIC_VETO_IDS 常量解耦类别字段与 veto 行为",
-    "Toxic veto 阈值 = 8.0（committee 输出 score ≥ 8 视为命中）"
+    "评测调用默认 concurrency=1（R1 教训）",
+    "评测系统稳定性按下游消费层衡量（R2 教训）",
+    "R3 暴露的 calibration 失败不调阈值——先修 prompt 再重测（R3 教训）",
+    "calibration anchor v1 是 AI 自写样本——必要而非充分；R6+ 必须叠外部人工样本"
   ],
   "next_round": {
-    "round": 3,
-    "topic": "Cleanup round + calibration anchor 入库",
-    "exit_criteria": "三份旧文档收敛为一份；calibration_v1 含至少 8 段（含人工评分），judge_committee 在 calibration set 上的相对排序 100% 与人工一致；4 个 inconclusive/边界 dim 用新样本重测通过；schema 自动校验（evidence_quote 必须是原文真实子串）",
-    "is_cleanup_round": true
+    "round": 4,
+    "topic": "修 R3 揭示的两个 prompt bug + 重跑 calibration + 重测当前生产系统",
+    "exit_criteria": "(a) E_payoff_burst N=5×3 重测 0 由 forced_stupidity 触发的 veto；(b) F_power_cost cost_paid mean ≥ 7；(c) calibration_ranking Spearman ρ ≥ 0.95；(d) 跑 ≥ 3 个真实 simulation × 4 章得到当前生产基线；(e) QUALITY_SPEC §3 档位章节用基线 + calibration 重写"
   }
 }

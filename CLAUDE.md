@@ -100,4 +100,5 @@ These are the project's own rules — violating them tends to break things in no
 - `docs/development/DEVELOPMENT.md` — env vars, CI workflow map, layered testing strategy.
 - `docs/development/RUNBOOK.md` — incident playbooks and feature-flag stop-loss.
 - `docs/development/DUAL_LOOP_ROLLOUT.md` — rollout/rollback procedure for the dual-loop engine.
-- `docs/product/QUALITY_FRAMEWORK.md` — LLM-as-judge axes (prose 12-dim + story 12-dim + AI-issue 7-dim).
+- `docs/product/QUALITY_SPEC.md` — single source of truth for the eval system: dimensions (per-passage / conditional / cross-passage), `judge_committee` measurement protocol, axis weights (emotion 0.4 / structure 0.3 / prose 0.3), toxic veto threshold 8.0, evidence schema, calibration anchors.
+  - `docs/product/WEB_NOVEL_CRITERIA.md` and `docs/product/QUALITY_FRAMEWORK.md` are deprecated index pages pointing to QUALITY_SPEC.

@@ -17,7 +17,7 @@
 
 ## 评估体系（网文三轴 + 毒点红线）
 
-为对标“起点头部网文”，我们采用专属的**网文商业化评测标准**（详见 [WEB\_NOVEL\_CRITERIA.md](../product/WEB_NOVEL_CRITERIA.md)）。
+为对标"起点头部网文"，评测系统的 single source of truth 是 [QUALITY_SPEC.md](../product/QUALITY_SPEC.md)（Sprint 25 R3 起合并旧 WEB_NOVEL_CRITERIA / QUALITY_FRAMEWORK）。
 
 ### 1. 情绪与爽点轴（核心动力）
 
@@ -129,7 +129,7 @@
 
 ### 评测 prompt
 
-参考 `docs/product/QUALITY_FRAMEWORK.md` 的 LLM-as-judge Prompt 模板。
+参考 [`QUALITY_SPEC.md §2 测量协议`](../product/QUALITY_SPEC.md#2-measurement-protocol测量协议) 与 `src/worldbox_writer/evals/dimension_prompts.py`。
 
 ### AI 写作常见问题（必须检测）
 

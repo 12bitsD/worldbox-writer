@@ -8,7 +8,6 @@ SPRINTS_DIR = Path(__file__).parent.parent.parent / "docs" / "sprints"
 def test_sprints_directory_only_has_recent_files() -> None:
     expected = {
         "README.md",
-        "SPRINT_24.md",
         "SPRINT_25.md",
     }
 

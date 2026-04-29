@@ -29,7 +29,7 @@
 ## 4. 产品与质量
 
 - [产品策略](product/PRODUCT_STRATEGY.md) — 定位、竞品、差距分析、差异化策略、路线图
-- [质量评估框架](product/QUALITY_FRAMEWORK.md) — 评测协议、LLM-as-judge、AI 味检测
+- [质量评测系统 SPEC](product/QUALITY_SPEC.md) — single source of truth：维度定义 + 测量协议 + 档位 + calibration（Sprint 25 R3 起合并旧 WEB_NOVEL_CRITERIA / QUALITY_FRAMEWORK）
 
 ## 5. 迭代编排
 

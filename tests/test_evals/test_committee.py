@@ -28,7 +28,7 @@ def _payload(
     score: float | None = 7.0,
     *,
     applicable: bool = True,
-    evidence: str = "示例证据",
+    evidence: str = "",
     rule_hit: str = "demo.rule",
 ) -> str:
     body: dict[str, Any] = {
@@ -104,6 +104,7 @@ def test_committee_skips_inapplicable_conditional_from_axis_average() -> None:
 
 def test_committee_toxic_veto_triggers_when_any_toxic_score_high() -> None:
     """preachiness 9 with applicable=true → veto, overall 0."""
+    text = "片段：经过这件事他明白了人生的真谛。"  # contains the evidence
     overrides = {
         "preachiness": _payload(score=9.0, evidence="经过这件事他明白了"),
     }
@@ -111,7 +112,7 @@ def test_committee_toxic_veto_triggers_when_any_toxic_score_high() -> None:
         "worldbox_writer.evals.llm_judge.chat_completion",
         side_effect=_route_by_dim(overrides=overrides, default_score=7.0),
     ):
-        result = judge_committee("片段")
+        result = judge_committee(text)
 
     assert result["vetoed"] is True
     assert "preachiness" in result["veto_reasons"]
@@ -140,14 +141,24 @@ def test_committee_forced_stupidity_does_not_veto_when_inapplicable() -> None:
 
 
 def test_committee_forced_stupidity_vetoes_when_applicable_and_high() -> None:
-    overrides = {
-        "forced_stupidity": _payload(score=9.0, evidence="反派死于话多原文"),
-    }
+    text = "他是宗师。然而反派死于话多原文，主角顺势出招。"  # contains both quotes
+    fs_payload = json.dumps(
+        {
+            "applicable": True,
+            "score": 9.0,
+            "evidence_quote": "反派死于话多原文",
+            "setup_quote": "他是宗师",
+            "rule_hit": "forced_stupidity.villain_monologuing",
+            "reasoning": "反派降智明显",
+        },
+        ensure_ascii=False,
+    )
+    overrides = {"forced_stupidity": fs_payload}
     with patch(
         "worldbox_writer.evals.llm_judge.chat_completion",
         side_effect=_route_by_dim(overrides=overrides, default_score=7.0),
     ):
-        result = judge_committee("片段")
+        result = judge_committee(text)
 
     assert result["toxic"]["forced_stupidity"]["hit"] is True
     assert result["vetoed"] is True
@@ -156,6 +167,7 @@ def test_committee_forced_stupidity_vetoes_when_applicable_and_high() -> None:
 
 def test_committee_below_veto_threshold_does_not_trigger() -> None:
     """ai_prose_ticks at 7.5 < 8.0 should NOT veto, even though hits are scary."""
+    text = "他宛如一座雕像，又仿佛一杆永不倒下的旗帜。"  # contains the evidence
     overrides = {
         "ai_prose_ticks": _payload(score=7.5, evidence="宛如一座雕像"),
     }
@@ -163,7 +175,7 @@ def test_committee_below_veto_threshold_does_not_trigger() -> None:
         "worldbox_writer.evals.llm_judge.chat_completion",
         side_effect=_route_by_dim(overrides=overrides, default_score=7.0),
     ):
-        result = judge_committee("片段")
+        result = judge_committee(text)
 
     assert result["toxic"]["ai_prose_ticks"]["score"] == 7.5
     assert result["toxic"]["ai_prose_ticks"]["hit"] is False
@@ -208,3 +220,156 @@ def test_committee_axis_map_covers_every_scoring_dim() -> None:
 def test_committee_threshold_constant_is_eight() -> None:
     """If we ever change the threshold, force a deliberate test update."""
     assert COMMITTEE_TOXIC_VETO_THRESHOLD == 8.0
+
+
+# ===========================================================================
+# R3 schema-fix tests — coercions and evidence substring validation
+# ===========================================================================
+
+
+def test_forced_stupidity_applicable_true_with_null_score_coerced_to_false() -> None:
+    """R3.3: judge returning applicable=true + score=null must be coerced to false.
+
+    R2 observed this happening 1 in 5 runs on head-tier text. The downstream
+    toxic veto path can't reason about a half-judgement; coerce post-parse.
+    """
+    fs_payload = json.dumps(
+        {
+            "applicable": True,
+            "score": None,
+            "evidence_quote": "",
+            "setup_quote": "",
+            "rule_hit": "",
+            "reasoning": "无可观察的智商基线",
+        }
+    )
+    overrides = {"forced_stupidity": fs_payload}
+    with patch(
+        "worldbox_writer.evals.llm_judge.chat_completion",
+        side_effect=_route_by_dim(overrides=overrides, default_score=7.0),
+    ):
+        result = judge_committee("片段")
+
+    fs = result["per_dimension"]["forced_stupidity"]
+    assert (
+        fs["applicable"] is False
+    ), "applicable=True + score=null must coerce to False"
+    assert fs["score"] is None
+    assert "forced_stupidity_no_score" in fs["coercions"]
+    # And the toxic summary should NOT count this as a hit
+    assert result["toxic"]["forced_stupidity"]["hit"] is False
+    assert result["vetoed"] is False
+
+
+def test_forced_stupidity_applicable_true_with_empty_setup_coerced_to_false() -> None:
+    """R3.3: applicable=true + numeric score but empty setup_quote → coerce.
+
+    The dimension is "smart-character behaving unintelligently" — without a
+    setup_quote establishing the baseline, the judgement is unfounded.
+    """
+    fs_payload = json.dumps(
+        {
+            "applicable": True,
+            "score": 8.0,
+            "evidence_quote": "片段中的某句",
+            "setup_quote": "",
+            "rule_hit": "forced_stupidity.illogical_trust",
+            "reasoning": "找不到智商基线",
+        }
+    )
+    overrides = {"forced_stupidity": fs_payload}
+    with patch(
+        "worldbox_writer.evals.llm_judge.chat_completion",
+        side_effect=_route_by_dim(overrides=overrides, default_score=7.0),
+    ):
+        result = judge_committee("片段中的某句出现")  # contains the evidence
+
+    fs = result["per_dimension"]["forced_stupidity"]
+    assert fs["applicable"] is False
+    assert fs["score"] is None
+    assert "forced_stupidity_no_setup" in fs["coercions"]
+    assert result["vetoed"] is False  # would otherwise have triggered veto at 8
+
+
+def test_evidence_quote_not_in_source_demotes_score() -> None:
+    """R3.4: fabricated evidence_quote must be detected and high score demoted."""
+    payload = json.dumps(
+        {
+            "applicable": True,
+            "score": 8.0,
+            "evidence_quote": "这句话根本不在原文里",
+            "rule_hit": "preachiness.fabricated",
+            "reasoning": "judge 编造的引用",
+        }
+    )
+    overrides = {"preachiness": payload}
+    with patch(
+        "worldbox_writer.evals.llm_judge.chat_completion",
+        side_effect=_route_by_dim(overrides=overrides, default_score=7.0),
+    ):
+        result = judge_committee("一段完全不同的文字")
+
+    pre = result["per_dimension"]["preachiness"]
+    assert pre["evidence_invalid"] is True
+    assert pre["score"] == 4.0  # demoted from 8 to 4
+    assert "evidence_quote_not_in_source" in pre["coercions"]
+    assert "score_demoted_due_to_fabricated_evidence" in pre["coercions"]
+    # Demotion below threshold means no veto
+    assert result["toxic"]["preachiness"]["hit"] is False
+    assert result["vetoed"] is False
+
+
+def test_evidence_quote_with_curly_quotes_still_validates() -> None:
+    """Light normalization: curly “” match straight "". Other punctuation kept as-is."""
+    # Original uses curly quotes around the inner phrase
+    text = "他说：“实不相瞒，名册关乎江湖。”"
+    # Judge echoes it back with straight quotes — should still validate
+    payload_quote = '他说："实不相瞒，名册关乎江湖。"'
+    payload = json.dumps(
+        {
+            "applicable": True,
+            "score": 7.0,
+            "evidence_quote": payload_quote,
+            "rule_hit": "ai_prose_ticks.expository_dialogue",
+            "reasoning": "expository",
+        }
+    )
+    overrides = {"ai_prose_ticks": payload}
+    with patch(
+        "worldbox_writer.evals.llm_judge.chat_completion",
+        side_effect=_route_by_dim(overrides=overrides, default_score=7.0),
+    ):
+        result = judge_committee(text)
+
+    apt = result["per_dimension"]["ai_prose_ticks"]
+    # Should NOT mark invalid — quote chars normalize to match
+    assert apt["evidence_invalid"] is False
+    assert apt["score"] == 7.0
+
+
+def test_forced_stupidity_fabricated_setup_quote_coerced() -> None:
+    """R3.4: forced_stupidity setup_quote must also be a real substring."""
+    fake_setup = "这段虚构的智商基线根本不在原文"
+    payload = json.dumps(
+        {
+            "applicable": True,
+            "score": 9.0,
+            "evidence_quote": "片段中的某句",
+            "setup_quote": fake_setup,
+            "rule_hit": "forced_stupidity.villain_monologuing",
+            "reasoning": "judge 编造 setup",
+        }
+    )
+    overrides = {"forced_stupidity": payload}
+    with patch(
+        "worldbox_writer.evals.llm_judge.chat_completion",
+        side_effect=_route_by_dim(overrides=overrides, default_score=7.0),
+    ):
+        result = judge_committee("片段中的某句出现")  # contains evidence but not setup
+
+    fs = result["per_dimension"]["forced_stupidity"]
+    assert fs["setup_invalid"] is True
+    assert fs["applicable"] is False
+    assert fs["score"] is None
+    assert "setup_quote_not_in_source" in fs["coercions"]
+    assert result["vetoed"] is False

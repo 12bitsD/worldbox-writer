@@ -163,4 +163,4 @@ StoryNode.rendered_text
 - [开发指南](../development/DEVELOPMENT.md)
 - [双循环灰度 Runbook](../development/DUAL_LOOP_ROLLOUT.md)
 - [运行手册](../development/RUNBOOK.md)
-- [质量评估框架](../product/QUALITY_FRAMEWORK.md)
+- [质量评测系统 SPEC](../product/QUALITY_SPEC.md)

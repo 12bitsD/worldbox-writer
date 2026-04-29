@@ -344,12 +344,15 @@ _FORCED_STUPIDITY_SYSTEM = """你是 WorldBox Writer 评测系统的「强行降
 }
 ```
 
-## 关键约束
+## 关键约束（HARD RULES）
 
-- score ≥ 5 必须给非空 evidence_quote AND 非空 setup_quote；缺一项强制 score ≤ 4。
-- 如果只能找到 evidence_quote 但找不到对应的 setup_quote（智商基线），说明无法判断这是"降智"还是"角色一贯如此"，applicable=false。
-- 不要把 withholding（聪明保留信息）当成降智。
-- rule_hit sub_rule 用英文短词：villain_monologuing / illogical_trust / mercy_no_constraint / vile_glance_with_known_card / collective_trap_step_in。
+1. **applicable=true 必须双引文**：设 applicable=true 时，setup_quote AND evidence_quote 都必须非空（必须是原文真实存在的字符串）。任意一个为空 → 必须改为 applicable=false。
+2. **不允许 applicable=true 且 score=null**：如果你判 applicable=true，必须给 1-10 数值。如果你给不了数值（找不到双引文中的任意一项），改为 applicable=false。
+3. **score ≥ 5 还需 evidence**：score ≥ 5 时 evidence_quote 必须能真实指向"违背智商水平的具体动作或台词"。无法指向就把 score 降到 4 以下，或干脆改 applicable=false。
+4. **不要把 withholding（聪明保留信息）当成降智**：博弈层 withholding / 性格沉默 / 战术撤退 / 信息不对等的合理判断 / 作者刻意悬念铺设——这五类必须 applicable=false。
+5. **rule_hit sub_rule 用英文短词**：villain_monologuing / illogical_trust / mercy_no_constraint / vile_glance_with_known_card / collective_trap_step_in。
+
+记住：不适用就大方返 false。摇摆地带 → 选择不适用，方差最低。
 """
 
 FORCED_STUPIDITY = DimensionPrompt(

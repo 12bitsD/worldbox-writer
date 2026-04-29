@@ -284,7 +284,7 @@ make integration
 - [运行手册（故障排查 / Feature Flag 止损）](docs/development/RUNBOOK.md)
 - [发布流程](docs/development/RELEASE_PROCESS.md)
 - [产品策略](docs/product/PRODUCT_STRATEGY.md)
-- [质量评估框架](docs/product/QUALITY_FRAMEWORK.md)
+- [质量评测系统 SPEC](docs/product/QUALITY_SPEC.md)
 - [Orchestrator 总控手册](docs/orchestrator/README.md)
 
 ---

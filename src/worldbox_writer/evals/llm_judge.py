@@ -1,10 +1,16 @@
 """LLM-as-judge evaluation for web-novel quality.
 
-This module follows docs/product/WEB_NOVEL_CRITERIA.md and
-docs/product/QUALITY_FRAMEWORK.md:
-- 三轴：情绪爽点 / 网文结构 / 商业文笔
-- 神作进阶轴：单独输出，可参与加权
-- 毒点红线：命中任意一条即一票否决
+This module follows docs/product/QUALITY_SPEC.md (single source of truth
+since Sprint 25 R3). The deprecated WEB_NOVEL_CRITERIA.md and
+QUALITY_FRAMEWORK.md are now index pages pointing to QUALITY_SPEC.
+
+Public API:
+- judge_committee(text) — Sprint 25 R2+ entry point. 12 kept dimensions
+  scored as independent prompts; aggregated into emotion / structure / prose
+  axes (0.4 / 0.3 / 0.3 weights); toxic veto threshold 8.0.
+- judge_prose / judge_story / judge_scene_script / batch_judge — legacy
+  single-prompt-multi-dim API. DEPRECATED, kept as shim for callers in
+  scripts/e2e_judge.py until R6 cleanup migrates them.
 """
 
 from __future__ import annotations
@@ -774,6 +780,37 @@ COMMITTEE_AXIS_WEIGHTS: dict[str, float] = {
 COMMITTEE_TOXIC_VETO_THRESHOLD = 8.0
 
 
+_QUOTE_NORMALIZATION = str.maketrans(
+    {
+        "“": '"',  # left double quote
+        "”": '"',  # right double quote
+        "‘": "'",  # left single quote
+        "’": "'",  # right single quote
+    }
+)
+
+
+def _normalize_for_substring(s: str) -> str:
+    """Normalize quote variants and whitespace for evidence substring checks.
+
+    Judge models occasionally swap curly/straight quotes when echoing source
+    text. We accept that as still being a valid quote, but reject anything
+    not derivable from the original after this normalization.
+    """
+    return "".join(ch for ch in s.translate(_QUOTE_NORMALIZATION) if not ch.isspace())
+
+
+def _evidence_in_text(text: str, quote: str) -> bool:
+    """True iff `quote` is a substring of `text` after light normalization.
+
+    Empty quote is treated as "not in text" — callers decide what an empty
+    quote means based on dimension category and score threshold.
+    """
+    if not quote.strip():
+        return False
+    return _normalize_for_substring(quote) in _normalize_for_substring(text)
+
+
 def _committee_call_one(
     dim: DimensionPrompt,
     text: str,
@@ -817,20 +854,63 @@ def _committee_call_one(
     if isinstance(raw_score, (int, float)) and not isinstance(raw_score, bool):
         score = round(min(10.0, max(0.0, float(raw_score))), 2)
 
+    evidence_quote = str(parsed.get("evidence_quote") or "")[:240]
+    setup_quote = str(parsed.get("setup_quote") or "")[:240]
+
+    # Schema coercions enforced post-parse:
+    # 1. forced_stupidity v0.2 hard rule — applicable=true requires BOTH
+    #    setup_quote AND a numeric score. R2 observed the judge returning
+    #    applicable=true + score=null when it couldn't find a setup. Coerce
+    #    those into applicable=false so downstream veto logic isn't fed a
+    #    half-judgement.
+    # 2. Evidence substring validation — when score ≥ 5, evidence_quote
+    #    must be a real substring of the input. R3 found judges occasionally
+    #    paraphrase or invent the quote. Fabricated quote → demote score to 4.
+    coercions: list[str] = []
+    if dim.dim_id == "forced_stupidity" and applicable is True:
+        if score is None:
+            applicable = False
+            coercions.append("forced_stupidity_no_score")
+        elif not setup_quote.strip():
+            applicable = False
+            score = None
+            coercions.append("forced_stupidity_no_setup")
+
+    evidence_invalid = False
+    if evidence_quote.strip() and not _evidence_in_text(text, evidence_quote):
+        evidence_invalid = True
+        coercions.append("evidence_quote_not_in_source")
+        if isinstance(score, (int, float)) and score >= 5:
+            score = 4.0
+            coercions.append("score_demoted_due_to_fabricated_evidence")
+
+    setup_invalid = False
+    if dim.dim_id == "forced_stupidity" and setup_quote.strip():
+        if not _evidence_in_text(text, setup_quote):
+            setup_invalid = True
+            coercions.append("setup_quote_not_in_source")
+            if applicable is True:
+                applicable = False
+                score = None
+                coercions.append("forced_stupidity_demoted_due_to_fabricated_setup")
+
     elapsed_ms = int((_time.time() - started) * 1000)
     return {
         "dim_id": dim.dim_id,
         "category": dim.category,
         "applicable": applicable,
         "score": score,
-        "evidence_quote": str(parsed.get("evidence_quote") or "")[:240],
-        "setup_quote": str(parsed.get("setup_quote") or "")[:240],
+        "evidence_quote": evidence_quote,
+        "evidence_invalid": evidence_invalid,
+        "setup_quote": setup_quote,
+        "setup_invalid": setup_invalid,
         "rule_hit": str(parsed.get("rule_hit") or ""),
         "reasoning": str(parsed.get("reasoning") or "")[:120],
         "raw_excerpt": raw[:240],
         "parse_status": parse_status,
         "error": error,
         "elapsed_ms": elapsed_ms,
+        "coercions": coercions,
     }
 
 
