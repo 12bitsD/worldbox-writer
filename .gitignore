@@ -41,6 +41,7 @@ Thumbs.db
 chroma_db/
 neo4j_data/
 artifacts/*
+frontend/artifacts/
 # Eval artifacts are reference data for subsequent rounds and must be tracked.
 !artifacts/eval/
 .pnpm-store/
