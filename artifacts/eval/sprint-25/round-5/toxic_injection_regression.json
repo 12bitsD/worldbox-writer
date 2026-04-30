@@ -1,0 +1,709 @@
+{
+  "schema_version": "toxic-injection-regression-v0.1",
+  "generated_at": "2026-04-30T05:47:05.386823+00:00",
+  "config": {
+    "runs": 3,
+    "temperature": 0.2,
+    "max_tokens": 320,
+    "model": null,
+    "provider": "kimi-coding",
+    "veto_threshold": 8.0
+  },
+  "totals": {
+    "samples": 12,
+    "committee_calls": 36,
+    "duration_seconds": 1638.26
+  },
+  "sample_results": {
+    "preachiness_hit_1": {
+      "expected_label": "hit",
+      "target_dim": "preachiness",
+      "rationale": "段尾'经过这件事，他终于明白了' + '不仅仅是…更是…' + '一场对内心的洗礼' 三段式说教升华",
+      "runs": [
+        {
+          "vetoed": true,
+          "veto_reasons": [
+            "preachiness"
+          ],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 3.0,
+            "forced_stupidity": null,
+            "preachiness": 10.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": true
+          }
+        },
+        {
+          "vetoed": true,
+          "veto_reasons": [
+            "preachiness"
+          ],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 3.0,
+            "forced_stupidity": null,
+            "preachiness": 10.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": true
+          }
+        },
+        {
+          "vetoed": true,
+          "veto_reasons": [
+            "preachiness"
+          ],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 7.0,
+            "forced_stupidity": null,
+            "preachiness": 10.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": true
+          }
+        }
+      ]
+    },
+    "preachiness_hit_2": {
+      "expected_label": "hit",
+      "target_dim": "preachiness",
+      "rationale": "末段'懂得了什么叫做真正的责任、什么叫做真正的担当' + '人生的一次升华，一次脱胎换骨' 显式说教",
+      "runs": [
+        {
+          "vetoed": true,
+          "veto_reasons": [
+            "ai_prose_ticks",
+            "preachiness"
+          ],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 8.0,
+            "forced_stupidity": null,
+            "preachiness": 10.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": true,
+            "forced_stupidity": false,
+            "preachiness": true
+          }
+        },
+        {
+          "vetoed": true,
+          "veto_reasons": [
+            "ai_prose_ticks",
+            "preachiness"
+          ],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 8.0,
+            "forced_stupidity": null,
+            "preachiness": 10.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": true,
+            "forced_stupidity": false,
+            "preachiness": true
+          }
+        },
+        {
+          "vetoed": true,
+          "veto_reasons": [
+            "ai_prose_ticks",
+            "preachiness"
+          ],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 8.0,
+            "forced_stupidity": null,
+            "preachiness": 10.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": true,
+            "forced_stupidity": false,
+            "preachiness": true
+          }
+        }
+      ]
+    },
+    "ai_prose_ticks_hit_1": {
+      "expected_label": "hit",
+      "target_dim": "ai_prose_ticks",
+      "rationale": "宛如/仿佛/又如同/更如同 三连+连续；三连排比'震得整片山岗'/'每一道都'。命中 over_metaphor + parallel",
+      "runs": [
+        {
+          "vetoed": true,
+          "veto_reasons": [
+            "ai_prose_ticks"
+          ],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 10.0,
+            "forced_stupidity": null,
+            "preachiness": 3.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": true,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        },
+        {
+          "vetoed": true,
+          "veto_reasons": [
+            "ai_prose_ticks"
+          ],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 10.0,
+            "forced_stupidity": null,
+            "preachiness": 3.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": true,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        },
+        {
+          "vetoed": false,
+          "veto_reasons": [],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 4.0,
+            "forced_stupidity": null,
+            "preachiness": 2.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        }
+      ]
+    },
+    "ai_prose_ticks_hit_2": {
+      "expected_label": "hit",
+      "target_dim": "ai_prose_ticks",
+      "rationale": "翻译腔'哦，我的天' + 解释性对话（神秘人长篇说出主角父亲死因背景）+ '你或许不知道'三连",
+      "runs": [
+        {
+          "vetoed": true,
+          "veto_reasons": [
+            "ai_prose_ticks"
+          ],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 10.0,
+            "forced_stupidity": null,
+            "preachiness": 2.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": true,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        },
+        {
+          "vetoed": false,
+          "veto_reasons": [],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 4.0,
+            "forced_stupidity": null,
+            "preachiness": 4.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        },
+        {
+          "vetoed": false,
+          "veto_reasons": [],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 4.0,
+            "forced_stupidity": null,
+            "preachiness": 3.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        }
+      ]
+    },
+    "forced_stupidity_hit_1": {
+      "expected_label": "hit",
+      "target_dim": "forced_stupidity",
+      "rationale": "'七州智将'反派占绝对优势时长篇嘲讽，主动漏出伏兵地点+夫人位置+三息时间反悔。无主角揭物件触因，纯反派死于话多",
+      "runs": [
+        {
+          "vetoed": false,
+          "veto_reasons": [],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 4.0,
+            "forced_stupidity": 4.0,
+            "preachiness": 2.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        },
+        {
+          "vetoed": false,
+          "veto_reasons": [],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 4.0,
+            "forced_stupidity": 4.0,
+            "preachiness": 2.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        },
+        {
+          "vetoed": false,
+          "veto_reasons": [],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 4.0,
+            "forced_stupidity": 4.0,
+            "preachiness": 2.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        }
+      ]
+    },
+    "forced_stupidity_hit_2": {
+      "expected_label": "hit",
+      "target_dim": "forced_stupidity",
+      "rationale": "'老祖'级人物收到无来源信鸽信不验证笔迹+不查腊封+不派斥候，立即发兵。illogical_trust 经典样例",
+      "runs": [
+        {
+          "vetoed": true,
+          "veto_reasons": [
+            "forced_stupidity"
+          ],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 2.0,
+            "forced_stupidity": 9.0,
+            "preachiness": 1.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": true,
+            "preachiness": false
+          }
+        },
+        {
+          "vetoed": false,
+          "veto_reasons": [],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 3.0,
+            "forced_stupidity": null,
+            "preachiness": 2.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        },
+        {
+          "vetoed": true,
+          "veto_reasons": [
+            "forced_stupidity"
+          ],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 2.0,
+            "forced_stupidity": 9.0,
+            "preachiness": 1.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": true,
+            "preachiness": false
+          }
+        }
+      ]
+    },
+    "clean_1_head_opening": {
+      "expected_label": "clean",
+      "target_dim": null,
+      "rationale": "紧致开局 + 多层欲望 + 倒计时；无任何 toxic 信号。每个 toxic dim 都应 ≤ 4",
+      "runs": [
+        {
+          "vetoed": false,
+          "veto_reasons": [],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 2.0,
+            "forced_stupidity": null,
+            "preachiness": 2.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        },
+        {
+          "vetoed": false,
+          "veto_reasons": [],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 2.0,
+            "forced_stupidity": null,
+            "preachiness": 1.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        },
+        {
+          "vetoed": false,
+          "veto_reasons": [],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 2.0,
+            "forced_stupidity": null,
+            "preachiness": 1.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        }
+      ]
+    },
+    "clean_2_head_dialogue": {
+      "expected_label": "clean",
+      "target_dim": null,
+      "rationale": "克制对话 + 信息不对等的合理判断（withholding 是聪明博弈不是降智）；无任何 toxic 信号",
+      "runs": [
+        {
+          "vetoed": false,
+          "veto_reasons": [],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 1.0,
+            "forced_stupidity": null,
+            "preachiness": 2.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        },
+        {
+          "vetoed": false,
+          "veto_reasons": [],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 1.0,
+            "forced_stupidity": null,
+            "preachiness": 2.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        },
+        {
+          "vetoed": false,
+          "veto_reasons": [],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 2.0,
+            "forced_stupidity": null,
+            "preachiness": 2.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        }
+      ]
+    },
+    "clean_3_payoff_with_trigger": {
+      "expected_label": "clean",
+      "target_dim": null,
+      "rationale": "标准 payoff 段：主角揭铜钱+白头发触发反派合理崩溃。**关键回归**：必须不被误判为 forced_stupidity（R3 揭示的 bug 在此样本上 R4 v0.4 prompt 已修复，本回归测试守住）",
+      "runs": [
+        {
+          "vetoed": false,
+          "veto_reasons": [],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 2.0,
+            "forced_stupidity": null,
+            "preachiness": 1.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        },
+        {
+          "vetoed": false,
+          "veto_reasons": [],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 1.0,
+            "forced_stupidity": null,
+            "preachiness": 2.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        },
+        {
+          "vetoed": false,
+          "veto_reasons": [],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 2.0,
+            "forced_stupidity": null,
+            "preachiness": 1.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        }
+      ]
+    },
+    "clean_4_cost_paid": {
+      "expected_label": "clean",
+      "target_dim": null,
+      "rationale": "力量越级 + 不可逆代价；无 toxic 信号。三个 toxic dim 都应 ≤ 4",
+      "runs": [
+        {
+          "vetoed": false,
+          "veto_reasons": [],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 2.0,
+            "forced_stupidity": null,
+            "preachiness": 2.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        },
+        {
+          "vetoed": false,
+          "veto_reasons": [],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 1.0,
+            "forced_stupidity": null,
+            "preachiness": 2.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        },
+        {
+          "vetoed": false,
+          "veto_reasons": [],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 2.0,
+            "forced_stupidity": null,
+            "preachiness": 2.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        }
+      ]
+    },
+    "borderline_1_mild_metaphor": {
+      "expected_label": "borderline",
+      "target_dim": null,
+      "rationale": "用了 1 个'像一座沉默的石像'轻度比喻 + 1 处'像一层薄薄的绿毯'——在 ai_prose_ticks 阈值边界，不应该命中（score < 8）",
+      "runs": [
+        {
+          "vetoed": false,
+          "veto_reasons": [],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 3.0,
+            "forced_stupidity": null,
+            "preachiness": 1.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        },
+        {
+          "vetoed": false,
+          "veto_reasons": [],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 3.0,
+            "forced_stupidity": null,
+            "preachiness": 2.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        },
+        {
+          "vetoed": false,
+          "veto_reasons": [],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 3.0,
+            "forced_stupidity": null,
+            "preachiness": 2.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        }
+      ]
+    },
+    "borderline_2_ambiguous_payoff": {
+      "expected_label": "borderline",
+      "target_dim": null,
+      "rationale": "另一个 payoff 段（信件/笔迹），但 setup 不如 clean_3 那么明显（信件 vs 亡妻遗物）。判官应识别为 payoff，不误判为 forced_stupidity",
+      "runs": [
+        {
+          "vetoed": false,
+          "veto_reasons": [],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 1.0,
+            "forced_stupidity": null,
+            "preachiness": 2.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        },
+        {
+          "vetoed": false,
+          "veto_reasons": [],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 1.0,
+            "forced_stupidity": null,
+            "preachiness": 1.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        },
+        {
+          "vetoed": false,
+          "veto_reasons": [],
+          "toxic_dim_scores": {
+            "ai_prose_ticks": 2.0,
+            "forced_stupidity": null,
+            "preachiness": 1.0
+          },
+          "toxic_dim_hit": {
+            "ai_prose_ticks": false,
+            "forced_stupidity": false,
+            "preachiness": false
+          }
+        }
+      ]
+    }
+  },
+  "metrics": {
+    "recall_overall": 0.611,
+    "recall_threshold": 0.95,
+    "fp_rate_overall": 0.0,
+    "fp_rate_threshold": 0.1,
+    "hit_per_sample": {
+      "preachiness_hit_1": {
+        "target_dim": "preachiness",
+        "target_hit_count": 3,
+        "n_runs": 3,
+        "recall_per_sample": 1.0
+      },
+      "preachiness_hit_2": {
+        "target_dim": "preachiness",
+        "target_hit_count": 3,
+        "n_runs": 3,
+        "recall_per_sample": 1.0
+      },
+      "ai_prose_ticks_hit_1": {
+        "target_dim": "ai_prose_ticks",
+        "target_hit_count": 2,
+        "n_runs": 3,
+        "recall_per_sample": 0.667
+      },
+      "ai_prose_ticks_hit_2": {
+        "target_dim": "ai_prose_ticks",
+        "target_hit_count": 1,
+        "n_runs": 3,
+        "recall_per_sample": 0.333
+      },
+      "forced_stupidity_hit_1": {
+        "target_dim": "forced_stupidity",
+        "target_hit_count": 0,
+        "n_runs": 3,
+        "recall_per_sample": 0.0
+      },
+      "forced_stupidity_hit_2": {
+        "target_dim": "forced_stupidity",
+        "target_hit_count": 2,
+        "n_runs": 3,
+        "recall_per_sample": 0.667
+      }
+    },
+    "clean_per_sample": {
+      "clean_1_head_opening": {
+        "any_hit_count": 0,
+        "n_runs": 3,
+        "fp_rate_per_sample": 0.0
+      },
+      "clean_2_head_dialogue": {
+        "any_hit_count": 0,
+        "n_runs": 3,
+        "fp_rate_per_sample": 0.0
+      },
+      "clean_3_payoff_with_trigger": {
+        "any_hit_count": 0,
+        "n_runs": 3,
+        "fp_rate_per_sample": 0.0
+      },
+      "clean_4_cost_paid": {
+        "any_hit_count": 0,
+        "n_runs": 3,
+        "fp_rate_per_sample": 0.0
+      }
+    }
+  },
+  "gates": {
+    "recall": {
+      "pass": false,
+      "value": 0.611
+    },
+    "false_positive_rate": {
+      "pass": true,
+      "value": 0.0
+    }
+  },
+  "overall_pass": false
+}

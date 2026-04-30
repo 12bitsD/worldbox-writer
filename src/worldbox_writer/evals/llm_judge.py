@@ -1094,3 +1094,210 @@ def judge_committee(
         "errors": errors,
         "elapsed_seconds": elapsed,
     }
+
+
+# ===========================================================================
+# Sprint 25 R5 — judge_multi_chapter API (cross-passage dimensions)
+# ===========================================================================
+#
+# Inputs ≥ 2 chapters; runs the 4 cross-passage prompts (foreshadowing /
+# character arc / stakes / setting). Output schema parallels judge_committee:
+# per_dimension records + an aggregate `overall` (mean of applicable scores).
+#
+# This is independent of the per-chapter committee — Sprint 26+ generation
+# work uses both: judge_committee per chapter + judge_multi_chapter on the
+# whole sequence. They answer different questions and should not be merged.
+
+from worldbox_writer.evals.dimension_prompts import (
+    CROSS_PASSAGE_DIMENSIONS,
+    build_multi_chapter_user_message,
+)
+
+MULTI_CHAPTER_SCHEMA_VERSION = "multi-chapter-v0.1"
+
+
+def _multichapter_call_one(
+    dim,
+    chapters: list[str],
+    *,
+    model: str | None,
+    temperature: float,
+    max_tokens: int,
+) -> dict[str, Any]:
+    """Run one cross-passage prompt against the chapter sequence."""
+    started = _time.time()
+    messages = [
+        {"role": "system", "content": dim.system_prompt},
+        {"role": "user", "content": build_multi_chapter_user_message(chapters)},
+    ]
+    raw = ""
+    error: str | None = None
+    try:
+        raw = chat_completion(
+            messages,
+            role="narrator",
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}"
+
+    parsed = parse_judge_response(raw) if raw else {"error": error or "no_response"}
+
+    parse_status = "ok"
+    applicable: bool | None = None
+    score: float | None = None
+    if isinstance(parsed.get("error"), str) and "applicable" not in parsed:
+        parse_status = "parse_failed"
+    elif "applicable" not in parsed:
+        parse_status = "missing_fields"
+    else:
+        applicable = bool(parsed.get("applicable"))
+
+    raw_score = parsed.get("score")
+    if isinstance(raw_score, (int, float)) and not isinstance(raw_score, bool):
+        score = round(min(10.0, max(0.0, float(raw_score))), 2)
+
+    # evidence_quotes is an array for cross-passage; coerce defensively
+    evidence_quotes_raw = parsed.get("evidence_quotes") or []
+    if isinstance(evidence_quotes_raw, str):
+        evidence_quotes_raw = [evidence_quotes_raw]
+    evidence_quotes = [str(q)[:240] for q in evidence_quotes_raw if isinstance(q, str)]
+
+    # Validate each evidence quote is a substring of joined chapters
+    joined_text = "\n".join(chapters)
+    invalid_quotes = [
+        q
+        for q in evidence_quotes
+        if q.strip() and not _evidence_in_text(joined_text, q)
+    ]
+    coercions: list[str] = []
+    if invalid_quotes:
+        coercions.append("evidence_quotes_not_in_source")
+        if score is not None and score >= 5:
+            score = 4.0
+            coercions.append("score_demoted_due_to_fabricated_evidence")
+
+    elapsed_ms = int((_time.time() - started) * 1000)
+    return {
+        "dim_id": dim.dim_id,
+        "category": dim.category,
+        "applicable": applicable,
+        "score": score,
+        "evidence_quotes": evidence_quotes,
+        "invalid_evidence_quotes": invalid_quotes,
+        "rule_hit": str(parsed.get("rule_hit") or ""),
+        "reasoning": str(parsed.get("reasoning") or "")[:200],
+        "raw_excerpt": raw[:240],
+        "parse_status": parse_status,
+        "error": error,
+        "coercions": coercions,
+        "elapsed_ms": elapsed_ms,
+    }
+
+
+def judge_multi_chapter(
+    chapters: list[str],
+    *,
+    model: str | None = None,
+    temperature: float = 0.2,
+    max_tokens: int = 360,
+    concurrency: int = 1,
+) -> dict[str, Any]:
+    """Score a chapter sequence on the 4 cross-passage dimensions.
+
+    Returns a dict with `per_dimension` (4 records), an `overall` mean of
+    applicable+scored dims, and bookkeeping (errors, elapsed). At least 2
+    chapters required; if fewer, all dims return applicable=false.
+    """
+    started = _time.time()
+    selected_model = _resolve_judge_model(model)
+
+    if len(chapters) < 2:
+        return {
+            "schema_version": MULTI_CHAPTER_SCHEMA_VERSION,
+            "model": selected_model,
+            "chapter_count": len(chapters),
+            "per_dimension": {
+                dim.dim_id: {
+                    "dim_id": dim.dim_id,
+                    "category": "cross_passage",
+                    "applicable": False,
+                    "score": None,
+                    "evidence_quotes": [],
+                    "rule_hit": "",
+                    "reasoning": "fewer than 2 chapters supplied",
+                    "parse_status": "ok",
+                    "error": None,
+                    "coercions": [],
+                    "elapsed_ms": 0,
+                }
+                for dim in CROSS_PASSAGE_DIMENSIONS
+            },
+            "overall": None,
+            "n_applicable": 0,
+            "errors": [],
+            "elapsed_seconds": 0.0,
+        }
+
+    workers = max(1, int(concurrency))
+    if workers == 1:
+        records = [
+            _multichapter_call_one(
+                dim,
+                chapters,
+                model=selected_model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            for dim in CROSS_PASSAGE_DIMENSIONS
+        ]
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            records = list(
+                executor.map(
+                    lambda dim: _multichapter_call_one(
+                        dim,
+                        chapters,
+                        model=selected_model,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    ),
+                    CROSS_PASSAGE_DIMENSIONS,
+                )
+            )
+
+    per_dim = {record["dim_id"]: record for record in records}
+    applicable_scores = [
+        float(r["score"])
+        for r in records
+        if r["applicable"] and isinstance(r["score"], (int, float))
+    ]
+    overall = (
+        round(sum(applicable_scores) / len(applicable_scores), 2)
+        if applicable_scores
+        else None
+    )
+
+    errors = [
+        {
+            "dim_id": record["dim_id"],
+            "parse_status": record["parse_status"],
+            "error": record["error"],
+        }
+        for record in records
+        if record["parse_status"] != "ok" or record["error"]
+    ]
+
+    elapsed = round(_time.time() - started, 2)
+    return {
+        "schema_version": MULTI_CHAPTER_SCHEMA_VERSION,
+        "model": selected_model,
+        "chapter_count": len(chapters),
+        "per_dimension": per_dim,
+        "overall": overall,
+        "n_applicable": len(applicable_scores),
+        "errors": errors,
+        "elapsed_seconds": elapsed,
+    }
