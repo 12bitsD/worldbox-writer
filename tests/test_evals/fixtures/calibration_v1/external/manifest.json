@@ -1,9 +1,9 @@
 {
-  "schema_version": "calibration-external-v0.1",
-  "purpose": "Sprint 25 R6 external-style calibration anchors. These are original, human-curated Chinese web-novel reference passages, not Claude calibration_v1 self-loop samples and not copyrighted source excerpts.",
+  "schema_version": "calibration-external-proxy-v0.1",
+  "purpose": "Sprint 25 R6 external-style calibration proxy anchors. These are Codex-created original Chinese web-novel reference passages used to validate fixture scaffolding and runner behavior; they are not true external human-rated samples and not copyrighted source excerpts.",
   "created_at": "2026-04-30",
-  "ranking_authority": "manual product-lens ranking (起点头部网文质量标准；原创样本，不冒充任何真实作者原文)",
-  "source_policy": "No long copyrighted excerpts. Samples are original reference passages designed to approximate external human-rated quality tiers without copying living authors or specific published text.",
+  "ranking_authority": "manual product-lens ranking for proxy subset only (起点头部网文质量标准；Codex 原创样本，不冒充任何真实作者原文)",
+  "source_policy": "No long copyrighted excerpts. Samples are original proxy passages designed to approximate external quality tiers without copying living authors or specific published text. This proxy set does not close the R6 requirement for real external/human-rated calibration samples.",
   "authoring_intent_ranking": [
     "X1_external_head_market",
     "X2_external_mid_common",
@@ -19,7 +19,7 @@
       "id": "X1_external_head_market",
       "path": "X1_external_head_market.txt",
       "tier": 4,
-      "authoring_intent": "外部人工锚点：头部网文向。近端目标清楚、压力具体、对话有潜台词、物件承载信息，无 AI 水文毒点。",
+      "authoring_intent": "external-style proxy 锚点：头部网文向。近端目标清楚、压力具体、对话有潜台词、物件承载信息，无 AI 水文毒点。",
       "expected_signals": [
         "desire_clarity: high — 主角要在鼓响前交出真账册换父亲出狱，失败代价明确",
         "tension_pressure: high — 城门将闭、巡检司封仓、同伴身份暴露风险",
@@ -33,7 +33,7 @@
       "id": "X2_external_mid_common",
       "path": "X2_external_mid_common.txt",
       "tier": 2,
-      "authoring_intent": "外部人工锚点：中位常见网文。目标和冲突存在，但概念化动作、功能性对话、说明偏多，未到 toxic veto。",
+      "authoring_intent": "external-style proxy 锚点：中位常见网文。目标和冲突存在，但概念化动作、功能性对话、说明偏多，未到 toxic veto。",
       "expected_signals": [
         "desire_clarity: medium — 主角要查清试炼异常，但代价与时限较泛",
         "tension_pressure: medium — 有长老和试炼压力，但场面压迫不足",
@@ -47,7 +47,7 @@
       "id": "X3_external_ai_water",
       "path": "X3_external_ai_water.txt",
       "tier": 1,
-      "authoring_intent": "外部人工锚点：低质 AI 水文毒点样本。多子类 AI prose ticks + 段尾说教，应被 veto 并排在最后。",
+      "authoring_intent": "external-style proxy 锚点：低质 AI 水文毒点样本。多子类 AI prose ticks + 段尾说教，应被 veto 并排在最后。",
       "expected_signals": [
         "ai_prose_ticks: very high — over_metaphor + parallel + translation_tone + expository_dialogue 多子类齐发",
         "preachiness: high — 段尾总结升华人生道理",
