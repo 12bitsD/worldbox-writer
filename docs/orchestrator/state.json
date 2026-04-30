@@ -1,15 +1,15 @@
 {
-  "current_phase": "Sprint 25: 评测体系重建",
+  "current_phase": "Sprint 26 准备：生成端迭代（Sprint 25 评测体系 v1.0 已就绪）",
   "current_tier": "L0 (overall_mean 3.73 < L1 4.0; veto_rate 46% > 30%; axis_means 已 L2 但被 ai_prose_ticks 拖累)",
   "target_tier": "L2",
   "sprint": 25,
-  "round": 5,
+  "round": 6,
   "consecutive_no_improvement": 0,
-  "last_round_goal": "multi-chapter judge + 4 cross-passage 维度 + 毒点注入回归集",
-  "last_round_action": "Sprint 25 R5 完成 5/6 退出 gate — judge_multi_chapter API 落地（4 cross-passage 维度独立 prompt），head-tier cross-passage 验证 std ≤ 0.58；毒点注入回归集 12 fixtures 上线，FP rate 0.000 完美但 recall 0.611（forced_stupidity hit_1 0/3 全漏，因 R4 v0.4 prompt 防 payoff 误判同时变保守，trade-off 留 R6+ 调优）",
+  "last_round_goal": "Sprint 25 final cleanup：删 deprecated API + 文档对齐 v1.0",
+  "last_round_action": "Sprint 25 R6 完成 partial — 删除 ~600 行 deprecated judge_prose/judge_story/judge_scene_script/batch_judge/aggregate_judge_results；scripts/e2e_judge.py 全量重写为 judge_committee + judge_multi_chapter 路径（1319→520 行）；calibration_v0/ 删；llm_judge.py 1303→628 行；3 个 deprecated 测试文件被替换为 5 个新 e2e_judge L1 测试；QUALITY_SPEC v1.0；R6.3 外部人工评分样本与 R6+ prompt recall 调优交给 Codex 接力",
   "evaluation_system": {
     "spec_doc": "docs/product/QUALITY_SPEC.md",
-    "spec_version": "v0.5",
+    "spec_version": "v1.0",
     "multi_chapter_api": "src/worldbox_writer/evals/llm_judge.py::judge_multi_chapter",
     "cross_passage_dimensions": [
       "foreshadowing_recovery",
@@ -105,9 +105,44 @@
     "档位定义用三独立条件：overall_mean + axis_min + veto_rate_max（R4，旧的'全部维度 ≥ X'被替代）",
     "Sprint 26 第一攻击点 = Narrator ai_prose_ticks（baseline 数据明确指出）"
   ],
-  "next_round": {
-    "round": 6,
-    "topic": "Sprint 25 final cleanup",
-    "exit_criteria": "(a) 删除 deprecated judge_prose / judge_story / judge_scene_script / batch_judge + 迁移 e2e_judge.py；(b) 引入 ≥ 3 段外部人工评分参考样本；(c) CLAUDE.md / AGENTS.md / README.md / QUALITY_SPEC v1.0 对齐；(d) state.json current_phase 切换到 Sprint 26 准备态"
+  "handoff_to_codex": {
+    "context": "Sprint 25 评测体系 v1.0 已就绪。当前生产系统在 R4 baseline 上为 L0（overall 3.73 / veto 46% 全由 ai_prose_ticks 触发 / 三轴均值已在 L2 接近线）。Sprint 26 第一攻击点明确",
+    "tasks": [
+      {
+        "id": "S26-R1",
+        "priority": 1,
+        "title": "Narrator AI 水文修辞癖修复",
+        "scope": "src/worldbox_writer/agents/narrator.py：在 _NARRATOR_SYSTEM_PROMPT 加显式禁用 ai_prose_ticks 的 4 子类（over_metaphor/parallel/translation_tone/expository_dialogue）+ 自检回路（生成后用 judge_committee 检查 toxic_flags，命中即重写）。验证：跑 baseline_current_system.py 重测，veto rate 46% → ≤ 10%，overall 3.73 → ≥ 6.5（L0 → L2 边界）",
+        "verify_with": "scripts/eval/baseline_current_system.py + scripts/eval/toxic_injection_regression.py（preachiness 100% recall 守住）"
+      },
+      {
+        "id": "S26-R2",
+        "priority": 2,
+        "title": "Director / GM scene-level 改进",
+        "scope": "提升 emotion_axis 与 structure_axis 单段稳定性。看 baseline_current_system.py 报告里 axis_means 6.83-7.81 范围内的 dim 短板（cliffhanger_pull / payoff_intensity / desire_clarity 等）",
+        "verify_with": "judge_committee per chapter axis_means 全部 ≥ 7.0"
+      },
+      {
+        "id": "R6-residual-1",
+        "priority": 3,
+        "title": "外部人工评分样本入库（R6.3 跳过项）",
+        "scope": "tests/test_evals/fixtures/calibration_v1/external/ 加 ≥ 3 段非 Claude 风格参考样本（猫腻/烽火戏诸侯/起点头部 真实片段或精仿）+ 人工排序入库。验证 judge_committee 在外部样本上 mandatory_pairs 全过。这是 R3 calibration 暴露的'AI 自循环偏差'硬底线工作",
+        "verify_with": "scripts/eval/calibration_ranking.py 在 external/ 上独立跑"
+      },
+      {
+        "id": "R6-residual-2",
+        "priority": 4,
+        "title": "forced_stupidity recall trade-off 调优",
+        "scope": "R5 毒点注入回归集 hit_1（反派死于话多）0/3 全漏，hit_2 33% recall。R4 v0.4 prompt 防 payoff 误判时变保守，需要在不重新引入 payoff 误判的前提下提升 hit recall。建议：增加 example-based scoring 区分'反派被合理底牌击溃 vs 死于话多'；设置 explicit hit signature（'未补刀 + 长篇嘲讽 + 漏底牌' = 命中 confirmed）",
+        "verify_with": "scripts/eval/toxic_injection_regression.py recall ≥ 0.95 + FP rate ≤ 0.10"
+      },
+      {
+        "id": "R6-residual-3",
+        "priority": 5,
+        "title": "ai_prose_ticks recall 加固",
+        "scope": "回归集上 50% recall 摇摆（hit_1 [10,10,4]、hit_2 [10,4,4]）。在多子类齐发样本上强制 score ≥ 8 锚定。可能修 dimension_prompts.py 的 _AI_PROSE_TICKS_SYSTEM",
+        "verify_with": "toxic_injection_regression.py ai_prose_ticks recall ≥ 0.83"
+      }
+    ]
   }
 }
