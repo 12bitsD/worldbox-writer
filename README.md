@@ -209,6 +209,8 @@ WorldBox Writer 的演进被定义为一条**认知递进**的旅程：
 **当前迭代**：Sprint 24 — 全链路 Agent 质量治理 + LLM-as-judge 评测基建。
 详见 [docs/sprints/SPRINT_24.md](docs/sprints/SPRINT_24.md)。
 
+**质量评测 TODO**：`tests/test_evals/fixtures/calibration_v1/external/` 当前只有 Codex 原创 proxy subset；后续仍需补 ≥ 3 段真实外部/人类作者/授权或明确人工评分样本，并重新跑 external ranking（mandatory pairs 0 反转）。
+
 **已沉淀的里程碑**：
 - MVP 核心闭环（v0.5.0）：实时 SSE、SQLite 持久化、等待态编辑。
 - 看见世界：结构化关系图谱、Telemetry 面板与过滤分组、Prompt Inspector。

@@ -1,7 +1,17 @@
 {
-  "current_phase": "Sprint 25 R6 残留纠偏：external proxy 已就绪；真实外部人工评分样本仍待入库",
+  "current_phase": "Sprint 26 准备：生成端迭代（R6-residual-1 真实外部人工评分样本作为 TODO 保留）",
   "current_tier": "L0 (overall_mean 3.73 < L1 4.0; veto_rate 46% > 30%; axis_means 已 L2 但被 ai_prose_ticks 拖累)",
   "target_tier": "L2",
+  "pending_todos": [
+    {
+      "id": "R6-residual-1",
+      "title": "补真实外部人工评分样本",
+      "status": "pending_user_provided_or_authorized_samples",
+      "note": "当前 external/ 目录只有 Codex 原创 proxy subset，可保留为 scaffolding；它不等同于 Claude 要求的真实外部人工评分样本。",
+      "acceptance": "至少 3 段真实外部/人类作者/授权或明确人工评分样本，含人工排序、expected_signals，calibration_ranking mandatory_pairs 0 反转。",
+      "next_action": "用户后续提供或确认可提交的样本文本后，再替换/追加到 tests/test_evals/fixtures/calibration_v1/external/ 并跑独立 ranking。"
+    }
+  ],
   "sprint": 25,
   "round": 6,
   "consecutive_no_improvement": 0,
