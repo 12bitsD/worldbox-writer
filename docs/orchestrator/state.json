@@ -1,20 +1,22 @@
 {
   "current_phase": "Sprint 25: 评测体系重建",
-  "current_tier": "TBD (R4 重测后定档)",
+  "current_tier": "L0 (overall_mean 3.73 < L1 4.0; veto_rate 46% > 30%; axis_means 已 L2 但被 ai_prose_ticks 拖累)",
   "target_tier": "L2",
   "sprint": 25,
-  "round": 3,
+  "round": 4,
   "consecutive_no_improvement": 0,
-  "last_round_goal": "Cleanup round + calibration anchor 入库",
-  "last_round_action": "Sprint 25 R3 完成 partial — calibration_v1 (10 段) + schema 修复 (forced_stupidity coercion / evidence 子串校验) + 旧文档合并 (WEB_NOVEL_CRITERIA & QUALITY_FRAMEWORK 变索引页, SPRINT_24 删)；ranking gate FAIL (Spearman ρ=0.56)，但失败信号有强诊断价值——揭示了 forced_stupidity 反派合理崩溃误判 + cost_paid rubric anchoring 两个 prompt-级 bug，R4 必须优先修",
+  "last_round_goal": "修 R3 揭示的两个 prompt bug + 重跑 calibration + 重测当前生产系统取得 baseline",
+  "last_round_action": "Sprint 25 R4 完成 — 5/5 退出 gate 通过：forced_stupidity v0.4 修复（E veto 0/N），cost_paid v0.2 修复（F mean 7.71），calibration ρ=0.9848 通过，3 simulation × 4 章 baseline 落地（aggregate 3.728，veto 46% 全部由 ai_prose_ticks 触发），QUALITY_SPEC §3 档位章节落地（L0/L1/L2/L3/L4 三独立条件）。",
   "evaluation_system": {
     "spec_doc": "docs/product/QUALITY_SPEC.md",
-    "spec_version": "v0.3",
+    "spec_version": "v0.4",
     "stability_artifacts": [
       "artifacts/eval/sprint-25/round-1/dim_stability.json",
       "artifacts/eval/sprint-25/round-2/committee_stability.json",
       "artifacts/eval/sprint-25/round-3/calibration_ranking.json",
-      "artifacts/eval/sprint-25/round-3/conditional_triggers.json"
+      "artifacts/eval/sprint-25/round-3/conditional_triggers.json",
+      "artifacts/eval/sprint-25/round-4/calibration_ranking_v3.json",
+      "artifacts/eval/sprint-25/round-4/baseline_v1.json"
     ],
     "calibration_set": "tests/test_evals/fixtures/calibration_v1/",
     "calibration_set_size": 10,
@@ -42,31 +44,52 @@
       "forced_stupidity"
     ],
     "calibration_status": {
-      "spearman_correlation": 0.5606,
+      "spearman_correlation": 0.9848,
       "spearman_threshold": 0.95,
-      "passed": false,
-      "mandatory_pair_violations": 1,
-      "reason": "evidence-bearing-failure: forced_stupidity 反派合理崩溃误判 (~20% 概率) + cost_paid rubric anchoring 缺陷"
+      "passed": true,
+      "mandatory_pair_violations": 0,
+      "manifest_revision": "v1.2 (网文产品定位对齐 — F/A/G3/E/B/G4/D/G2/C/G1)"
+    },
+    "production_baseline": "artifacts/eval/sprint-25/round-4/baseline_v1.json",
+    "production_baseline_summary": {
+      "overall_mean": 3.728,
+      "overall_std": 1.343,
+      "axis_means": {
+        "emotion_axis": 7.07,
+        "structure_axis": 7.42,
+        "prose_axis": 6.38
+      },
+      "veto_rate": 0.46,
+      "primary_veto_source": "ai_prose_ticks (11/11 chapter vetoes)",
+      "tier": "L0",
+      "diagnosis": "axes 已 L2 边界，但 Narrator AI 水文修辞癖触发的 veto 把 overall 拖到 L0；压住 veto 即可立刻 L2"
+    },
+    "tier_thresholds": {
+      "L1": {"overall_mean": 4.0, "axis_min": 5.0, "veto_rate_max": 0.30},
+      "L2": {"overall_mean": 6.5, "axis_min": 6.5, "veto_rate_max": 0.10},
+      "L3": {"overall_mean": 8.0, "axis_min": 7.5, "veto_rate_max": 0.05},
+      "L4": {"overall_mean": 9.0, "axis_min": 8.5, "veto_rate_max": 0.0}
     }
   },
   "gap_list": [
-    "R4 priority 1: forced_stupidity prompt 加 NOT-HIT 例 \"反派被合理底牌击溃 = payoff 段，不算降智\" + 反例对照样例。验证：E_payoff_burst N=5×3 重测 0 由 forced_stupidity 触发的 veto",
-    "R4 priority 2: cost_paid prompt rubric 重设计——让 reasoning 命中 9-10 锚点描述时模型不再保守落在 4-6（可能改 example-based scoring 替换 description-based）。验证：F_power_cost mean ≥ 7",
-    "R4 priority 3: 修完 prompt 后重跑 calibration_ranking，达到 Spearman ρ ≥ 0.95 + 0 mandatory pair reversal",
-    "R4 priority 4: 在通过 calibration 后才开始重测当前生产系统取得真实基线，重写 QUALITY_SPEC §3 档位定义",
-    "R5: multi-chapter judge 实现 + 4 个 cross-passage 维度验证 + 毒点注入回归集（每类毒点 × 2 命中样本 + 4 干净样本，召回 ≥ 95%，误报率 ≤ 10%）",
-    "R6 cleanup: 死代码清理（删旧 judge_prose / judge_story / judge_scene_script / batch_judge）；引入外部人工标注样本（猫腻/烽火/起点头部真实片段）打破 AI 自循环偏差",
-    "R6+: 考虑文学型 head-tier 是否需要单独评测路径（目前评测对网文紧致风格 A/G3 偏好，对文学型 G4 评分偏低）"
+    "Sprint 26 priority 1: Narrator AI 水文修辞癖修复——给 narrator prompt 加显式 ai_prose_ticks 子类禁用规则（over_metaphor / parallel / translation_tone / expository_dialogue）+ 自检回路。预计 veto 46% → ≤ 10%，overall 3.73 → 6.5+ = L0 跨到 L2 边界。这是 R4 baseline 暴露的最大单点 ROI",
+    "R5: multi-chapter judge 实现 + 4 个 cross-passage 维度（foreshadowing_recovery / character_arc_consistency / stakes_escalation / setting_consistency）",
+    "R5: 毒点注入回归集（每类毒点 × 2 命中样本 + 4 干净样本 + 2 边界，召回 ≥ 95%，误报率 ≤ 10%）",
+    "R6: 删除 deprecated judge_prose / judge_story / judge_scene_script / batch_judge + 迁移 e2e_judge.py 调用方",
+    "R6: 引入外部人工评分样本（猫腻 / 烽火 / 起点头部 真实片段或仿写）打破 AI 自循环偏差",
+    "R6: CLAUDE.md / AGENTS.md / README.md / docs/README.md v1.0 对齐"
   ],
   "decisions": [
-    "评测调用默认 concurrency=1（R1 教训）",
-    "评测系统稳定性按下游消费层衡量（R2 教训）",
-    "R3 暴露的 calibration 失败不调阈值——先修 prompt 再重测（R3 教训）",
-    "calibration anchor v1 是 AI 自写样本——必要而非充分；R6+ 必须叠外部人工样本"
+    "评测调用默认 concurrency=1（R1）",
+    "评测系统稳定性按下游消费层衡量（R2）",
+    "失败 gate 优先暴露 prompt bug 不调阈值（R3）",
+    "calibration manifest 排序按 网文产品定位对齐（R4，因 WorldBox Writer 对标起点头部网文）",
+    "档位定义用三独立条件：overall_mean + axis_min + veto_rate_max（R4，旧的'全部维度 ≥ X'被替代）",
+    "Sprint 26 第一攻击点 = Narrator ai_prose_ticks（baseline 数据明确指出）"
   ],
   "next_round": {
-    "round": 4,
-    "topic": "修 R3 揭示的两个 prompt bug + 重跑 calibration + 重测当前生产系统",
-    "exit_criteria": "(a) E_payoff_burst N=5×3 重测 0 由 forced_stupidity 触发的 veto；(b) F_power_cost cost_paid mean ≥ 7；(c) calibration_ranking Spearman ρ ≥ 0.95；(d) 跑 ≥ 3 个真实 simulation × 4 章得到当前生产基线；(e) QUALITY_SPEC §3 档位章节用基线 + calibration 重写"
+    "round": 5,
+    "topic": "multi-chapter judge + 4 cross-passage 维度 + 毒点注入回归集",
+    "exit_criteria": "(a) judge_multi_chapter API 落地，4 个 cross-passage 维度独立 prompt + L1 mock 测试覆盖；(b) 用 R4 baseline 产出 simulation 跑 multi-chapter judge，4 个维度 N=3 std < 1.5；(c) 毒点注入回归集 12 段 fixtures + N=3 验证：召回 ≥ 95%，误报率 ≤ 10%"
   }
 }

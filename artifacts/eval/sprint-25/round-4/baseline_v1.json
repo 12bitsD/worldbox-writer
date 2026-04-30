@@ -1,0 +1,543 @@
+{
+  "schema_version": "baseline-v1",
+  "generated_at": "2026-04-30T04:56:14.247554+00:00",
+  "config": {
+    "chapters_per_simulation": 4,
+    "judge_runs_per_chapter": 2,
+    "temperature": 0.2,
+    "max_tokens": 320,
+    "model": null,
+    "provider": "kimi-coding",
+    "premises_run": [
+      "border_bridge",
+      "cultivation_betrayal",
+      "city_aftermath"
+    ],
+    "committee_schema": "committee-v0.2 (post-R4 prompt fixes)",
+    "calibration_passed_at": "Sprint 25 R4 (Spearman ρ = 0.9848)"
+  },
+  "totals": {
+    "simulations": 3,
+    "duration_seconds": 1665.8
+  },
+  "simulations": [
+    {
+      "id": "border_bridge",
+      "premise": "雨季不断的边境王城里，守桥人阿璃握有旧城门密钥，流亡骑士白夜必须在追兵抵达前逼她说出密钥来历；两人都知道，桥闸一旦开启，王城继承权会被彻底改写。",
+      "chapter_count": 4,
+      "chapter_overall_mean": 2.4,
+      "chapter_overall_std": 2.92,
+      "chapter_overalls": [
+        3.675,
+        5.925,
+        0.0,
+        0.0
+      ],
+      "axis_means": {
+        "emotion_axis": 6.57,
+        "structure_axis": 7.3,
+        "prose_axis": 6.02
+      },
+      "veto_total": 5,
+      "warnings": [],
+      "chapters": [
+        {
+          "chapter": 1,
+          "node_id": "db8ef915-bf11-4ae5-a0cb-dc0d0b10bd73",
+          "rendered_chars": 349,
+          "overall_mean": 3.675,
+          "overall_std": 5.197,
+          "veto_count": 1,
+          "axis_means": {
+            "emotion_axis": 6.75,
+            "structure_axis": 8.0,
+            "prose_axis": 6.42
+          },
+          "committee_runs": [
+            {
+              "overall": 7.35,
+              "vetoed": false,
+              "veto_reasons": [],
+              "axis_scores": {
+                "emotion_axis": 7.5,
+                "structure_axis": 8.0,
+                "prose_axis": 6.5
+              }
+            },
+            {
+              "overall": 0.0,
+              "vetoed": true,
+              "veto_reasons": [
+                "ai_prose_ticks"
+              ],
+              "axis_scores": {
+                "emotion_axis": 6.0,
+                "structure_axis": 8.0,
+                "prose_axis": 6.33
+              }
+            }
+          ]
+        },
+        {
+          "chapter": 2,
+          "node_id": "58625125-0af3-4911-9f64-d753a871d217",
+          "rendered_chars": 638,
+          "overall_mean": 5.925,
+          "overall_std": 0.417,
+          "veto_count": 0,
+          "axis_means": {
+            "emotion_axis": 5.5,
+            "structure_axis": 6.08,
+            "prose_axis": 6.33
+          },
+          "committee_runs": [
+            {
+              "overall": 6.22,
+              "vetoed": false,
+              "veto_reasons": [],
+              "axis_scores": {
+                "emotion_axis": 5.67,
+                "structure_axis": 6.5,
+                "prose_axis": 6.67
+              }
+            },
+            {
+              "overall": 5.63,
+              "vetoed": false,
+              "veto_reasons": [],
+              "axis_scores": {
+                "emotion_axis": 5.33,
+                "structure_axis": 5.67,
+                "prose_axis": 6.0
+              }
+            }
+          ]
+        },
+        {
+          "chapter": 3,
+          "node_id": "25a124b7-4817-48fe-81c9-4378e8255395",
+          "rendered_chars": 440,
+          "overall_mean": 0.0,
+          "overall_std": 0.0,
+          "veto_count": 2,
+          "axis_means": {
+            "emotion_axis": 6.0,
+            "structure_axis": 7.5,
+            "prose_axis": 6.17
+          },
+          "committee_runs": [
+            {
+              "overall": 0.0,
+              "vetoed": true,
+              "veto_reasons": [
+                "ai_prose_ticks"
+              ],
+              "axis_scores": {
+                "emotion_axis": 6.67,
+                "structure_axis": 7.0,
+                "prose_axis": 6.0
+              }
+            },
+            {
+              "overall": 0.0,
+              "vetoed": true,
+              "veto_reasons": [
+                "ai_prose_ticks"
+              ],
+              "axis_scores": {
+                "emotion_axis": 5.33,
+                "structure_axis": 8.0,
+                "prose_axis": 6.33
+              }
+            }
+          ]
+        },
+        {
+          "chapter": 4,
+          "node_id": "0b0fe460-1499-4833-8d78-82c0d0554647",
+          "rendered_chars": 557,
+          "overall_mean": 0.0,
+          "overall_std": 0.0,
+          "veto_count": 2,
+          "axis_means": {
+            "emotion_axis": 8.04,
+            "structure_axis": 7.62,
+            "prose_axis": 5.17
+          },
+          "committee_runs": [
+            {
+              "overall": 0.0,
+              "vetoed": true,
+              "veto_reasons": [
+                "ai_prose_ticks"
+              ],
+              "axis_scores": {
+                "emotion_axis": 7.33,
+                "structure_axis": 7.75,
+                "prose_axis": 5.33
+              }
+            },
+            {
+              "overall": 0.0,
+              "vetoed": true,
+              "veto_reasons": [
+                "ai_prose_ticks"
+              ],
+              "axis_scores": {
+                "emotion_axis": 8.75,
+                "structure_axis": 7.5,
+                "prose_axis": 5.0
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cultivation_betrayal",
+      "premise": "宗门大比前夜，被废材标签压了三年的少年陈砚，在祠堂找到了亡父留下的半枚玉佩；师叔祖突然现身，带来了父亲死前最后一封密信，信上写着'七人已叛'——而明日比试的第一个对手，正是七人之一的少宗主。",
+      "chapter_count": 4,
+      "chapter_overall_mean": 3.7,
+      "chapter_overall_std": 2.917,
+      "chapter_overalls": [
+        7.135,
+        3.79,
+        0.0,
+        3.875
+      ],
+      "axis_means": {
+        "emotion_axis": 7.81,
+        "structure_axis": 7.4,
+        "prose_axis": 6.58
+      },
+      "veto_total": 4,
+      "warnings": [],
+      "chapters": [
+        {
+          "chapter": 1,
+          "node_id": "93ad5a07-b028-45eb-9e38-36cb8869b646",
+          "rendered_chars": 932,
+          "overall_mean": 7.135,
+          "overall_std": 0.827,
+          "veto_count": 0,
+          "axis_means": {
+            "emotion_axis": 8.0,
+            "structure_axis": 7.12,
+            "prose_axis": 6.0
+          },
+          "committee_runs": [
+            {
+              "overall": 6.55,
+              "vetoed": false,
+              "veto_reasons": [],
+              "axis_scores": {
+                "emotion_axis": 7.0,
+                "structure_axis": 6.5,
+                "prose_axis": 6.0
+              }
+            },
+            {
+              "overall": 7.72,
+              "vetoed": false,
+              "veto_reasons": [],
+              "axis_scores": {
+                "emotion_axis": 9.0,
+                "structure_axis": 7.75,
+                "prose_axis": 6.0
+              }
+            }
+          ]
+        },
+        {
+          "chapter": 2,
+          "node_id": "b2a3c31c-178f-4791-af30-b1d480c9d592",
+          "rendered_chars": 468,
+          "overall_mean": 3.79,
+          "overall_std": 5.36,
+          "veto_count": 1,
+          "axis_means": {
+            "emotion_axis": 7.83,
+            "structure_axis": 8.0,
+            "prose_axis": 7.17
+          },
+          "committee_runs": [
+            {
+              "overall": 7.58,
+              "vetoed": false,
+              "veto_reasons": [],
+              "axis_scores": {
+                "emotion_axis": 7.33,
+                "structure_axis": 8.5,
+                "prose_axis": 7.0
+              }
+            },
+            {
+              "overall": 0.0,
+              "vetoed": true,
+              "veto_reasons": [
+                "ai_prose_ticks"
+              ],
+              "axis_scores": {
+                "emotion_axis": 8.33,
+                "structure_axis": 7.5,
+                "prose_axis": 7.33
+              }
+            }
+          ]
+        },
+        {
+          "chapter": 3,
+          "node_id": "5f7360f6-a99d-4669-954c-e8e4202cc08d",
+          "rendered_chars": 691,
+          "overall_mean": 0.0,
+          "overall_std": 0.0,
+          "veto_count": 2,
+          "axis_means": {
+            "emotion_axis": 7.0,
+            "structure_axis": 7.62,
+            "prose_axis": 5.83
+          },
+          "committee_runs": [
+            {
+              "overall": 0.0,
+              "vetoed": true,
+              "veto_reasons": [
+                "ai_prose_ticks"
+              ],
+              "axis_scores": {
+                "emotion_axis": 5.67,
+                "structure_axis": 7.75,
+                "prose_axis": 6.0
+              }
+            },
+            {
+              "overall": 0.0,
+              "vetoed": true,
+              "veto_reasons": [
+                "ai_prose_ticks"
+              ],
+              "axis_scores": {
+                "emotion_axis": 8.33,
+                "structure_axis": 7.5,
+                "prose_axis": 5.67
+              }
+            }
+          ]
+        },
+        {
+          "chapter": 4,
+          "node_id": "556fd590-912c-49da-93cb-931298cba1bf",
+          "rendered_chars": 717,
+          "overall_mean": 3.875,
+          "overall_std": 5.48,
+          "veto_count": 1,
+          "axis_means": {
+            "emotion_axis": 8.41,
+            "structure_axis": 6.85,
+            "prose_axis": 7.33
+          },
+          "committee_runs": [
+            {
+              "overall": 7.75,
+              "vetoed": false,
+              "veto_reasons": [],
+              "axis_scores": {
+                "emotion_axis": 8.5,
+                "structure_axis": 7.5,
+                "prose_axis": 7.0
+              }
+            },
+            {
+              "overall": 0.0,
+              "vetoed": true,
+              "veto_reasons": [
+                "ai_prose_ticks"
+              ],
+              "axis_scores": {
+                "emotion_axis": 8.33,
+                "structure_axis": 6.2,
+                "prose_axis": 7.67
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "city_aftermath",
+      "premise": "秋雨连下半个月的旧城里，独居老巷的陶匠林叔接到一个穿青衫年轻人的上门订烧——客人指定要烧一只七年前不该再烧的老款酒坛，并放下一笔远超手工价的银元；林叔的小学徒注意到，那笔银元里夹着一枚已停产十年的旧城通行牌。",
+      "chapter_count": 4,
+      "chapter_overall_mean": 5.085,
+      "chapter_overall_std": 3.429,
+      "chapter_overalls": [
+        6.055,
+        7.05,
+        7.235,
+        0.0
+      ],
+      "axis_means": {
+        "emotion_axis": 6.83,
+        "structure_axis": 7.57,
+        "prose_axis": 6.54
+      },
+      "veto_total": 2,
+      "warnings": [],
+      "chapters": [
+        {
+          "chapter": 1,
+          "node_id": "7cb4525d-5104-417d-ab18-ac68d448b9cf",
+          "rendered_chars": 678,
+          "overall_mean": 6.055,
+          "overall_std": 0.134,
+          "veto_count": 0,
+          "axis_means": {
+            "emotion_axis": 5.17,
+            "structure_axis": 6.62,
+            "prose_axis": 6.67
+          },
+          "committee_runs": [
+            {
+              "overall": 6.15,
+              "vetoed": false,
+              "veto_reasons": [],
+              "axis_scores": {
+                "emotion_axis": 5.0,
+                "structure_axis": 6.5,
+                "prose_axis": 7.33
+              }
+            },
+            {
+              "overall": 5.96,
+              "vetoed": false,
+              "veto_reasons": [],
+              "axis_scores": {
+                "emotion_axis": 5.33,
+                "structure_axis": 6.75,
+                "prose_axis": 6.0
+              }
+            }
+          ]
+        },
+        {
+          "chapter": 2,
+          "node_id": "66d4e353-092d-4229-80f4-a3219efc81ef",
+          "rendered_chars": 601,
+          "overall_mean": 7.05,
+          "overall_std": 0.212,
+          "veto_count": 0,
+          "axis_means": {
+            "emotion_axis": 7.0,
+            "structure_axis": 7.67,
+            "prose_axis": 6.5
+          },
+          "committee_runs": [
+            {
+              "overall": 6.9,
+              "vetoed": false,
+              "veto_reasons": [],
+              "axis_scores": {
+                "emotion_axis": 6.0,
+                "structure_axis": 8.33,
+                "prose_axis": 6.67
+              }
+            },
+            {
+              "overall": 7.2,
+              "vetoed": false,
+              "veto_reasons": [],
+              "axis_scores": {
+                "emotion_axis": 8.0,
+                "structure_axis": 7.0,
+                "prose_axis": 6.33
+              }
+            }
+          ]
+        },
+        {
+          "chapter": 3,
+          "node_id": "01035260-5959-4e76-bffa-cf43f24735f4",
+          "rendered_chars": 429,
+          "overall_mean": 7.235,
+          "overall_std": 0.092,
+          "veto_count": 0,
+          "axis_means": {
+            "emotion_axis": 7.33,
+            "structure_axis": 7.67,
+            "prose_axis": 6.67
+          },
+          "committee_runs": [
+            {
+              "overall": 7.3,
+              "vetoed": false,
+              "veto_reasons": [],
+              "axis_scores": {
+                "emotion_axis": 8.0,
+                "structure_axis": 7.0,
+                "prose_axis": 6.67
+              }
+            },
+            {
+              "overall": 7.17,
+              "vetoed": false,
+              "veto_reasons": [],
+              "axis_scores": {
+                "emotion_axis": 6.67,
+                "structure_axis": 8.33,
+                "prose_axis": 6.67
+              }
+            }
+          ]
+        },
+        {
+          "chapter": 4,
+          "node_id": "34951504-d370-4389-aa18-be1dc9b35e0e",
+          "rendered_chars": 469,
+          "overall_mean": 0.0,
+          "overall_std": 0.0,
+          "veto_count": 2,
+          "axis_means": {
+            "emotion_axis": 7.83,
+            "structure_axis": 8.33,
+            "prose_axis": 6.33
+          },
+          "committee_runs": [
+            {
+              "overall": 0.0,
+              "vetoed": true,
+              "veto_reasons": [
+                "ai_prose_ticks"
+              ],
+              "axis_scores": {
+                "emotion_axis": 8.33,
+                "structure_axis": 8.33,
+                "prose_axis": 5.67
+              }
+            },
+            {
+              "overall": 0.0,
+              "vetoed": true,
+              "veto_reasons": [
+                "ai_prose_ticks"
+              ],
+              "axis_scores": {
+                "emotion_axis": 7.33,
+                "structure_axis": 8.33,
+                "prose_axis": 7.0
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "aggregate": {
+    "overall_mean": 3.728,
+    "overall_std": 1.343,
+    "axis_means": {
+      "emotion_axis": 7.07,
+      "structure_axis": 7.42,
+      "prose_axis": 6.38
+    },
+    "n_simulations_with_data": 3
+  }
+}
