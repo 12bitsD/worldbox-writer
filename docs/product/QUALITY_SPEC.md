@@ -303,7 +303,7 @@ Calibration anchors 给 L1 / L2 / L0 提供了 anchor；L3 / L4 暂无 anchor（
 
 Baseline 数据明确指出：**Narrator agent 的 AI 水文修辞癖是当前最大单点瓶颈**——所有 11 次 chapter veto 都由 `ai_prose_ticks` 触发。这意味着即使其他生成端 agent 完美，只要 Narrator 还在产出 over-metaphor / parallel / translation_tone / expository_dialogue 中任意子类，分数就会被 veto 一刀切。
 
-R6 完成后 Sprint 26 的第一个 round 应攻这个：Narrator prompt 加 ai_prose_ticks 子类显式禁用 + 失败回退（比如检测到 over-metaphor 后强制重写）。预期收益：veto_rate 46% → ≤ 10%，overall_mean 3.728 → 6.5+ = 直接从 L0 跨到 L2 边界。
+R6 cleanup 基本完成后，Sprint 26 的第一个生成端 round 应攻这个：Narrator prompt 加 ai_prose_ticks 子类显式禁用 + 失败回退（比如检测到 over-metaphor 后强制重写）。预期收益：veto_rate 46% → ≤ 10%，overall_mean 3.728 → 6.5+ = 直接从 L0 跨到 L2 边界。
 
 ---
 
@@ -337,13 +337,15 @@ manifest 含：`authoring_intent_ranking` + `mandatory_pairs_must_not_reverse` +
 
 每轮迭代（包括 R4 re-baseline 之前）应跑一次 calibration ranking 检查，若不达标必须先修 prompt / 维度 / 权重。
 
-### 4.3 external-style calibration subset（R6 追加）
+### 4.3 external-style calibration proxy subset（R6 追加）
 
 路径：`tests/test_evals/fixtures/calibration_v1/external/`
 入库时间：Sprint 25 Round 6（2026-04-30）
 样本数：3
 
-这组样本用于打破 `calibration_v1` 全部由同一 AI 生成的自循环偏差。出于版权与可维护性考虑，R6 未提交真实长版权片段；当前 external subset 是原创、人工策划、manual product-lens 排序的参考样本，不冒充任何真实作者原文。
+这组样本用于验证 external fixture scaffolding 与 runner 能力。出于版权与可维护性考虑，R6 未提交真实长版权片段；当前 external subset 是 Codex 原创、manual product-lens 排序的 **proxy** 样本，不冒充任何真实作者原文。
+
+**边界**：这组 proxy 不能等同于真正的外部人工评分样本，也不能完全打破 `calibration_v1` 全部由同一 AI 生成的自循环偏差。Claude 原要求仍是：引入 ≥ 3 段真实外部/人类作者/授权或明确人工评分样本（可为人类精仿），并以人工排序 + mandatory pairs 验证。
 
 | Sample | 预期档位 | 备注 |
 |---|---|---|
@@ -361,7 +363,7 @@ manifest 含：`authoring_intent_ranking` + `mandatory_pairs_must_not_reverse` +
   --output artifacts/eval/sprint-25/round-6/external_calibration_ranking.json
 ```
 
-R6 实测：Spearman ρ = 1.0（小样本记录但不 gated），mandatory pair violations = 0，PASS。
+R6 proxy 实测：Spearman ρ = 1.0（小样本记录但不 gated），mandatory pair violations = 0，PASS。
 
 ### 4.4 已知 calibration 限制（R3 实测）
 
@@ -369,7 +371,7 @@ R6 实测：Spearman ρ = 1.0（小样本记录但不 gated），mandatory pair 
 
 - 排序一致性通过（Spearman ≥ 0.95）是**必要条件**，不是**充分条件**。
 - 通过未必证明判官在外部数据上有判别力，可能只是 AI fingerprint 自匹配。
-- R6 已引入 3 段 external-style 原创人工锚点作为第一层防线；后续若要进一步提高外部效度，可追加授权片段或人工盲评样本，但不得提交未授权长版权原文。
+- R6 已引入 3 段 external-style proxy 锚点作为 scaffolding 验证；真正的外部人工评分样本仍 pending。后续需要追加授权片段、人类精仿或人工盲评样本，但不得提交未授权长版权原文。
 
 R3 实测排序 Spearman ρ = 0.5606（远低于阈值），说明即使在自写样本上 calibration 也没通过——这反而是好消息：评测系统暴露了自己的盲区，不是过拟合到自己写的样本。
 
