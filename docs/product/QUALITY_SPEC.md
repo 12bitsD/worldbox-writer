@@ -1,6 +1,6 @@
 # QUALITY_SPEC — WorldBox Writer 评测系统单一真相源
 
-**文档状态**：DRAFT v0.3（Sprint 25 Round 3 完成 partial；calibration_v1 入库 + schema 修复；ranking gate 暴露两个 prompt-级 bug 待 R4 修）
+**文档状态**：v0.4（Sprint 25 Round 4 完成；R3 两个 prompt bug 修复，calibration ρ=0.9848 通过；当前生产系统取得首份可信 baseline；档位 L1-L4 阈值落地）
 **最后更新**：2026-04-30
 **适用范围**：本文档是 WorldBox Writer 评测系统的 single source of truth。所有 judge prompt、评测协议、档位定义都从这里派生。任何 sprint round 的成功指标必须直接引用这里的 dimension 名称与阈值。
 
@@ -242,7 +242,68 @@ R3+ 各轮的 exit gate 都应按这个 framework 设计：测下游使用层的
 
 ## 3. Tiers（档位定义）
 
-> 占位。R4 用新评测重测当前系统取得真实基线后填充：L1–L4 用相对量（盲测胜率 + calibration 排序一致性）+ 必要的绝对阈值。
+档位定义来自两类数据：(a) calibration_v1 上 judge_committee 的 mean overall（10 段，每段 N=3）+ (b) 当前生产系统 baseline（3 simulation × 4 章 × N=2）。
+
+**核心改动**：旧档位使用"全部维度 ≥ X 分"绝对阈值；新档位用 **三个独立维度**：
+
+1. **`overall_mean`（含 veto 影响）**：aggregate 0-10，反映"读者实际感受到的分数"。
+2. **`axis_means`（独立于 veto）**：emotion / structure / prose 三轴的 mean，反映"骨架质量"。
+3. **`veto_rate`**：toxic veto 命中率。这是 L1 → L2 之间最容易被忽略的杀手指标。
+
+### 3.1 L1–L4 档位阈值
+
+| 档位 | 对标 | overall_mean | 三轴 axis_means 全部 | veto_rate |
+|---|---|---|---|---|
+| **L1 追平市面（中位网文）** | 起点中位签约作 | ≥ **4.0** | ≥ **5.0** | ≤ **30%** |
+| **L2 好（头部签约）** | 起点头部签约作 | ≥ **6.5** | ≥ **6.5** | ≤ **10%** |
+| **L3 优秀** | 猫腻 / 烽火戏诸侯档 | ≥ **8.0** | ≥ **7.5** | ≤ **5%** |
+| **L4 神作** | 现象级 | ≥ **9.0** | ≥ **8.5** | = **0%** |
+
+**三个条件全部满足才算到达该档位**。任何一个差就回退一档。
+
+### 3.2 calibration_v1 样本所在档位（参考锚点）
+
+用上面阈值标注 calibration 样本的"等价档位"——这些是判官认可的样本范例。
+
+| Sample | overall (N=3) | axes 估计 | veto | 档位 |
+|---|---|---|---|---|
+| F_power_cost | 7.71 | head-tier 多轴齐高 | 0% | **L2 顶**（接近 L3 的下限） |
+| A_head_tier | 7.67 | 同上 | 0% | **L2 顶** |
+| G3_tier3_solid | 7.16 | 中等头部 | 0% | **L2 中** |
+| E_payoff_burst | 6.63 | 头部 + payoff signature | 0% | **L2 下** |
+| B_mid_tier | 6.66 | 紧致 mid+ | 0% | **L1 顶 / L2 边界** |
+| G4_tier4_topshelf | 6.31 | 文学型，axis 中等 | 0% | **L1 顶** |
+| D_mid_arc | 5.98 | mid arc 合理 | 0% | **L1 中** |
+| G2_tier2_midcommon | 4.08 | mid common | 0% | **L1 下 / 不及格边界** |
+| C_ai_water | 0.0 (vetoed) | — | 100% | **L0**（毒草，不及格） |
+| G1_tier1_severe | 0.0 (vetoed) | — | 100% | **L0** |
+
+Calibration anchors 给 L1 / L2 / L0 提供了 anchor；L3 / L4 暂无 anchor（calibration_v1 的 head-tier 接近 L3 下限但不到 L3 的"猫腻级"档），R6+ 引入外部人工样本后再校准 L3 / L4 阈值。
+
+### 3.3 当前生产系统位置（R4 baseline）
+
+跑 3 个 simulation × 4 章 × N=2 judge runs（artifact `artifacts/eval/sprint-25/round-4/baseline_v1.json`）：
+
+| Simulation | overall_mean | axis_means (emo/str/prose) | veto_rate |
+|---|---|---|---|
+| city_aftermath | 5.085 | 6.83 / 7.57 / 6.54 | 17% (2/12) |
+| cultivation_betrayal | 3.700 | 7.81 / 7.40 / 6.58 | 33% (4/12) |
+| border_bridge | 2.400 | 6.57 / 7.30 / 6.02 | 63% (5/8 valid runs) |
+| **aggregate** | **3.728** | **7.07 / 7.42 / 6.38** | **46%** |
+
+**当前档位判定**：
+
+- overall_mean 3.728 < L1 的 4.0 → 不及格（L0）
+- axis_means 全部 ≥ 5.0 → 满足 L1 axis 条件
+- veto_rate 46% > L1 的 30% → **不及格**
+
+**结论：当前生产系统处于 L0（不及格）**，但**根本原因是 ai_prose_ticks veto 率失控**——一旦把 veto 率压到 30% 以下，axis means 已经有 L2 等级（emotion 7.07 / structure 7.42 / prose 6.38），即可立刻进入 L1 顶部、接近 L2。
+
+### 3.4 Sprint 26+ 攻击优先级（由 R4 baseline 派生）
+
+Baseline 数据明确指出：**Narrator agent 的 AI 水文修辞癖是当前最大单点瓶颈**——所有 11 次 chapter veto 都由 `ai_prose_ticks` 触发。这意味着即使其他生成端 agent 完美，只要 Narrator 还在产出 over-metaphor / parallel / translation_tone / expository_dialogue 中任意子类，分数就会被 veto 一刀切。
+
+R6 完成后 Sprint 26 的第一个 round 应攻这个：Narrator prompt 加 ai_prose_ticks 子类显式禁用 + 失败回退（比如检测到 over-metaphor 后强制重写）。预期收益：veto_rate 46% → ≤ 10%，overall_mean 3.728 → 6.5+ = 直接从 L0 跨到 L2 边界。
 
 ---
 

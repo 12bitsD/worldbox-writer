@@ -1,0 +1,218 @@
+{
+  "schema_version": "calibration-ranking-v0",
+  "generated_at": "2026-04-29T21:39:26.384670+00:00",
+  "config": {
+    "runs": 3,
+    "temperature": 0.2,
+    "max_tokens": 320,
+    "model": null,
+    "provider": "kimi-coding",
+    "spearman_threshold": 0.95
+  },
+  "totals": {
+    "samples": 10,
+    "underlying_llm_calls": 450,
+    "duration_seconds": 3879.44
+  },
+  "authoring_intent_ranking": [
+    "G4_tier4_topshelf",
+    "F_power_cost",
+    "E_payoff_burst",
+    "G3_tier3_solid",
+    "A_head_tier",
+    "D_mid_arc",
+    "B_mid_tier",
+    "G2_tier2_midcommon",
+    "C_ai_water",
+    "G1_tier1_severe"
+  ],
+  "committee_ranking": [
+    "A_head_tier",
+    "F_power_cost",
+    "G3_tier3_solid",
+    "G4_tier4_topshelf",
+    "B_mid_tier",
+    "D_mid_arc",
+    "E_payoff_burst",
+    "G2_tier2_midcommon",
+    "C_ai_water",
+    "G1_tier1_severe"
+  ],
+  "sample_results": {
+    "G4_tier4_topshelf": {
+      "tier": 4,
+      "authoring_intent": "literary top-tier (猫腻 / 烽火戏诸侯 / 爱潜水的乌贼 风骨)；克制 + 物件承载情绪 + 角色弧线初现",
+      "overalls": [
+        6.67,
+        6.37,
+        7.17
+      ],
+      "overall_mean": 6.737,
+      "overall_std": 0.404,
+      "veto_count": 0,
+      "axis_means": {
+        "emotion_axis": 5.0,
+        "structure_axis": 7.11,
+        "prose_axis": 8.67
+      }
+    },
+    "F_power_cost": {
+      "tier": 4,
+      "authoring_intent": "head-tier 力量使用 + 不可逆代价（视神经断/三指残/寿命减/漏风），cost_paid 触发样本",
+      "overalls": [
+        7.46,
+        7.2,
+        6.83
+      ],
+      "overall_mean": 7.163,
+      "overall_std": 0.317,
+      "veto_count": 0,
+      "axis_means": {
+        "emotion_axis": 7.55,
+        "structure_axis": 6.58,
+        "prose_axis": 7.22
+      }
+    },
+    "E_payoff_burst": {
+      "tier": 4,
+      "authoring_intent": "head-tier 爽点爆发瞬间：底牌揭晓 + 配角 (3+2) 反应 + 反派崩溃，payoff_intensity 触发样本",
+      "overalls": [
+        0.0,
+        6.4,
+        6.55
+      ],
+      "overall_mean": 4.317,
+      "overall_std": 3.739,
+      "veto_count": 1,
+      "axis_means": {
+        "emotion_axis": 5.92,
+        "structure_axis": 7.11,
+        "prose_axis": 6.56
+      }
+    },
+    "G3_tier3_solid": {
+      "tier": 3,
+      "authoring_intent": "扎实头部网文：物质感 + 对话辨识度 + 节奏稳",
+      "overalls": [
+        6.93,
+        6.7,
+        6.83
+      ],
+      "overall_mean": 6.82,
+      "overall_std": 0.115,
+      "veto_count": 0,
+      "axis_means": {
+        "emotion_axis": 6.55,
+        "structure_axis": 6.44,
+        "prose_axis": 7.56
+      }
+    },
+    "A_head_tier": {
+      "tier": 3,
+      "authoring_intent": "head-tier 紧致网文（v0 baseline）",
+      "overalls": [
+        8.01,
+        7.7,
+        8.03
+      ],
+      "overall_mean": 7.913,
+      "overall_std": 0.185,
+      "veto_count": 0,
+      "axis_means": {
+        "emotion_axis": 7.89,
+        "structure_axis": 7.75,
+        "prose_axis": 8.11
+      }
+    },
+    "D_mid_arc": {
+      "tier": 2,
+      "authoring_intent": "中段场景，角色与冲突已建立。golden_start_density 应正确判 applicable=false",
+      "overalls": [
+        5.67,
+        5.4,
+        6.6
+      ],
+      "overall_mean": 5.89,
+      "overall_std": 0.63,
+      "veto_count": 0,
+      "axis_means": {
+        "emotion_axis": 5.56,
+        "structure_axis": 5.78,
+        "prose_axis": 6.44
+      }
+    },
+    "B_mid_tier": {
+      "tier": 2,
+      "authoring_intent": "中位 (v0 baseline)：模板化 + 概念化",
+      "overalls": [
+        6.4,
+        6.57,
+        6.5
+      ],
+      "overall_mean": 6.49,
+      "overall_std": 0.085,
+      "veto_count": 0,
+      "axis_means": {
+        "emotion_axis": 6.56,
+        "structure_axis": 6.67,
+        "prose_axis": 6.22
+      }
+    },
+    "G2_tier2_midcommon": {
+      "tier": 2,
+      "authoring_intent": "中位常见网文：功能化对话 + 概念化场景",
+      "overalls": [
+        4.1,
+        4.23,
+        4.07
+      ],
+      "overall_mean": 4.133,
+      "overall_std": 0.085,
+      "veto_count": 0,
+      "axis_means": {
+        "emotion_axis": 4.33,
+        "structure_axis": 3.67,
+        "prose_axis": 4.33
+      }
+    },
+    "C_ai_water": {
+      "tier": 1,
+      "authoring_intent": "AI 水文 (v0 baseline)：过度比喻 + 排比 + 翻译腔 + 段尾说教",
+      "overalls": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "overall_mean": 0.0,
+      "overall_std": 0.0,
+      "veto_count": 3,
+      "axis_means": {
+        "emotion_axis": 3.67,
+        "structure_axis": 3.42,
+        "prose_axis": 3.0
+      }
+    },
+    "G1_tier1_severe": {
+      "tier": 1,
+      "authoring_intent": "毒草级 AI 水文：多类毒点齐发（比喻 + 排比 + 翻译腔 + 解释性对话 + 段尾说教 + 反派死于话多）",
+      "overalls": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "overall_mean": 0.0,
+      "overall_std": 0.0,
+      "veto_count": 3,
+      "axis_means": {
+        "emotion_axis": 2.11,
+        "structure_axis": 2.0,
+        "prose_axis": 2.67
+      }
+    }
+  },
+  "spearman_correlation": 0.7182,
+  "spearman_pass": false,
+  "mandatory_pair_violations": [],
+  "mandatory_pairs_pass": true,
+  "overall_pass": false
+}
