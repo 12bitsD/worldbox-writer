@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sprint 25 R2 — judge_committee stability against the calibration_v0 fixtures.
+"""Sprint 25 R2 — judge_committee stability against calibration fixtures.
 
 Runs `judge_committee(text)` N times per sample and reports:
 
@@ -39,7 +39,7 @@ from worldbox_writer.evals.dimension_prompts import (  # noqa: E402
 )
 from worldbox_writer.evals.llm_judge import judge_committee  # noqa: E402
 
-CALIBRATION_DIR = REPO_ROOT / "tests/test_evals/fixtures/calibration_v0"
+CALIBRATION_DIR = REPO_ROOT / "tests/test_evals/fixtures/calibration_v1"
 DEFAULT_OUTPUT = REPO_ROOT / "artifacts/eval/sprint-25/round-2/committee_stability.json"
 
 

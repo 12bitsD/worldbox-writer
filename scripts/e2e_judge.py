@@ -1,5 +1,24 @@
 #!/usr/bin/env python3
-"""Run LLM-as-judge scoring against a persisted simulation scene."""
+"""End-to-end real-LLM judge runner — Sprint 25 R6 slim version.
+
+Uses the v0.5+ `judge_committee` (per-chapter) and `judge_multi_chapter`
+(cross-chapter) APIs from `worldbox_writer.evals.llm_judge`.
+
+Public exports preserved (used by `scripts/eval/baseline_current_system.py`
+and `scripts/eval/cross_passage_validation.py`):
+  - `run_real_simulation(premise, chapters, simulation_id)` — drive the
+    production agents through N chapters and return rendered prose +
+    scene_scripts.
+  - `_minimal_eval_world(simulation_id)` — deterministic 1-tick fixture.
+  - `build_minimal_eval_data_payload`, `write_minimal_eval_data_file` —
+    deterministic mock fixture builders for tests.
+  - Module constants: `DEFAULT_REAL_PREMISE`, `DEFAULT_REAL_CHAPTERS`, etc.
+
+Removed in R6:
+  - The legacy single-prompt-multi-dim judge path (judge_prose / judge_story
+    / judge_scene_script / batch_judge / aggregate_judge_results / build_*_
+    judge_prompt). The committee API replaces all of these.
+"""
 
 from __future__ import annotations
 
@@ -8,17 +27,17 @@ import json
 import os
 import signal
 import sys
-import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 from uuid import UUID
 
 from worldbox_writer.agents.actor import ActionProposal, ActorAgent
 from worldbox_writer.agents.critic import CriticAgent
 from worldbox_writer.agents.director import DirectorAgent
 from worldbox_writer.agents.gm import GMAgent
-from worldbox_writer.agents.narrator import NarratorAgent, NarratorOutput
+from worldbox_writer.agents.narrator import NarratorAgent
 from worldbox_writer.core.dual_loop import (
     ActionIntent,
     SceneBeat,
@@ -26,14 +45,13 @@ from worldbox_writer.core.dual_loop import (
     SceneScript,
 )
 from worldbox_writer.core.models import Character, NodeType, StoryNode, WorldState
-from worldbox_writer.evals import llm_judge
-from worldbox_writer.storage.db import load_session as db_load_session
+from worldbox_writer.evals.llm_judge import judge_committee, judge_multi_chapter
 from worldbox_writer.utils.llm import chat_completion
 
 SIMULATION_ID_ENV = "WORLDBOX_SIMULATION_ID"
 EVAL_DATA_SCHEMA_VERSION = "worldbox-eval-data-v1"
 DEFAULT_EVAL_SIMULATION_ID = "eval-minimal-mock"
-DEFAULT_REAL_SIMULATION_ID = "eval-real-round8"
+DEFAULT_REAL_SIMULATION_ID = "eval-real-r6"
 DEFAULT_REAL_CHAPTERS = 4
 DEFAULT_REAL_TIMEOUT_SECONDS = 300
 DEFAULT_REAL_PREMISE = (
@@ -42,7 +60,6 @@ DEFAULT_REAL_PREMISE = (
     "被彻底改写。"
 )
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MOCK_BASELINE_PATH = REPO_ROOT / "docs/orchestrator/baseline-mock-round6.json"
 MINIMAL_WORLD_ID = UUID("00000000-0000-4000-8000-000000000001")
 MINIMAL_ALI_ID = UUID("00000000-0000-4000-8000-000000000101")
 MINIMAL_BAIYE_ID = UUID("00000000-0000-4000-8000-000000000102")
@@ -50,34 +67,20 @@ MINIMAL_NODE_ID = UUID("00000000-0000-4000-8000-000000000201")
 MINIMAL_GENERATED_AT = "2026-04-29T00:00:00+00:00"
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _score_from(result: dict[str, Any], default: float = 0.0) -> float:
-    value = result.get("score")
-    if isinstance(value, bool):
+def _coerce_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
         return default
-    if isinstance(value, (int, float)):
-        return float(value)
-    return default
-
-
-def _composite_score(
-    scene_script_score: dict[str, Any], prose_score: dict[str, Any]
-) -> float:
-    return round((_score_from(scene_script_score) + _score_from(prose_score)) / 2, 2)
-
-
-def _empty_score(error: str) -> dict[str, Any]:
-    result = llm_judge.aggregate_judge_results(
-        [],
-        error=error,
-        reasoning="没有可评测的 simulation 数据。",
-    )
-    result["score"] = 0.0
-    result["overall"] = 0.0
-    return result
 
 
 class RealSimulationTimeout(RuntimeError):
@@ -121,78 +124,15 @@ def _probe_real_llm(model: str | None = None) -> None:
     )
 
 
-def _safe_average(values: Sequence[float]) -> float:
-    numbers = [float(value) for value in values if isinstance(value, (int, float))]
-    if not numbers:
-        return 0.0
-    return round(sum(numbers) / len(numbers), 2)
-
-
-def _average_mapping(values: Sequence[dict[str, Any]]) -> dict[str, float]:
-    buckets: dict[str, list[float]] = {}
-    for mapping in values:
-        for key, raw in mapping.items():
-            if isinstance(raw, bool):
-                continue
-            if isinstance(raw, (int, float)):
-                buckets.setdefault(key, []).append(float(raw))
-    return {key: _safe_average(bucket) for key, bucket in sorted(buckets.items())}
-
-
-def _baseline_scores(payload: dict[str, Any]) -> dict[str, float]:
-    scene_score = _dict_value(payload.get("scene_script_score"))
-    scene_story = _dict_value(scene_score.get("story"))
-    prose_score = _dict_value(payload.get("prose_score"))
-    composite = _score_from(payload)
-    if composite == 0.0 and isinstance(payload.get("composite"), (int, float)):
-        composite = float(payload["composite"])
-    return {
-        "story": _score_from(scene_story),
-        "prose": _score_from(prose_score),
-        "composite": composite,
-    }
-
-
-def _dict_value(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def _load_mock_baseline(path: str | Path | None = None) -> dict[str, Any]:
-    baseline_path = Path(path) if path is not None else DEFAULT_MOCK_BASELINE_PATH
-    try:
-        raw = json.loads(baseline_path.read_text(encoding="utf-8"))
-    except Exception as exc:
-        return {
-            "path": str(baseline_path),
-            "load_error": str(exc),
-            "story": 0.0,
-            "prose": 0.0,
-            "composite": 0.0,
-        }
-    scores = _baseline_scores(raw)
-    return {"path": str(baseline_path), **scores}
-
-
-def _comparison_against_mock(
-    overall: dict[str, Any], mock_baseline_path: str | Path | None
-) -> dict[str, Any]:
-    baseline = _load_mock_baseline(mock_baseline_path)
-    return {
-        "mock_baseline": baseline,
-        "delta": {
-            "story": round(float(overall.get("story", 0.0)) - baseline["story"], 2),
-            "prose": round(float(overall.get("prose", 0.0)) - baseline["prose"], 2),
-            "composite": round(
-                float(overall.get("composite", 0.0)) - baseline["composite"], 2
-            ),
-        },
-    }
+# ---------------------------------------------------------------------------
+# Minimal deterministic eval fixture (kept for tests)
+# ---------------------------------------------------------------------------
 
 
 def _minimal_eval_world(
     simulation_id: str,
 ) -> tuple[WorldState, SceneScript, StoryNode]:
-    """Build a deterministic one-tick simulation for local judge smoke runs."""
+    """Build a deterministic one-tick simulation for local smoke runs."""
     ali = Character(
         id=MINIMAL_ALI_ID,
         name="阿璃",
@@ -293,7 +233,7 @@ def _minimal_eval_world(
 def build_minimal_eval_data_payload(
     simulation_id: str | None = None,
 ) -> dict[str, Any]:
-    """Return deterministic mock simulation data suitable for e2e_judge."""
+    """Return deterministic mock simulation data suitable for fixtures/tests."""
     resolved_sim_id = simulation_id or DEFAULT_EVAL_SIMULATION_ID
     world, scene_script, node = _minimal_eval_world(resolved_sim_id)
     return {
@@ -312,10 +252,12 @@ def write_minimal_eval_data_file(
     *,
     simulation_id: str | None = None,
 ) -> Path:
-    """Write deterministic mock eval data to a temp file or explicit path."""
+    """Write deterministic mock eval data to disk."""
     payload = build_minimal_eval_data_payload(simulation_id)
     encoded = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
     if output_path is None:
+        import tempfile
+
         with tempfile.NamedTemporaryFile(
             mode="w",
             encoding="utf-8",
@@ -332,241 +274,20 @@ def write_minimal_eval_data_file(
     return path
 
 
-def _world_from_scene_script(
-    scene_script: SceneScript,
-    *,
-    simulation_id: str,
-) -> WorldState:
-    summary = scene_script.summary.strip() or scene_script.title.strip()
-    node = StoryNode(
-        id=MINIMAL_NODE_ID,
-        title=scene_script.title or "Eval Scene",
-        description=summary or "SceneScript eval data.",
-        node_type=NodeType.DEVELOPMENT,
-        character_ids=list(scene_script.participating_character_ids),
-        is_rendered=True,
-        rendered_text=summary,
-        metadata={
-            "tick": scene_script.tick,
-            "source": "scene_script_eval_data",
-            "scene_script": scene_script.model_dump(mode="json"),
-        },
-    )
-    world = WorldState(
-        world_id=MINIMAL_WORLD_ID,
-        title=scene_script.title or "Eval Scene",
-        premise=summary,
-        tick=scene_script.tick,
-        active_branch_id=scene_script.branch_id or "main",
-        metadata={
-            "source": "scene_script_eval_data",
-            "simulation_id": simulation_id,
-            "last_committed_scene_script": scene_script.model_dump(mode="json"),
-        },
-    )
-    world.add_node(node)
-    world.current_node_id = str(node.id)
-    return world
-
-
-def _load_eval_data_file(path: str | Path) -> tuple[str, WorldState, dict[str, Any]]:
-    raw = json.loads(Path(path).read_text(encoding="utf-8"))
-    if not isinstance(raw, dict):
-        raise ValueError("eval data JSON must be an object")
-
-    simulation_id = str(raw.get("simulation_id") or DEFAULT_EVAL_SIMULATION_ID)
-    world_payload = raw.get("world") or raw.get("world_state")
-    if world_payload is not None:
-        if isinstance(world_payload, str):
-            return (
-                simulation_id,
-                WorldState.model_validate_json(world_payload),
-                raw,
-            )
-        return simulation_id, WorldState.model_validate(world_payload), raw
-
-    scene_script = _coerce_scene_script(raw.get("scene_script") or raw)
-    if scene_script is not None:
-        return (
-            simulation_id,
-            _world_from_scene_script(scene_script, simulation_id=simulation_id),
-            raw,
-        )
-
-    raise ValueError("eval data JSON must contain a WorldState or SceneScript")
-
-
-def _fallback_report(
-    simulation_id: str | None,
-    error: str,
-    warnings: Sequence[str],
-) -> dict[str, Any]:
-    scene_score = _empty_score(error)
-    prose_score = _empty_score(error)
-    aggregate_judge = llm_judge.aggregate_judge_results(
-        {"scene_script": scene_score, "prose": prose_score},
-        component_weights={"scene_script": 0.5, "prose": 0.5},
-        error=error,
-        reasoning="没有可评测的 simulation 数据。",
-    )
-    return {
-        "simulation_id": simulation_id or "",
-        "scene_script_score": scene_score,
-        "prose_score": prose_score,
-        "composite": 0.0,
-        "scores": _dict_value(aggregate_judge.get("scores")),
-        "axis_scores": _dict_value(aggregate_judge.get("axis_scores")),
-        "god_tier_scores": _dict_value(aggregate_judge.get("god_tier_scores")),
-        "toxic_flags": {
-            key: bool(value)
-            for key, value in _dict_value(aggregate_judge.get("toxic_flags")).items()
-        },
-        "weights": _dict_value(aggregate_judge.get("weights")),
-        "judge_overall": 0.0,
-        "weighted_score_pre_veto": 0.0,
-        "vetoed": False,
-        "critical_issues": [
-            str(item)
-            for item in aggregate_judge.get("critical_issues", [])
-            if str(item).strip()
-        ],
-        "timestamp": _now_iso(),
-        "warnings": list(warnings),
-    }
-
-
-def _coerce_int(value: Any, default: int = 0) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _all_nodes_by_tick(world: WorldState) -> list[StoryNode]:
-    return [
-        node
-        for _, node in sorted(
-            enumerate(world.nodes.values()),
-            key=lambda item: (
-                _coerce_int(item[1].metadata.get("tick"), world.tick),
-                item[0],
-            ),
-        )
-    ]
-
-
-def _select_node(world: WorldState) -> StoryNode | None:
-    if world.current_node_id:
-        current_node = world.get_node(world.current_node_id)
-        if current_node is not None:
-            return current_node
-
-    nodes = _all_nodes_by_tick(world)
-    return nodes[-1] if nodes else None
-
-
-def _coerce_scene_script(value: Any) -> SceneScript | None:
-    if isinstance(value, SceneScript):
-        return value
-    if not isinstance(value, dict):
-        return None
-    try:
-        return SceneScript.model_validate(value)
-    except Exception:
-        return None
-
-
-def _stored_scene_script(
-    world: WorldState, selected_node: StoryNode | None
-) -> tuple[SceneScript | None, str]:
-    candidates: list[tuple[Any, str]] = []
-    if selected_node is not None:
-        candidates.append((selected_node.metadata.get("scene_script"), "current_node"))
-
-    for key in ("last_committed_scene_script", "last_scene_script"):
-        candidates.append((world.metadata.get(key), f"world_metadata.{key}"))
-
-    for node in reversed(_all_nodes_by_tick(world)):
-        candidates.append((node.metadata.get("scene_script"), "node_metadata"))
-
-    for raw, source in candidates:
-        scene_script = _coerce_scene_script(raw)
-        if scene_script is not None:
-            return scene_script, source
-
-    return None, ""
-
-
-def _character_name(world: WorldState, character_id: str | None) -> str | None:
-    if not character_id:
-        return None
-    character = world.get_character(character_id)
-    return character.name if character else None
-
-
-def _scene_script_from_node(world: WorldState, node: StoryNode) -> SceneScript:
-    summary = node.description.strip() or node.title.strip() or "场景暂无摘要。"
-    actor_id = node.character_ids[0] if node.character_ids else None
-    outcome = (node.rendered_text or "").strip() or summary
-    return SceneScript(
-        scene_id=f"scene_{str(node.id).replace('-', '')[:12]}",
-        branch_id=node.branch_id or world.active_branch_id,
-        tick=_coerce_int(node.metadata.get("tick"), world.tick),
-        title=node.title,
-        summary=summary,
-        public_facts=[summary],
-        participating_character_ids=list(node.character_ids),
-        beats=[
-            SceneBeat(
-                actor_id=actor_id,
-                actor_name=_character_name(world, actor_id),
-                summary=summary,
-                outcome=outcome[:240],
-                metadata={"source": "story_node_fallback"},
-            )
-        ],
-        source_node_id=str(node.id),
-        metadata={"source": "story_node_fallback"},
-    )
-
-
-def _narrator_output_from_node(
-    world: WorldState, node: StoryNode
-) -> tuple[NarratorOutput, str]:
-    if node.rendered_text and node.rendered_text.strip():
-        prose = node.rendered_text.strip()
-        return (
-            NarratorOutput(
-                node_id=str(node.id),
-                prose=prose,
-                chapter_title=node.title or None,
-                word_count=len(prose),
-                style_notes="Loaded from rendered StoryNode.",
-            ),
-            "rendered_node",
-        )
-
-    try:
-        return NarratorAgent().render_node(node, world), "narrator_render_node"
-    except Exception as exc:
-        prose = node.description.strip() or node.title.strip()
-        return (
-            NarratorOutput(
-                node_id=str(node.id),
-                prose=prose,
-                chapter_title=node.title or None,
-                word_count=len(prose),
-                style_notes=f"Narrator fallback after error: {exc}",
-            ),
-            "story_node_fallback",
-        )
+# ---------------------------------------------------------------------------
+# Real simulation runner — used by R4 baseline + R5 cross-passage validation
+# ---------------------------------------------------------------------------
 
 
 def _recent_memory_context(world: WorldState, limit: int = 4) -> str:
-    nodes = [node for node in _all_nodes_by_tick(world) if node.rendered_text]
+    nodes = sorted(
+        world.nodes.values(),
+        key=lambda n: _coerce_int(n.metadata.get("tick"), world.tick),
+    )
+    nodes = [node for node in nodes if node.rendered_text][-limit:]
     return "\n".join(
         f"- {node.title}: {str(node.rendered_text or node.description)[:160]}"
-        for node in nodes[-limit:]
+        for node in nodes
     )
 
 
@@ -663,7 +384,7 @@ def run_real_simulation(
     chapters: int = DEFAULT_REAL_CHAPTERS,
     simulation_id: str = DEFAULT_REAL_SIMULATION_ID,
 ) -> dict[str, Any]:
-    """Run a minimal four-chapter simulation through the production agents."""
+    """Run the production agents through N chapters and return rendered prose."""
     director = DirectorAgent()
     actor = ActorAgent()
     critic = CriticAgent()
@@ -692,10 +413,7 @@ def run_real_simulation(
 
         intent_critiques = critic.review_batch(world, scene_plan, action_intents)
         scene_script = gm.settle_scene(
-            world,
-            scene_plan,
-            action_intents,
-            intent_critiques,
+            world, scene_plan, action_intents, intent_critiques
         )
         node = _commit_real_eval_node(world, scene_plan, scene_script)
         narrator_output = narrator.render_node(node, world, is_chapter_start=True)
@@ -738,572 +456,182 @@ def run_real_simulation(
     }
 
 
-def _mock_simulation_payload(
-    simulation_id: str,
-    *,
-    chapters: int,
-    reason: str,
-) -> dict[str, Any]:
-    _world, scene_script, node = _minimal_eval_world(simulation_id)
-    chapter_payloads: list[dict[str, Any]] = []
-    for chapter_number in range(1, max(1, chapters) + 1):
-        script = scene_script.model_copy(
-            update={
-                "script_id": f"{scene_script.script_id}-fallback-{chapter_number}",
-                "scene_id": f"{scene_script.scene_id}-fallback-{chapter_number}",
-                "tick": chapter_number,
-                "metadata": {
-                    **scene_script.metadata,
-                    "fallback_reason": reason,
-                    "chapter": chapter_number,
-                },
-            }
-        )
-        chapter_payloads.append(
-            {
-                "chapter": chapter_number,
-                "node_id": str(node.id),
-                "scene_script": script,
-                "rendered_text": node.rendered_text or script.summary,
-            }
-        )
-    return {
-        "simulation_id": simulation_id,
-        "chapters": chapter_payloads,
-        "warnings": [f"真实 LLM 不可用，已降级到 mock baseline：{reason}"],
-        "metadata": {
-            "real_llm_available": False,
-            "fallback_reason": reason,
-            "chapter_count": len(chapter_payloads),
-        },
-    }
+# ---------------------------------------------------------------------------
+# Committee + multi-chapter judge wrappers (R6+ entry point)
+# ---------------------------------------------------------------------------
 
 
-def _chapter_items(chapters: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
-        {
-            "type": "simulation_chapter",
-            "chapter": chapter.get("chapter", index),
-            "scene_script": chapter.get("scene_script"),
-            "rendered_text": chapter.get("rendered_text", ""),
-        }
-        for index, chapter in enumerate(chapters, start=1)
-    ]
-
-
-def _chapter_report(
-    chapter: dict[str, Any],
-    judge_result: dict[str, Any],
-) -> dict[str, Any]:
-    scene_script = _coerce_scene_script(chapter.get("scene_script"))
-    rendered_text = str(chapter.get("rendered_text") or "")
-    story_result = _dict_value(judge_result.get("story"))
-    prose_result = _dict_value(judge_result.get("prose"))
-    story_dimensions = _dict_value(story_result.get("dimensions"))
-    prose_dimensions = _dict_value(prose_result.get("dimensions"))
-    ai_issues = _dict_value(prose_result.get("ai_issues"))
-
-    return {
-        "chapter": _coerce_int(chapter.get("chapter"), 0),
-        "node_id": str(chapter.get("node_id") or ""),
-        "title": scene_script.title if scene_script is not None else "",
-        "scene_script": (
-            scene_script.model_dump(mode="json") if scene_script is not None else {}
-        ),
-        "rendered_text": rendered_text,
-        "component_scores": {
-            "story": _score_from(story_result),
-            "prose": _score_from(prose_result),
-            "composite": _score_from(judge_result),
-        },
-        "scores": _dict_value(judge_result.get("scores")),
-        "axis_scores": _dict_value(judge_result.get("axis_scores")),
-        "god_tier_scores": _dict_value(judge_result.get("god_tier_scores")),
-        "toxic_flags": {
-            key: bool(value)
-            for key, value in _dict_value(judge_result.get("toxic_flags")).items()
-        },
-        "weights": _dict_value(judge_result.get("weights")),
-        "overall": _score_from(judge_result),
-        "weighted_score_pre_veto": _score_from(
-            {"score": judge_result.get("weighted_score_pre_veto")},
-            _score_from(judge_result),
-        ),
-        "vetoed": bool(judge_result.get("vetoed", False)),
-        "critical_issues": [
-            str(item)
-            for item in judge_result.get("critical_issues", [])
-            if str(item).strip()
-        ],
-        "dimensions": {
-            "story": story_dimensions,
-            "prose": prose_dimensions,
-            "ai_issues": ai_issues,
-        },
-        "judge": judge_result,
-    }
-
-
-def _build_comparable_simulation_report(
+def judge_simulation_committee(
     simulation: dict[str, Any],
     *,
-    model: str | None,
-    mode: str,
-    fallback_used: bool,
-    mock_baseline_path: str | Path | None = None,
-    use_judge: bool = True,
+    model: str | None = None,
+    judge_runs_per_chapter: int = 2,
 ) -> dict[str, Any]:
-    chapters = [
-        chapter
-        for chapter in simulation.get("chapters", [])
-        if isinstance(chapter, dict)
-    ]
-    if use_judge:
-        judge_results = llm_judge.batch_judge(
-            _chapter_items(chapters),
-            model=model,
-            max_concurrency=1,
-        )
-    else:
-        baseline = _load_mock_baseline(mock_baseline_path)
-        judge_results = [
+    """Score every rendered chapter with judge_committee + multi-chapter judge.
+
+    Returns a single report compatible with R4 baseline_v1 schema:
+      - simulation_id
+      - chapter_count
+      - chapters[] (each with overall_mean, axis_means, veto_count)
+      - cross_passage (single judge_multi_chapter run on the full sequence)
+      - aggregate (overall_mean, axis_means, veto_rate)
+    """
+    chapters = simulation.get("chapters", [])
+    chapter_reports: list[dict[str, Any]] = []
+    chapter_texts: list[str] = []
+
+    for chapter in chapters:
+        rendered = (chapter.get("rendered_text") or "").strip()
+        if not rendered:
+            continue
+        chapter_texts.append(rendered)
+        committee_runs = []
+        for _ in range(judge_runs_per_chapter):
+            committee_runs.append(judge_committee(rendered, model=model, concurrency=1))
+        overalls = [r["overall"] for r in committee_runs]
+        veto_count = sum(1 for r in committee_runs if r["vetoed"])
+        axis_runs: dict[str, list[float]] = {
+            axis: [] for axis in ("emotion_axis", "structure_axis", "prose_axis")
+        }
+        for r in committee_runs:
+            for axis_key, axis_value in r["axis_scores"].items():
+                if isinstance(axis_value, (int, float)):
+                    axis_runs[axis_key].append(float(axis_value))
+
+        import statistics
+
+        chapter_reports.append(
             {
-                "score": baseline["composite"],
-                "story": {
-                    "score": baseline["story"],
-                    "dimensions": {},
-                    "reasoning": "真实 LLM 不可用，使用 mock baseline 分数。",
-                    "model": model,
-                    "error": "mock_baseline_fallback",
+                "chapter": chapter.get("chapter"),
+                "node_id": chapter.get("node_id", ""),
+                "rendered_chars": len(rendered),
+                "overall_mean": (
+                    round(statistics.mean(overalls), 3) if overalls else None
+                ),
+                "veto_count": veto_count,
+                "axis_means": {
+                    axis: (round(statistics.mean(values), 2) if values else None)
+                    for axis, values in axis_runs.items()
                 },
-                "prose": {
-                    "score": baseline["prose"],
-                    "dimensions": {},
-                    "ai_issues": {},
-                    "reasoning": "真实 LLM 不可用，使用 mock baseline 分数。",
-                    "model": model,
-                    "error": "mock_baseline_fallback",
-                },
-                "model": model,
-                "error": "mock_baseline_fallback",
+                "committee_runs": [
+                    {
+                        "overall": r["overall"],
+                        "vetoed": r["vetoed"],
+                        "veto_reasons": r["veto_reasons"],
+                        "axis_scores": r["axis_scores"],
+                    }
+                    for r in committee_runs
+                ],
             }
-            for chapter in chapters
-        ]
-    chapter_reports = [
-        _chapter_report(chapter, judge_results[index])
-        for index, chapter in enumerate(chapters)
-        if index < len(judge_results)
-    ]
-    story_scores = [chapter["component_scores"]["story"] for chapter in chapter_reports]
-    prose_scores = [chapter["component_scores"]["prose"] for chapter in chapter_reports]
-    composite_scores = [
-        chapter["component_scores"]["composite"] for chapter in chapter_reports
-    ]
-    dimensions = {
-        "story": _average_mapping(
-            [chapter["dimensions"]["story"] for chapter in chapter_reports]
-        ),
-        "prose": _average_mapping(
-            [chapter["dimensions"]["prose"] for chapter in chapter_reports]
-        ),
-        "ai_issues": _average_mapping(
-            [chapter["dimensions"]["ai_issues"] for chapter in chapter_reports]
-        ),
-    }
-    aggregate_judge = llm_judge.aggregate_judge_results(
-        judge_results,
-        model=model,
-        reasoning="聚合多章节 judge 结果。",
+        )
+
+    cross_passage = (
+        judge_multi_chapter(chapter_texts, model=model, concurrency=1)
+        if len(chapter_texts) >= 2
+        else None
     )
-    overall = {
-        "story": _safe_average(story_scores),
-        "prose": _safe_average(prose_scores),
-        "composite": _safe_average(composite_scores),
-        "chapter_count": len(chapter_reports),
-    }
-    comparison = _comparison_against_mock(overall, mock_baseline_path)
+
+    import statistics
+
+    overall_means = [
+        c["overall_mean"]
+        for c in chapter_reports
+        if isinstance(c["overall_mean"], (int, float))
+    ]
+    veto_total = sum(c["veto_count"] for c in chapter_reports)
+    veto_runs_total = sum(len(c["committee_runs"]) for c in chapter_reports)
     return {
-        "schema_version": "worldbox-real-eval-report-v1",
-        "simulation_id": str(
-            simulation.get("simulation_id") or DEFAULT_REAL_SIMULATION_ID
-        ),
-        "mode": mode,
-        "fallback_used": fallback_used,
+        "simulation_id": simulation.get("simulation_id", ""),
         "generated_at": _now_iso(),
-        "scores": _dict_value(aggregate_judge.get("scores")),
-        "axis_scores": _dict_value(aggregate_judge.get("axis_scores")),
-        "god_tier_scores": _dict_value(aggregate_judge.get("god_tier_scores")),
-        "toxic_flags": {
-            key: bool(value)
-            for key, value in _dict_value(aggregate_judge.get("toxic_flags")).items()
-        },
-        "weights": _dict_value(aggregate_judge.get("weights")),
-        "judge_overall": _score_from(aggregate_judge),
-        "weighted_score_pre_veto": _score_from(
-            {"score": aggregate_judge.get("weighted_score_pre_veto")},
-            _score_from(aggregate_judge),
-        ),
-        "vetoed": bool(aggregate_judge.get("vetoed", False)),
-        "critical_issues": [
-            str(item)
-            for item in aggregate_judge.get("critical_issues", [])
-            if str(item).strip()
-        ],
-        "component_scores": {
-            "chapters": [chapter["component_scores"] for chapter in chapter_reports],
-            "overall": {
-                "story": overall["story"],
-                "prose": overall["prose"],
-                "composite": overall["composite"],
-            },
-        },
-        "overall": overall,
-        "dimensions": dimensions,
-        "comparison": comparison,
+        "chapter_count": len(chapter_reports),
         "chapters": chapter_reports,
-        "warnings": list(simulation.get("warnings", [])),
-        "metadata": _dict_value(simulation.get("metadata")),
+        "cross_passage": cross_passage,
+        "aggregate": {
+            "overall_mean": (
+                round(statistics.mean(overall_means), 3) if overall_means else None
+            ),
+            "veto_rate": (
+                round(veto_total / veto_runs_total, 3) if veto_runs_total else None
+            ),
+        },
+        "warnings": simulation.get("warnings", []),
     }
 
 
-def build_real_e2e_judge_report(
-    simulation_id: str | None = None,
-    *,
-    model: str | None = None,
-    premise: str = DEFAULT_REAL_PREMISE,
-    chapters: int = DEFAULT_REAL_CHAPTERS,
-    timeout_seconds: int = DEFAULT_REAL_TIMEOUT_SECONDS,
-    mock_baseline_path: str | Path | None = None,
-) -> dict[str, Any]:
-    resolved_sim_id = simulation_id or DEFAULT_REAL_SIMULATION_ID
-    try:
-        with _RealEvalTimer(timeout_seconds):
-            _probe_real_llm()
-            simulation = run_real_simulation(
-                premise=premise,
-                chapters=chapters,
-                simulation_id=resolved_sim_id,
-            )
-            return _build_comparable_simulation_report(
-                simulation,
-                model=model,
-                mode="real",
-                fallback_used=False,
-                mock_baseline_path=mock_baseline_path,
-            )
-    except Exception as exc:
-        simulation = _mock_simulation_payload(
-            resolved_sim_id,
-            chapters=chapters,
-            reason=str(exc)[:300],
-        )
-        return _build_comparable_simulation_report(
-            simulation,
-            model=model,
-            mode="mock_fallback",
-            fallback_used=True,
-            mock_baseline_path=mock_baseline_path,
-            use_judge=False,
-        )
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
 
 
-def _build_e2e_judge_report_from_world(
-    simulation_id: str,
-    world: WorldState,
-    *,
-    model: str | None,
-    warnings: list[str],
-    eval_data: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    selected_node = _select_node(world)
-    scene_script, scene_script_source = _stored_scene_script(world, selected_node)
-    if scene_script is None:
-        if selected_node is None:
-            warnings.append("WorldState 没有可用于评测的 StoryNode。")
-            return _fallback_report(simulation_id, "missing_story_node", warnings)
-        scene_script = _scene_script_from_node(world, selected_node)
-        scene_script_source = "story_node_fallback"
-        warnings.append("未找到已提交 SceneScript，已从最新 StoryNode 合成评测脚本。")
-
-    if selected_node is not None:
-        narrator_output, prose_source = _narrator_output_from_node(world, selected_node)
-    else:
-        prose = scene_script.summary.strip()
-        narrator_output = NarratorOutput(
-            node_id=scene_script.source_node_id or "",
-            prose=prose,
-            chapter_title=scene_script.title or None,
-            word_count=len(prose),
-            style_notes="Fallback prose from SceneScript summary.",
-        )
-        prose_source = "scene_script_summary_fallback"
-        warnings.append("未找到 StoryNode，已使用 SceneScript summary 作为 prose。")
-
-    if not narrator_output.prose.strip():
-        narrator_output.prose = scene_script.summary.strip()
-        narrator_output.word_count = len(narrator_output.prose)
-        prose_source = "scene_script_summary_fallback"
-        warnings.append("Narrator prose 为空，已使用 SceneScript summary 作为 prose。")
-
-    scene_script_score = llm_judge.judge_scene_script(scene_script, model=model)
-    prose_score = llm_judge.judge_prose(narrator_output.prose, model=model)
-    aggregate_judge = llm_judge.aggregate_judge_results(
-        {"scene_script": scene_script_score, "prose": prose_score},
-        component_weights={"scene_script": 0.5, "prose": 0.5},
-        model=model,
-        reasoning="聚合单次 e2e 的 SceneScript 与 prose 评测结果。",
-    )
-
-    report = {
-        "simulation_id": simulation_id,
-        "scene_script_score": scene_script_score,
-        "prose_score": prose_score,
-        "composite": _composite_score(scene_script_score, prose_score),
-        "scores": _dict_value(aggregate_judge.get("scores")),
-        "axis_scores": _dict_value(aggregate_judge.get("axis_scores")),
-        "god_tier_scores": _dict_value(aggregate_judge.get("god_tier_scores")),
-        "toxic_flags": {
-            key: bool(value)
-            for key, value in _dict_value(aggregate_judge.get("toxic_flags")).items()
-        },
-        "weights": _dict_value(aggregate_judge.get("weights")),
-        "judge_overall": _score_from(aggregate_judge),
-        "weighted_score_pre_veto": _score_from(
-            {"score": aggregate_judge.get("weighted_score_pre_veto")},
-            _score_from(aggregate_judge),
-        ),
-        "vetoed": bool(aggregate_judge.get("vetoed", False)),
-        "critical_issues": [
-            str(item)
-            for item in aggregate_judge.get("critical_issues", [])
-            if str(item).strip()
-        ],
-        "timestamp": _now_iso(),
-        "scene_script": {
-            "source": scene_script_source,
-            "script_id": scene_script.script_id,
-            "scene_id": scene_script.scene_id,
-            "beat_count": len(scene_script.beats),
-        },
-        "prose": {
-            "source": prose_source,
-            "node_id": narrator_output.node_id,
-            "word_count": narrator_output.word_count,
-        },
-        "warnings": warnings,
-    }
-    if eval_data is not None:
-        report["eval_data"] = eval_data
-    return report
-
-
-def build_e2e_judge_report(
-    simulation_id: str | None = None,
-    *,
-    model: str | None = None,
-    eval_data_path: str | Path | None = None,
-    generate_if_missing: bool = True,
-    generated_data_output: str | Path | None = None,
-) -> dict[str, Any]:
-    """Build an end-to-end judge report for one simulation or eval-data file."""
-    warnings: list[str] = []
-
-    if eval_data_path is not None:
-        try:
-            file_sim_id, world, raw = _load_eval_data_file(eval_data_path)
-        except Exception as exc:
-            warnings.append(f"读取 eval data 失败：{exc}")
-            return _fallback_report(simulation_id, "eval_data_load_failed", warnings)
-        resolved_sim_id = simulation_id or file_sim_id
-        return _build_e2e_judge_report_from_world(
-            resolved_sim_id,
-            world,
-            model=model,
-            warnings=warnings,
-            eval_data={
-                "source": "file",
-                "path": str(Path(eval_data_path)),
-                "schema_version": raw.get("schema_version", ""),
-                "mock": bool(raw.get("mock", False)),
-            },
-        )
-
-    resolved_sim_id = simulation_id or os.environ.get(SIMULATION_ID_ENV)
-    world: WorldState | None = None
-
-    if resolved_sim_id:
-        try:
-            data = db_load_session(resolved_sim_id)
-        except Exception as exc:
-            warnings.append(f"读取 simulation 数据失败：{exc}")
-            if not generate_if_missing:
-                return _fallback_report(
-                    resolved_sim_id, "simulation_load_failed", warnings
-                )
-        else:
-            if data and isinstance(data.get("world"), WorldState):
-                world = data["world"]
-            elif data and data.get("world"):
-                warnings.append(
-                    f"simulation {resolved_sim_id} 的 WorldState 无法识别。"
-                )
-                if not generate_if_missing:
-                    return _fallback_report(
-                        resolved_sim_id, "invalid_world_state", warnings
-                    )
-            else:
-                warnings.append(
-                    f"simulation {resolved_sim_id} 不存在或没有保存 WorldState。"
-                )
-                if not generate_if_missing:
-                    return _fallback_report(
-                        resolved_sim_id, "simulation_not_found", warnings
-                    )
-    else:
-        warnings.append(f"未提供 simulation id，也未设置 {SIMULATION_ID_ENV}。")
-        if not generate_if_missing:
-            return _fallback_report(None, "missing_simulation_id", warnings)
-
-    if world is not None and resolved_sim_id is not None:
-        return _build_e2e_judge_report_from_world(
-            resolved_sim_id,
-            world,
-            model=model,
-            warnings=warnings,
-        )
-
-    generated_sim_id = resolved_sim_id or DEFAULT_EVAL_SIMULATION_ID
-    generated_path = write_minimal_eval_data_file(
-        generated_data_output,
-        simulation_id=generated_sim_id,
-    )
-    _, generated_world, raw = _load_eval_data_file(generated_path)
-    warnings.append(
-        f"未找到可评测 simulation，已生成最小 mock eval data：{generated_path}"
-    )
-    return _build_e2e_judge_report_from_world(
-        generated_sim_id,
-        generated_world,
-        model=model,
-        warnings=warnings,
-        eval_data={
-            "source": "generated_mock",
-            "path": str(generated_path),
-            "schema_version": raw.get("schema_version", ""),
-            "mock": bool(raw.get("mock", True)),
-        },
-    )
-
-
-def build_mock_e2e_judge_report(
-    simulation_id: str | None = None,
-    *,
-    model: str | None = None,
-) -> dict[str, Any]:
-    """Build a judge report from deterministic built-in mock eval data."""
-    resolved_sim_id = simulation_id or DEFAULT_EVAL_SIMULATION_ID
-    world, _scene_script, _node = _minimal_eval_world(resolved_sim_id)
-    return _build_e2e_judge_report_from_world(
-        resolved_sim_id,
-        world,
-        model=model,
-        warnings=[],
-        eval_data={
-            "source": "builtin_mock",
-            "schema_version": EVAL_DATA_SCHEMA_VERSION,
-            "mock": True,
-        },
-    )
-
-
-def main(argv: Sequence[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Score a persisted WorldBox simulation with LLM-as-judge."
+        description="Run a real production simulation and judge it with the committee + multi-chapter judge."
     )
-    parser.add_argument("simulation_id", nargs="?", help="Simulation id to evaluate")
+    parser.add_argument("--premise", default=DEFAULT_REAL_PREMISE)
+    parser.add_argument("--chapters", type=int, default=DEFAULT_REAL_CHAPTERS)
+    parser.add_argument("--simulation-id", default=DEFAULT_REAL_SIMULATION_ID)
+    parser.add_argument("--judge-runs-per-chapter", type=int, default=2)
+    parser.add_argument("--model", default=None)
     parser.add_argument(
-        "--simulation-id",
-        dest="simulation_id_option",
-        default=None,
-        help=f"Simulation id to evaluate. Overrides {SIMULATION_ID_ENV}.",
+        "--timeout-seconds", type=int, default=DEFAULT_REAL_TIMEOUT_SECONDS
     )
-    parser.add_argument("--model", default=None, help="Optional judge model override")
-    parser.add_argument(
-        "--eval-data",
-        default=None,
-        help="Optional WorldState/SceneScript JSON file to evaluate instead of DB.",
-    )
-    parser.add_argument(
-        "--generated-data-output",
-        default=None,
-        help="Optional path for auto-generated minimal eval data.",
-    )
-    parser.add_argument(
-        "--no-generate",
-        action="store_true",
-        help="Disable automatic minimal eval-data generation when DB data is missing.",
-    )
+    parser.add_argument("--output", default=None, help="JSON output path")
     parser.add_argument(
         "--mock",
         action="store_true",
-        help="Evaluate deterministic built-in mock data instead of loading DB data.",
+        help="Skip real simulation; use the deterministic minimal fixture.",
     )
-    parser.add_argument(
-        "--real",
-        action="store_true",
-        help="Run a real minimal 4-chapter simulation before judging.",
-    )
-    parser.add_argument(
-        "--premise",
-        default=DEFAULT_REAL_PREMISE,
-        help="Premise for --real simulation mode.",
-    )
-    parser.add_argument(
-        "--chapters",
-        type=int,
-        default=DEFAULT_REAL_CHAPTERS,
-        help="Chapter count for --real simulation mode.",
-    )
-    parser.add_argument(
-        "--timeout-seconds",
-        type=int,
-        default=DEFAULT_REAL_TIMEOUT_SECONDS,
-        help="Wall-clock timeout for --real simulation before mock fallback.",
-    )
-    parser.add_argument(
-        "--mock-baseline",
-        default=str(DEFAULT_MOCK_BASELINE_PATH),
-        help="Mock baseline JSON used for --real comparison.",
-    )
-    parser.add_argument("--output", default=None, help="Optional JSON output path")
     args = parser.parse_args(argv)
 
-    simulation_id = (
-        args.simulation_id_option
-        or args.simulation_id
-        or os.environ.get(SIMULATION_ID_ENV)
-    )
-    if args.real:
-        report = build_real_e2e_judge_report(
-            simulation_id,
-            model=args.model,
-            premise=args.premise,
-            chapters=args.chapters,
-            timeout_seconds=args.timeout_seconds,
-            mock_baseline_path=args.mock_baseline,
-        )
-    elif args.mock:
-        report = build_mock_e2e_judge_report(simulation_id, model=args.model)
+    if args.mock:
+        world, scene_script, node = _minimal_eval_world(args.simulation_id)
+        simulation = {
+            "simulation_id": args.simulation_id,
+            "chapters": [
+                {
+                    "chapter": 1,
+                    "node_id": str(node.id),
+                    "rendered_text": node.rendered_text,
+                    "scene_script": scene_script,
+                }
+            ],
+            "warnings": [],
+        }
     else:
-        report = build_e2e_judge_report(
-            simulation_id,
-            model=args.model,
-            eval_data_path=args.eval_data,
-            generate_if_missing=not args.no_generate,
-            generated_data_output=args.generated_data_output,
-        )
-    payload = json.dumps(report, ensure_ascii=False, indent=2)
+        try:
+            with _RealEvalTimer(args.timeout_seconds):
+                _probe_real_llm(model=args.model)
+                simulation = run_real_simulation(
+                    premise=args.premise,
+                    chapters=args.chapters,
+                    simulation_id=args.simulation_id,
+                )
+        except Exception as exc:
+            print(
+                f"Real simulation failed ({type(exc).__name__}: {exc}); "
+                f"falling back to minimal fixture.",
+                file=sys.stderr,
+            )
+            world, scene_script, node = _minimal_eval_world(args.simulation_id)
+            simulation = {
+                "simulation_id": args.simulation_id,
+                "chapters": [
+                    {
+                        "chapter": 1,
+                        "node_id": str(node.id),
+                        "rendered_text": node.rendered_text,
+                    }
+                ],
+                "warnings": [f"real-fallback: {type(exc).__name__}: {exc}"],
+            }
 
+    report = judge_simulation_committee(
+        simulation,
+        model=args.model,
+        judge_runs_per_chapter=args.judge_runs_per_chapter,
+    )
+
+    payload = json.dumps(report, ensure_ascii=False, indent=2)
     if args.output:
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)

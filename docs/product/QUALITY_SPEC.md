@@ -1,6 +1,6 @@
 # QUALITY_SPEC — WorldBox Writer 评测系统单一真相源
 
-**文档状态**：v0.4（Sprint 25 Round 4 完成；R3 两个 prompt bug 修复，calibration ρ=0.9848 通过；当前生产系统取得首份可信 baseline；档位 L1-L4 阈值落地）
+**文档状态**：v1.0（Sprint 25 全部 6 round 完成；评测系统从词汇定型到 multi-chapter judge + 毒点回归集 + 当前生产 baseline + L1-L4 档位 全套基建落地）
 **最后更新**：2026-04-30
 **适用范围**：本文档是 WorldBox Writer 评测系统的 single source of truth。所有 judge prompt、评测协议、档位定义都从这里派生。任何 sprint round 的成功指标必须直接引用这里的 dimension 名称与阈值。
 

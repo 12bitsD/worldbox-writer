@@ -51,7 +51,7 @@ from worldbox_writer.evals.dimension_prompts import (  # noqa: E402
 from worldbox_writer.evals.llm_judge import parse_judge_response  # noqa: E402
 from worldbox_writer.utils.llm import chat_completion  # noqa: E402
 
-CALIBRATION_DIR = REPO_ROOT / "tests/test_evals/fixtures/calibration_v0"
+CALIBRATION_DIR = REPO_ROOT / "tests/test_evals/fixtures/calibration_v1"
 DEFAULT_OUTPUT = REPO_ROOT / "artifacts/eval/sprint-25/round-1/dim_stability.json"
 
 
