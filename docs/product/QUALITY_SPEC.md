@@ -337,13 +337,39 @@ manifest 含：`authoring_intent_ranking` + `mandatory_pairs_must_not_reverse` +
 
 每轮迭代（包括 R4 re-baseline 之前）应跑一次 calibration ranking 检查，若不达标必须先修 prompt / 维度 / 权重。
 
-### 4.3 已知 calibration 限制（R3 实测）
+### 4.3 external-style calibration subset（R6 追加）
+
+路径：`tests/test_evals/fixtures/calibration_v1/external/`
+入库时间：Sprint 25 Round 6（2026-04-30）
+样本数：3
+
+这组样本用于打破 `calibration_v1` 全部由同一 AI 生成的自循环偏差。出于版权与可维护性考虑，R6 未提交真实长版权片段；当前 external subset 是原创、人工策划、manual product-lens 排序的参考样本，不冒充任何真实作者原文。
+
+| Sample | 预期档位 | 备注 |
+|---|---|---|
+| `X1_external_head_market` | high | 头部网文向：目标、压力、物件证据、潜台词对话 |
+| `X2_external_mid_common` | mid | 中位常见网文：概念化动作、说明性对话偏多 |
+| `X3_external_ai_water` | low | AI 水文毒点：多子类 `ai_prose_ticks` + `preachiness` |
+
+验证命令：
+
+```bash
+.venv/bin/python scripts/eval/calibration_ranking.py \
+  --fixture-dir tests/test_evals/fixtures/calibration_v1/external \
+  --runs 3 \
+  --skip-spearman-gate \
+  --output artifacts/eval/sprint-25/round-6/external_calibration_ranking.json
+```
+
+R6 实测：Spearman ρ = 1.0（小样本记录但不 gated），mandatory pair violations = 0，PASS。
+
+### 4.4 已知 calibration 限制（R3 实测）
 
 **重要**：当前 calibration set 是 Claude 自己写的——同一个模型既写样本又写判官 prompt。这意味着：
 
 - 排序一致性通过（Spearman ≥ 0.95）是**必要条件**，不是**充分条件**。
 - 通过未必证明判官在外部数据上有判别力，可能只是 AI fingerprint 自匹配。
-- R6+ 必须引入**外部人工标注样本**（猫腻 / 烽火 / 起点头部 真实片段）才能真正打破自循环偏差。
+- R6 已引入 3 段 external-style 原创人工锚点作为第一层防线；后续若要进一步提高外部效度，可追加授权片段或人工盲评样本，但不得提交未授权长版权原文。
 
 R3 实测排序 Spearman ρ = 0.5606（远低于阈值），说明即使在自写样本上 calibration 也没通过——这反而是好消息：评测系统暴露了自己的盲区，不是过拟合到自己写的样本。
 

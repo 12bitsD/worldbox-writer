@@ -1,0 +1,87 @@
+{
+  "schema_version": "calibration-ranking-v0",
+  "generated_at": "2026-04-30T06:36:04.505567+00:00",
+  "config": {
+    "runs": 3,
+    "temperature": 0.2,
+    "max_tokens": 320,
+    "model": null,
+    "provider": "kimi-coding",
+    "fixture_dir": "/Users/bytedance/Desktop/CodeSpace/worldbox-writer/tests/test_evals/fixtures/calibration_v1/external",
+    "spearman_threshold": 0.95,
+    "spearman_gate_required": false
+  },
+  "totals": {
+    "samples": 3,
+    "underlying_llm_calls": 135,
+    "duration_seconds": 644.65
+  },
+  "authoring_intent_ranking": [
+    "X1_external_head_market",
+    "X2_external_mid_common",
+    "X3_external_ai_water"
+  ],
+  "committee_ranking": [
+    "X1_external_head_market",
+    "X2_external_mid_common",
+    "X3_external_ai_water"
+  ],
+  "sample_results": {
+    "X1_external_head_market": {
+      "tier": 4,
+      "authoring_intent": "外部人工锚点：头部网文向。近端目标清楚、压力具体、对话有潜台词、物件承载信息，无 AI 水文毒点。",
+      "overalls": [
+        5.92,
+        8.1,
+        6.3
+      ],
+      "overall_mean": 6.773,
+      "overall_std": 1.165,
+      "veto_count": 0,
+      "axis_means": {
+        "emotion_axis": 6.75,
+        "structure_axis": 6.69,
+        "prose_axis": 6.89
+      }
+    },
+    "X2_external_mid_common": {
+      "tier": 2,
+      "authoring_intent": "外部人工锚点：中位常见网文。目标和冲突存在，但概念化动作、功能性对话、说明偏多，未到 toxic veto。",
+      "overalls": [
+        6.4,
+        6.43,
+        5.9
+      ],
+      "overall_mean": 6.243,
+      "overall_std": 0.298,
+      "veto_count": 0,
+      "axis_means": {
+        "emotion_axis": 6.78,
+        "structure_axis": 6.67,
+        "prose_axis": 5.11
+      }
+    },
+    "X3_external_ai_water": {
+      "tier": 1,
+      "authoring_intent": "外部人工锚点：低质 AI 水文毒点样本。多子类 AI prose ticks + 段尾说教，应被 veto 并排在最后。",
+      "overalls": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "overall_mean": 0.0,
+      "overall_std": 0.0,
+      "veto_count": 3,
+      "axis_means": {
+        "emotion_axis": 2.22,
+        "structure_axis": 2.0,
+        "prose_axis": 2.11
+      }
+    }
+  },
+  "spearman_correlation": 1.0,
+  "spearman_pass": true,
+  "mandatory_pair_violations": [],
+  "mandatory_pairs_pass": true,
+  "overall_pass": true
+}

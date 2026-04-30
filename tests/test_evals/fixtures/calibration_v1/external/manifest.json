@@ -1,0 +1,60 @@
+{
+  "schema_version": "calibration-external-v0.1",
+  "purpose": "Sprint 25 R6 external-style calibration anchors. These are original, human-curated Chinese web-novel reference passages, not Claude calibration_v1 self-loop samples and not copyrighted source excerpts.",
+  "created_at": "2026-04-30",
+  "ranking_authority": "manual product-lens ranking (起点头部网文质量标准；原创样本，不冒充任何真实作者原文)",
+  "source_policy": "No long copyrighted excerpts. Samples are original reference passages designed to approximate external human-rated quality tiers without copying living authors or specific published text.",
+  "authoring_intent_ranking": [
+    "X1_external_head_market",
+    "X2_external_mid_common",
+    "X3_external_ai_water"
+  ],
+  "mandatory_pairs_must_not_reverse": [
+    ["X1_external_head_market", "X2_external_mid_common"],
+    ["X1_external_head_market", "X3_external_ai_water"],
+    ["X2_external_mid_common", "X3_external_ai_water"]
+  ],
+  "samples": [
+    {
+      "id": "X1_external_head_market",
+      "path": "X1_external_head_market.txt",
+      "tier": 4,
+      "authoring_intent": "外部人工锚点：头部网文向。近端目标清楚、压力具体、对话有潜台词、物件承载信息，无 AI 水文毒点。",
+      "expected_signals": [
+        "desire_clarity: high — 主角要在鼓响前交出真账册换父亲出狱，失败代价明确",
+        "tension_pressure: high — 城门将闭、巡检司封仓、同伴身份暴露风险",
+        "material_specificity: high — 米袋线头、蜡封、算盘珠、湿木板、铜钉等具体物件",
+        "dialogue_voice: high — 掌柜、账房、主角说话节奏不同",
+        "ai_prose_ticks: low — 克制叙述，无过度比喻/排比/翻译腔/解释性对话",
+        "preachiness: false"
+      ]
+    },
+    {
+      "id": "X2_external_mid_common",
+      "path": "X2_external_mid_common.txt",
+      "tier": 2,
+      "authoring_intent": "外部人工锚点：中位常见网文。目标和冲突存在，但概念化动作、功能性对话、说明偏多，未到 toxic veto。",
+      "expected_signals": [
+        "desire_clarity: medium — 主角要查清试炼异常，但代价与时限较泛",
+        "tension_pressure: medium — 有长老和试炼压力，但场面压迫不足",
+        "material_specificity: low-medium — 动作多为走近/抬手/运转灵力",
+        "dialogue_voice: low-medium — 台词承担说明功能，角色语言差异弱",
+        "info_show_dont_tell: low-medium — 等级与规则通过对话直接交代",
+        "ai_prose_ticks: below veto — 有轻微模板感但不应 score >= 8"
+      ]
+    },
+    {
+      "id": "X3_external_ai_water",
+      "path": "X3_external_ai_water.txt",
+      "tier": 1,
+      "authoring_intent": "外部人工锚点：低质 AI 水文毒点样本。多子类 AI prose ticks + 段尾说教，应被 veto 并排在最后。",
+      "expected_signals": [
+        "ai_prose_ticks: very high — over_metaphor + parallel + translation_tone + expository_dialogue 多子类齐发",
+        "preachiness: high — 段尾总结升华人生道理",
+        "material_specificity: very low — 抽象形容词堆砌",
+        "dialogue_voice: very low — 翻译腔和说明书式台词",
+        "overall: low or vetoed"
+      ]
+    }
+  ]
+}
