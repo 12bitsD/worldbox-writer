@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Sprint 25 R3 — verify judge_committee ranks calibration_v1 samples in order.
 
-For each sample in tests/test_evals/fixtures/calibration_v1/, run
-`judge_committee(text)` N times, take the mean of `overall`, and compare
-against the authoring-intent ranking in manifest.json.
+For each sample in a calibration fixture directory, run `judge_committee(text)`
+N times, take the mean of `overall`, and compare against the
+authoring-intent ranking in manifest.json. The default fixture directory is
+tests/test_evals/fixtures/calibration_v1/. Use `--fixture-dir` for external
+subsets such as tests/test_evals/fixtures/calibration_v1/external/.
 
 Pass criteria (BOTH must hold):
 
@@ -13,6 +15,8 @@ Pass criteria (BOTH must hold):
      (high, low) in the manifest, committee_mean[high] > committee_mean[low].
 
 Cost: 10 samples × N runs × 15 dims = ~450 LLM calls at N=3, ~15 min sequential.
+Small external subsets may use `--skip-spearman-gate` so mandatory pairs are
+the pass/fail gate while Spearman is still recorded diagnostically.
 """
 
 from __future__ import annotations
@@ -25,7 +29,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT / "src") not in sys.path:
@@ -34,16 +38,16 @@ if str(REPO_ROOT / "src") not in sys.path:
 from worldbox_writer.evals.dimension_prompts import ALL_DIMENSIONS  # noqa: E402
 from worldbox_writer.evals.llm_judge import judge_committee  # noqa: E402
 
-CALIBRATION_DIR = REPO_ROOT / "tests/test_evals/fixtures/calibration_v1"
+DEFAULT_CALIBRATION_DIR = REPO_ROOT / "tests/test_evals/fixtures/calibration_v1"
 DEFAULT_OUTPUT = REPO_ROOT / "artifacts/eval/sprint-25/round-3/calibration_ranking.json"
 
 
-def load_manifest() -> dict[str, Any]:
-    return json.loads((CALIBRATION_DIR / "manifest.json").read_text(encoding="utf-8"))
+def load_manifest(fixture_dir: Path = DEFAULT_CALIBRATION_DIR) -> dict[str, Any]:
+    return json.loads((fixture_dir / "manifest.json").read_text(encoding="utf-8"))
 
 
-def load_sample_text(path_str: str) -> str:
-    return (CALIBRATION_DIR / path_str).read_text(encoding="utf-8").strip()
+def load_sample_text(path_str: str, fixture_dir: Path = DEFAULT_CALIBRATION_DIR) -> str:
+    return (fixture_dir / path_str).read_text(encoding="utf-8").strip()
 
 
 def spearman_rank_correlation(values_a: list[float], values_b: list[float]) -> float:
@@ -73,7 +77,7 @@ def spearman_rank_correlation(values_a: list[float], values_b: list[float]) -> f
     return round(1 - (6 * d_squared) / (n * (n**2 - 1)), 4)
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--temperature", type=float, default=0.2)
@@ -81,9 +85,26 @@ def main() -> int:
     parser.add_argument("--model", default=None)
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
     parser.add_argument("--spearman-threshold", type=float, default=0.95)
-    args = parser.parse_args()
+    parser.add_argument(
+        "--fixture-dir",
+        default=str(DEFAULT_CALIBRATION_DIR),
+        help=(
+            "Directory containing manifest.json and sample txt files. Defaults to "
+            "tests/test_evals/fixtures/calibration_v1."
+        ),
+    )
+    parser.add_argument(
+        "--skip-spearman-gate",
+        action="store_true",
+        help=(
+            "Still compute Spearman, but do not require it for pass/fail. Use for "
+            "small external calibration subsets where mandatory pairs are the gate."
+        ),
+    )
+    args = parser.parse_args(argv)
 
-    manifest = load_manifest()
+    fixture_dir = Path(args.fixture_dir).expanduser().resolve()
+    manifest = load_manifest(fixture_dir)
     samples = manifest["samples"]
     intent_ranking = manifest["authoring_intent_ranking"]
     mandatory_pairs = manifest["mandatory_pairs_must_not_reverse"]
@@ -94,13 +115,16 @@ def main() -> int:
         f"Running {n_samples} samples × {args.runs} runs × {len(ALL_DIMENSIONS)} "
         f"dims = {total_calls} underlying LLM calls (concurrency=1)..."
     )
+    print(f"Fixture dir: {fixture_dir}")
+    if args.skip_spearman_gate:
+        print("Spearman will be computed but not used as a gate.")
 
     started_at = time.time()
     sample_results: dict[str, dict[str, Any]] = {}
 
     for sample_idx, sample in enumerate(samples, start=1):
         sample_id = sample["id"]
-        text = load_sample_text(sample["path"])
+        text = load_sample_text(sample["path"], fixture_dir)
 
         runs: list[dict[str, Any]] = []
         for run_idx in range(args.runs):
@@ -191,7 +215,10 @@ def main() -> int:
                 }
             )
 
-    spearman_pass = spearman >= args.spearman_threshold
+    spearman_gate_required = not args.skip_spearman_gate
+    spearman_pass = (
+        spearman >= args.spearman_threshold if spearman_gate_required else True
+    )
     pairs_pass = not pair_violations
     overall_pass = spearman_pass and pairs_pass
 
@@ -204,7 +231,9 @@ def main() -> int:
             "max_tokens": args.max_tokens,
             "model": args.model,
             "provider": os.environ.get("LLM_PROVIDER"),
+            "fixture_dir": str(fixture_dir),
             "spearman_threshold": args.spearman_threshold,
+            "spearman_gate_required": spearman_gate_required,
         },
         "totals": {
             "samples": n_samples,
@@ -237,7 +266,8 @@ def main() -> int:
         mean = sample_results[sid]["overall_mean"]
         print(f"  {i}. {sid} (mean={mean})")
     print(
-        f"\nSpearman ρ = {spearman} (threshold {args.spearman_threshold}) — "
+        f"\nSpearman ρ = {spearman} (threshold {args.spearman_threshold}"
+        f"{', not gated' if not spearman_gate_required else ''}) — "
         f"{'✓' if spearman_pass else '✗'}"
     )
     print(

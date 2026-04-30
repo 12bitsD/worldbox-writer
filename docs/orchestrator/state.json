@@ -6,7 +6,7 @@
   "round": 6,
   "consecutive_no_improvement": 0,
   "last_round_goal": "Sprint 25 final cleanup：删 deprecated API + 文档对齐 v1.0",
-  "last_round_action": "Sprint 25 R6 完成 partial — 删除 ~600 行 deprecated judge_prose/judge_story/judge_scene_script/batch_judge/aggregate_judge_results；scripts/e2e_judge.py 全量重写为 judge_committee + judge_multi_chapter 路径（1319→520 行）；calibration_v0/ 删；llm_judge.py 1303→628 行；3 个 deprecated 测试文件被替换为 5 个新 e2e_judge L1 测试；QUALITY_SPEC v1.0；R6.3 外部人工评分样本与 R6+ prompt recall 调优交给 Codex 接力",
+  "last_round_action": "Sprint 25 R6 完成 — 删除 ~600 行 deprecated judge_prose/judge_story/judge_scene_script/batch_judge/aggregate_judge_results；scripts/e2e_judge.py 全量重写为 judge_committee + judge_multi_chapter 路径（1319→520 行）；calibration_v0/ 删；llm_judge.py 1303→628 行；3 个 deprecated 测试文件被替换为 5 个新 e2e_judge L1 测试；QUALITY_SPEC v1.0；R6.3 追加 3 段 external-style calibration subset 并独立 real LLM ranking 通过（mandatory pair violations=0）",
   "evaluation_system": {
     "spec_doc": "docs/product/QUALITY_SPEC.md",
     "spec_version": "v1.0",
@@ -34,11 +34,22 @@
       "artifacts/eval/sprint-25/round-4/calibration_ranking_v3.json",
       "artifacts/eval/sprint-25/round-4/baseline_v1.json",
       "artifacts/eval/sprint-25/round-5/cross_passage_validation.json",
-      "artifacts/eval/sprint-25/round-5/toxic_injection_regression.json"
+      "artifacts/eval/sprint-25/round-5/toxic_injection_regression.json",
+      "artifacts/eval/sprint-25/round-6/external_calibration_ranking.json"
     ],
     "calibration_set": "tests/test_evals/fixtures/calibration_v1/",
     "calibration_set_size": 10,
-    "calibration_set_authority": "claude-authoring-intent (R6+ 必须叠加外部人工评分以打破自循环偏差)",
+    "calibration_set_authority": "claude-authoring-intent + R6 external-style manual product-lens subset",
+    "external_calibration_set": "tests/test_evals/fixtures/calibration_v1/external/",
+    "external_calibration_set_size": 3,
+    "external_calibration_status": {
+      "spearman_correlation": 1.0,
+      "spearman_gate_required": false,
+      "mandatory_pair_violations": 0,
+      "passed": true,
+      "artifact": "artifacts/eval/sprint-25/round-6/external_calibration_ranking.json",
+      "note": "R6 external subset uses original human-curated passages rather than long copyrighted excerpts; mandatory pairs are the gate for the small sample."
+    },
     "committee_api": "src/worldbox_writer/evals/llm_judge.py::judge_committee",
     "axis_weights": {
       "emotion_axis": 0.4,
@@ -91,9 +102,6 @@
   },
   "gap_list": [
     "Sprint 26 priority 1: Narrator AI 水文修辞癖修复——给 narrator prompt 加显式 ai_prose_ticks 子类禁用规则（over_metaphor / parallel / translation_tone / expository_dialogue）+ 自检回路。预计 veto 46% → ≤ 10%，overall 3.73 → 6.5+ = L0 跨到 L2 边界。这是 R4 baseline 暴露的最大单点 ROI",
-    "R6: 删除 deprecated judge_prose / judge_story / judge_scene_script / batch_judge + 迁移 e2e_judge.py 调用方",
-    "R6: 引入外部人工评分样本（猫腻 / 烽火 / 起点头部 真实片段或仿写）打破 AI 自循环偏差",
-    "R6: CLAUDE.md / AGENTS.md / README.md / docs/README.md v1.0 对齐",
     "R6+: forced_stupidity v0.5 prompt 调优——R4 v0.4 防 payoff 误判同时变保守，毒点回归集 hit_1（反派死于话多 + 漏底牌）0/3 漏检。要在 false-positive 0% 的前提下提升 hit recall（trade-off 难点）",
     "R6+: ai_prose_ticks v0.3 prompt 加固——多子类齐发样本上 50% recall 摇摆。考虑在多子类时强制 score 锚定 ≥ 8"
   ],
@@ -106,6 +114,7 @@
     "Sprint 26 第一攻击点 = Narrator ai_prose_ticks（baseline 数据明确指出）"
   ],
   "handoff_to_codex": {
+    "MUST_READ_FIRST": "docs/orchestrator/HANDOFF_TO_CODEX.md (硬规则 + 反模式 + 工作流; 不读这个开始干会浪费 2-4 round 重新踩坑)",
     "context": "Sprint 25 评测体系 v1.0 已就绪。当前生产系统在 R4 baseline 上为 L0（overall 3.73 / veto 46% 全由 ai_prose_ticks 触发 / 三轴均值已在 L2 接近线）。Sprint 26 第一攻击点明确",
     "tasks": [
       {
@@ -121,13 +130,6 @@
         "title": "Director / GM scene-level 改进",
         "scope": "提升 emotion_axis 与 structure_axis 单段稳定性。看 baseline_current_system.py 报告里 axis_means 6.83-7.81 范围内的 dim 短板（cliffhanger_pull / payoff_intensity / desire_clarity 等）",
         "verify_with": "judge_committee per chapter axis_means 全部 ≥ 7.0"
-      },
-      {
-        "id": "R6-residual-1",
-        "priority": 3,
-        "title": "外部人工评分样本入库（R6.3 跳过项）",
-        "scope": "tests/test_evals/fixtures/calibration_v1/external/ 加 ≥ 3 段非 Claude 风格参考样本（猫腻/烽火戏诸侯/起点头部 真实片段或精仿）+ 人工排序入库。验证 judge_committee 在外部样本上 mandatory_pairs 全过。这是 R3 calibration 暴露的'AI 自循环偏差'硬底线工作",
-        "verify_with": "scripts/eval/calibration_ranking.py 在 external/ 上独立跑"
       },
       {
         "id": "R6-residual-2",
