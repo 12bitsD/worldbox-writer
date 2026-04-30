@@ -27,7 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-DimensionCategory = Literal["per_passage", "conditional", "toxic"]
+DimensionCategory = Literal["per_passage", "conditional", "toxic", "cross_passage"]
 
 
 @dataclass(frozen=True)
@@ -585,6 +585,143 @@ ALL_DIMENSIONS: tuple[DimensionPrompt, ...] = (
     *CONDITIONAL_DIMENSIONS,
     *TOXIC_DIMENSIONS,
 )
+
+
+# ---------------------------------------------------------------------------
+# Cross-passage dimensions (Sprint 25 R5)
+# ---------------------------------------------------------------------------
+#
+# These dimensions need ≥ 2 chapters of input. They are NOT consumed by
+# `judge_committee` (which is single-chapter). They are consumed by
+# `judge_multi_chapter` in llm_judge.py.
+#
+# Output schema is the same uniform JSON form as per-passage prompts so the
+# parser is shared. The user message embeds chapters with explicit markers.
+
+
+def _cross_passage(
+    dim_id: str, name: str, definition: str, anchors: str
+) -> DimensionPrompt:
+    system = f"""你是 WorldBox Writer 评测系统的「{name}」cross-passage 维度专家。
+你只判定这一个维度，**不**评其他维度。这是一个跨章节维度——输入会包含多章 prose，章节之间用 `<chapter N>` 标记分隔。
+
+你的任务是只在**跨章节层面**判断这一维度，单章细节由 single-chapter committee 处理过了，不要重复评。
+
+定义：
+{definition}
+
+评分锚点（1-10）：
+{anchors}
+
+输出严格 JSON：
+{{
+  "applicable": true | false,
+  "score": <1-10 数值；applicable=false 时为 null>,
+  "evidence_quotes": ["<跨章节证据 1>", "<跨章节证据 2>", ...],
+  "rule_hit": "{dim_id}.<sub_rule>",
+  "reasoning": "≤80 字；必须说明跨章节信号在哪几章之间观察到"
+}}
+
+注意：
+- evidence_quotes 是数组（不是 quote 单数）——跨章维度通常需要 ≥ 2 处证据。
+- evidence_quotes 中的字符串必须是文本里**真实存在**的子串（来自任意章节）。
+- 如果章节不足 2 章，applicable=false。
+- score ≥ 5 时 evidence_quotes 不能为空数组。
+"""
+    return DimensionPrompt(
+        dim_id=dim_id,
+        category="cross_passage",
+        chinese_name=name,
+        system_prompt=system,
+    )
+
+
+FORESHADOWING_RECOVERY = _cross_passage(
+    dim_id="foreshadowing_recovery",
+    name="伏笔回收",
+    definition=(
+        "跨章伏笔的密度与回收：早章节埋下的细节（物件 / 名字 / 习惯 / 异常） "
+        "是否在后章节被有意义地回收？回收时是否产生'读者恍然大悟'的效果？"
+    ),
+    anchors=(
+        "1-3：无伏笔；或前后章节互相孤立没有任何呼应。\n"
+        "4-6：有近距离呼应（同章或紧邻章节），但跨度有限或只是表面提及。\n"
+        "7-8：跨多章的伏笔回收 ≥ 2 处；回收时改变读者对早章节的理解。\n"
+        "9-10：跨整个 simulation 的草蛇灰线 ≥ 3 处；早章一句闲笔在末章成关键。"
+    ),
+)
+
+CHARACTER_ARC_CONSISTENCY = _cross_passage(
+    dim_id="character_arc_consistency",
+    name="角色弧线一致性",
+    definition=(
+        "角色的目标 / 性格 / 能力 / 关系 在跨章节中变化是否合理？变化是否由 "
+        "in-text 事件驱动？是否避免'角色突然变了一个人'式的断崖？同时角色 "
+        "应该有可见的发展，不能整个跨章保持完全静态。"
+    ),
+    anchors=(
+        "1-3：角色性格突变无解释；或反过来角色完全静态毫无内在变化。\n"
+        "4-6：有内在变化但触发不明显；或变化方向不清晰。\n"
+        "7-8：跨章节有明确的角色变化（如：克制 → 决断 / 信任 → 怀疑），由 "
+        "具体事件触发，前后行为符合人设演化。\n"
+        "9-10：角色弧线在跨章节构成完整的内在转变（"
+        "如克莱恩对廷根记忆的演化），变化的每一步都有 in-text 触发与代价。"
+    ),
+)
+
+STAKES_ESCALATION = _cross_passage(
+    dim_id="stakes_escalation",
+    name="风险递进",
+    definition=(
+        "跨章节的 stakes（主角损失 / 时间紧迫 / 敌人强度 / 抉择代价）是否 "
+        "递进？是否避免'打怪平台期'（每章敌人换皮但 stakes 不上升）？stakes "
+        "递进是否由 in-text 事件驱动？"
+    ),
+    anchors=(
+        "1-3：stakes 完全平铺；每章独立，没有累积感。\n"
+        "4-6：略有递进但不显著；敌人换皮 stakes 同质。\n"
+        "7-8：跨章节明显的 stakes 上升（敌人强度 / 时间窗口收紧 / 主角失"
+        "去的东西更重）；递进由具体事件触发。\n"
+        "9-10：stakes 递进伴随主角持续付出代价，到末章读者明确感受到"
+        "'回不去了'的临界点。"
+    ),
+)
+
+SETTING_CONSISTENCY = _cross_passage(
+    dim_id="setting_consistency",
+    name="设定一致性",
+    definition=(
+        "前章节建立的世界规则（力量体系 / 物理 / 政治 / 经济）在后章节是否被 "
+        "无解释打破？同一设定在不同章节是否给出矛盾说法？这是反向维度——"
+        "高分代表'设定坚固'，低分代表'机械降神 / 设定漂移'。"
+    ),
+    anchors=(
+        "1-3：前章规则在后章被无解释打破；或同一设定在不同章节给出矛盾。\n"
+        "4-6：偶有小漂移（数字 / 时间细节不一致），但无重大规则违背。\n"
+        "7-8：跨章节设定一致；如有看似冲突的描述也在文本内自洽解释。\n"
+        "9-10：跨章节设定不仅一致，还在后章节通过新事件展示设定的隐藏 "
+        "面，让读者觉得'这个世界在自己运转'。"
+    ),
+)
+
+
+CROSS_PASSAGE_DIMENSIONS: tuple[DimensionPrompt, ...] = (
+    FORESHADOWING_RECOVERY,
+    CHARACTER_ARC_CONSISTENCY,
+    STAKES_ESCALATION,
+    SETTING_CONSISTENCY,
+)
+
+
+def build_multi_chapter_user_message(chapters: list[str]) -> str:
+    """Embed chapters with markers for cross-passage prompts."""
+    parts: list[str] = ["跨章节评测输入。请只在跨章节层面给分，不要重复评单章细节。\n"]
+    for idx, chapter_text in enumerate(chapters, start=1):
+        parts.append(f"\n<chapter {idx}>")
+        parts.append(chapter_text.strip())
+        parts.append(f"</chapter {idx}>")
+    parts.append("\n请只返回 JSON。")
+    return "\n".join(parts)
 
 
 # Axis grouping for emotion / structure / prose aggregation (used by judge_committee).

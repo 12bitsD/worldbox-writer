@@ -1,0 +1,150 @@
+{
+  "schema_version": "cross-passage-validation-v0.1",
+  "generated_at": "2026-04-30T05:15:43.164419+00:00",
+  "config": {
+    "runs": 3,
+    "temperature": 0.2,
+    "max_tokens": 400,
+    "model": null,
+    "provider": "kimi-coding"
+  },
+  "totals": {
+    "simulations": 2,
+    "duration_seconds": 593.11
+  },
+  "simulations": [
+    {
+      "id": "cultivation_betrayal",
+      "expected_quality_hint": "mid-tier",
+      "chapter_count": 4,
+      "n_runs": 3,
+      "per_dimension": {
+        "foreshadowing_recovery": {
+          "applicable_true": 3,
+          "n_runs": 3,
+          "scores": [
+            4.0,
+            7.0,
+            4.0
+          ],
+          "score_mean": 5.0,
+          "score_std": 1.732
+        },
+        "character_arc_consistency": {
+          "applicable_true": 3,
+          "n_runs": 3,
+          "scores": [
+            7.0,
+            7.0,
+            7.0
+          ],
+          "score_mean": 7.0,
+          "score_std": 0.0
+        },
+        "stakes_escalation": {
+          "applicable_true": 3,
+          "n_runs": 3,
+          "scores": [
+            4.0,
+            4.0,
+            4.0
+          ],
+          "score_mean": 4.0,
+          "score_std": 0.0
+        },
+        "setting_consistency": {
+          "applicable_true": 3,
+          "n_runs": 3,
+          "scores": [
+            4.0,
+            3.0,
+            6.0
+          ],
+          "score_mean": 4.33,
+          "score_std": 1.528
+        }
+      },
+      "overall_runs": [
+        4.75,
+        5.25,
+        5.25
+      ],
+      "overall_mean": 5.08,
+      "overall_std": 0.289
+    },
+    {
+      "id": "city_aftermath",
+      "expected_quality_hint": "head-tier",
+      "chapter_count": 4,
+      "n_runs": 3,
+      "per_dimension": {
+        "foreshadowing_recovery": {
+          "applicable_true": 2,
+          "n_runs": 3,
+          "scores": [
+            8.0,
+            8.0
+          ],
+          "score_mean": 8.0,
+          "score_std": 0.0
+        },
+        "character_arc_consistency": {
+          "applicable_true": 3,
+          "n_runs": 3,
+          "scores": [
+            7.0,
+            8.0,
+            7.0
+          ],
+          "score_mean": 7.33,
+          "score_std": 0.577
+        },
+        "stakes_escalation": {
+          "applicable_true": 3,
+          "n_runs": 3,
+          "scores": [
+            6.0,
+            7.0,
+            6.0
+          ],
+          "score_mean": 6.33,
+          "score_std": 0.577
+        },
+        "setting_consistency": {
+          "applicable_true": 3,
+          "n_runs": 3,
+          "scores": [
+            9.0,
+            9.0,
+            8.0
+          ],
+          "score_mean": 8.67,
+          "score_std": 0.577
+        }
+      },
+      "overall_runs": [
+        7.5,
+        8.0,
+        7.25
+      ],
+      "overall_mean": 7.58,
+      "overall_std": 0.382
+    }
+  ],
+  "gates": {
+    "head_tier_per_dim_std_under_1_0": {
+      "pass": true,
+      "violations": []
+    },
+    "mid_tier_per_dim_std_under_2_0": {
+      "pass": true,
+      "violations": []
+    },
+    "head_tier_applicability_3_of_4": {
+      "pass": true,
+      "violations": []
+    }
+  },
+  "overall_pass": true,
+  "gate_revision": "R5.3 tier-aware re-evaluation"
+}

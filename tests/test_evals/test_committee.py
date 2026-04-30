@@ -373,3 +373,136 @@ def test_forced_stupidity_fabricated_setup_quote_coerced() -> None:
     assert fs["score"] is None
     assert "setup_quote_not_in_source" in fs["coercions"]
     assert result["vetoed"] is False
+
+
+# ===========================================================================
+# R5 multi-chapter judge tests
+# ===========================================================================
+
+from worldbox_writer.evals.dimension_prompts import (  # noqa: E402
+    CROSS_PASSAGE_DIMENSIONS,
+)
+from worldbox_writer.evals.llm_judge import judge_multi_chapter  # noqa: E402
+
+
+def _cross_passage_payload(
+    score: float = 7.0, evidence: list[str] | None = None
+) -> str:
+    return json.dumps(
+        {
+            "applicable": True,
+            "score": score,
+            "evidence_quotes": evidence or [],
+            "rule_hit": "demo.cross",
+            "reasoning": "demo",
+        },
+        ensure_ascii=False,
+    )
+
+
+def _route_by_cross_dim(overrides: dict[str, str] | None = None) -> Any:
+    overrides = overrides or {}
+
+    def side_effect(messages, **_kwargs):
+        system = messages[0]["content"]
+        for dim in CROSS_PASSAGE_DIMENSIONS:
+            if dim.system_prompt == system:
+                if dim.dim_id in overrides:
+                    return overrides[dim.dim_id]
+                return _cross_passage_payload(score=7.0)
+        raise AssertionError(f"unrecognized cross-passage prompt: {system[:60]!r}")
+
+    return side_effect
+
+
+def test_multi_chapter_returns_applicable_false_for_single_chapter() -> None:
+    """Less than 2 chapters → all dims applicable=false, overall None, no LLM calls."""
+    with patch(
+        "worldbox_writer.evals.llm_judge.chat_completion",
+        side_effect=AssertionError("should not call LLM with < 2 chapters"),
+    ):
+        result = judge_multi_chapter(["only one chapter"])
+
+    assert result["chapter_count"] == 1
+    assert result["overall"] is None
+    for dim_id, rec in result["per_dimension"].items():
+        assert rec["applicable"] is False
+        assert rec["score"] is None
+
+
+def test_multi_chapter_runs_4_dims_and_aggregates() -> None:
+    """All 4 cross-passage dims dispatched; overall is mean of applicable scores."""
+    chapters = ["章节一文本", "章节二文本", "章节三文本"]
+    with patch(
+        "worldbox_writer.evals.llm_judge.chat_completion",
+        side_effect=_route_by_cross_dim(),
+    ) as mock_chat:
+        result = judge_multi_chapter(chapters)
+
+    assert mock_chat.call_count == len(CROSS_PASSAGE_DIMENSIONS) == 4
+    assert result["chapter_count"] == 3
+    assert result["overall"] == 7.0
+    assert result["n_applicable"] == 4
+    for dim in CROSS_PASSAGE_DIMENSIONS:
+        rec = result["per_dimension"][dim.dim_id]
+        assert rec["applicable"] is True
+        assert rec["score"] == 7.0
+
+
+def test_multi_chapter_inapplicable_dim_excluded_from_overall() -> None:
+    """A cross-passage dim returning applicable=false drops from overall mean."""
+    chapters = ["章节一", "章节二"]
+    overrides = {
+        "foreshadowing_recovery": json.dumps(
+            {
+                "applicable": False,
+                "score": None,
+                "evidence_quotes": [],
+                "reason": "no foreshadowing visible",
+            }
+        ),
+    }
+    with patch(
+        "worldbox_writer.evals.llm_judge.chat_completion",
+        side_effect=_route_by_cross_dim(overrides=overrides),
+    ):
+        result = judge_multi_chapter(chapters)
+
+    assert result["per_dimension"]["foreshadowing_recovery"]["applicable"] is False
+    assert result["n_applicable"] == 3
+    assert result["overall"] == 7.0  # mean of remaining 3 at 7.0
+
+
+def test_multi_chapter_fabricated_quote_demotes_high_score() -> None:
+    """Score ≥ 5 + invalid evidence_quotes → demoted to 4."""
+    chapters = ["真实存在的章节内容", "另一章真实内容"]
+    fabricated = "这句话根本不在两章里"
+    overrides = {
+        "stakes_escalation": _cross_passage_payload(score=8.0, evidence=[fabricated]),
+    }
+    with patch(
+        "worldbox_writer.evals.llm_judge.chat_completion",
+        side_effect=_route_by_cross_dim(overrides=overrides),
+    ):
+        result = judge_multi_chapter(chapters)
+
+    rec = result["per_dimension"]["stakes_escalation"]
+    assert fabricated in rec["invalid_evidence_quotes"]
+    assert rec["score"] == 4.0
+    assert "evidence_quotes_not_in_source" in rec["coercions"]
+    assert "score_demoted_due_to_fabricated_evidence" in rec["coercions"]
+
+
+def test_multi_chapter_records_parse_failures() -> None:
+    """Bad JSON for one dim is captured in errors[]; others still proceed."""
+    overrides = {"setting_consistency": "not json at all"}
+    with patch(
+        "worldbox_writer.evals.llm_judge.chat_completion",
+        side_effect=_route_by_cross_dim(overrides=overrides),
+    ):
+        result = judge_multi_chapter(["章一", "章二"])
+
+    assert any(err["dim_id"] == "setting_consistency" for err in result["errors"])
+    # Others still applicable=true at default 7.0
+    assert result["per_dimension"]["foreshadowing_recovery"]["applicable"] is True
+    assert result["overall"] == 7.0  # only successful runs counted

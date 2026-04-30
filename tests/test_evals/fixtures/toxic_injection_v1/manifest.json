@@ -1,0 +1,81 @@
+{
+  "schema_version": "toxic-injection-v1",
+  "purpose": "Sprint 25 R5 toxic injection regression set. 12 fixtures spanning hits / clean / borderline for the 3 toxic-veto dimensions. Used as fast-feedback regression for Sprint 26+ generation-side fixes (especially Narrator ai_prose_ticks).",
+  "created_at": "2026-04-30",
+  "veto_threshold": 8.0,
+  "samples": [
+    {
+      "id": "preachiness_hit_1",
+      "expected_label": "hit",
+      "target_dim": "preachiness",
+      "rationale": "段尾'经过这件事，他终于明白了' + '不仅仅是…更是…' + '一场对内心的洗礼' 三段式说教升华"
+    },
+    {
+      "id": "preachiness_hit_2",
+      "expected_label": "hit",
+      "target_dim": "preachiness",
+      "rationale": "末段'懂得了什么叫做真正的责任、什么叫做真正的担当' + '人生的一次升华，一次脱胎换骨' 显式说教"
+    },
+    {
+      "id": "ai_prose_ticks_hit_1",
+      "expected_label": "hit",
+      "target_dim": "ai_prose_ticks",
+      "rationale": "宛如/仿佛/又如同/更如同 三连+连续；三连排比'震得整片山岗'/'每一道都'。命中 over_metaphor + parallel"
+    },
+    {
+      "id": "ai_prose_ticks_hit_2",
+      "expected_label": "hit",
+      "target_dim": "ai_prose_ticks",
+      "rationale": "翻译腔'哦，我的天' + 解释性对话（神秘人长篇说出主角父亲死因背景）+ '你或许不知道'三连"
+    },
+    {
+      "id": "forced_stupidity_hit_1",
+      "expected_label": "hit",
+      "target_dim": "forced_stupidity",
+      "rationale": "'七州智将'反派占绝对优势时长篇嘲讽，主动漏出伏兵地点+夫人位置+三息时间反悔。无主角揭物件触因，纯反派死于话多"
+    },
+    {
+      "id": "forced_stupidity_hit_2",
+      "expected_label": "hit",
+      "target_dim": "forced_stupidity",
+      "rationale": "'老祖'级人物收到无来源信鸽信不验证笔迹+不查腊封+不派斥候，立即发兵。illogical_trust 经典样例"
+    },
+    {
+      "id": "clean_1_head_opening",
+      "expected_label": "clean",
+      "rationale": "紧致开局 + 多层欲望 + 倒计时；无任何 toxic 信号。每个 toxic dim 都应 ≤ 4"
+    },
+    {
+      "id": "clean_2_head_dialogue",
+      "expected_label": "clean",
+      "rationale": "克制对话 + 信息不对等的合理判断（withholding 是聪明博弈不是降智）；无任何 toxic 信号"
+    },
+    {
+      "id": "clean_3_payoff_with_trigger",
+      "expected_label": "clean",
+      "rationale": "标准 payoff 段：主角揭铜钱+白头发触发反派合理崩溃。**关键回归**：必须不被误判为 forced_stupidity（R3 揭示的 bug 在此样本上 R4 v0.4 prompt 已修复，本回归测试守住）"
+    },
+    {
+      "id": "clean_4_cost_paid",
+      "expected_label": "clean",
+      "rationale": "力量越级 + 不可逆代价；无 toxic 信号。三个 toxic dim 都应 ≤ 4"
+    },
+    {
+      "id": "borderline_1_mild_metaphor",
+      "expected_label": "borderline",
+      "rationale": "用了 1 个'像一座沉默的石像'轻度比喻 + 1 处'像一层薄薄的绿毯'——在 ai_prose_ticks 阈值边界，不应该命中（score < 8）"
+    },
+    {
+      "id": "borderline_2_ambiguous_payoff",
+      "expected_label": "borderline",
+      "rationale": "另一个 payoff 段（信件/笔迹），但 setup 不如 clean_3 那么明显（信件 vs 亡妻遗物）。判官应识别为 payoff，不误判为 forced_stupidity"
+    }
+  ],
+  "evaluation_method": {
+    "n_runs": 3,
+    "recall_threshold_pct": 95,
+    "false_positive_threshold_pct": 10,
+    "recall_definition": "命中样本上 target_dim score ≥ 8 的比例（命中 hit 即 toxic veto 触发）",
+    "false_positive_definition": "干净样本上任何 toxic dim score ≥ 8 的运行比例"
+  }
+}
