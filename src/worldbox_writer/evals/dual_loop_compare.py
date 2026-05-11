@@ -13,7 +13,7 @@ from worldbox_writer.storage.db import load_session as db_load_session
 
 ROLLBACK_FLAG = "FEATURE_DUAL_LOOP_ENABLED"
 ROLLBACK_DISABLE_VALUE = "0"
-ROLLOUT_RUNBOOK = "docs/development/DUAL_LOOP_ROLLOUT.md"
+ROLLOUT_RUNBOOK = "docs/development/DEVELOPMENT.md#10-双循环灰度与运行手册"
 
 
 def _ordered_lineage_nodes(world: WorldState) -> list[StoryNode]:

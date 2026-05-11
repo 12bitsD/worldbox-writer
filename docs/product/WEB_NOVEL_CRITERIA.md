@@ -7,7 +7,7 @@
 
 本文件原本承载评测维度定义、毒点红线、四档量表等内容。
 
-Sprint 25 R3 将这些内容与 `QUALITY_FRAMEWORK.md`、`docs/orchestrator/README.md` 的四档表合并为单一真相源 [`QUALITY_SPEC.md`](./QUALITY_SPEC.md)。
+Sprint 25 R3 将这些内容与 `QUALITY_FRAMEWORK.md`、`docs/sprints/orchestrator/README.md` 的四档表合并为单一真相源 [`QUALITY_SPEC.md`](./QUALITY_SPEC.md)。
 
 请直接阅读：
 

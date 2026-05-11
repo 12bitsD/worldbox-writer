@@ -45,6 +45,5 @@ High-risk areas:
 ## Docs To Read Next
 
 - `../../AGENTS.md`
-- `../../docs/development/TYPECHECK_BASELINE.md`
-- `../../docs/development/DEVELOPMENT.md`
+- `../../docs/development/DEVELOPMENT.md`（含 §11 类型检查基线）
 - `../../docs/architecture/DESIGN.md`

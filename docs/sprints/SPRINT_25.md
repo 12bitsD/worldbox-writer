@@ -55,7 +55,7 @@ Sprint 24 留下来的状态：
 | **R5** | 毒点注入回归 + 跨章节 judge | 注入召回 ≥ 95%；4 章 multi-chapter judge 跑通 |
 | **R6** | **清理 + Sprint 25 收口**（cleanup round） | 死代码清理；CLAUDE.md/AGENTS.md 同步；state.json 用新词汇重写 |
 
-每轮在 `docs/orchestrator/round-N.md` 写完整的 7 步流程记录（北极星 3 问 → 选题 → 验证标准 → 实现 → 验证 → 同步）。
+每轮在 `docs/sprints/orchestrator/round-N.md` 写完整的 7 步流程记录（北极星 3 问 → 选题 → 验证标准 → 实现 → 验证 → 同步）。
 
 ---
 

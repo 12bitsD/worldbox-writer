@@ -78,7 +78,7 @@ Change-coupling rules:
 - If you change release or contribution expectations, check:
   - `CONTRIBUTING.md`
   - `CHANGELOG.md`
-  - `docs/development/RELEASE_PROCESS.md`
+  - `docs/development/DEVELOPMENT.md` (release section)
 - If you change agent behavior or architecture constraints, check:
   - `docs/architecture/*`
   - integration tests when relevant
@@ -105,7 +105,4 @@ Use these files as the next layer of truth:
 - Project overview: `README.md`
 - Docs index: `docs/README.md`
 - Contribution rules: `CONTRIBUTING.md`
-- Development workflow & CI behavior: `docs/development/DEVELOPMENT.md`
-- Typecheck baseline: `docs/development/TYPECHECK_BASELINE.md`
-- Runbook: `docs/development/RUNBOOK.md`
-- Release process: `docs/development/RELEASE_PROCESS.md`
+- Development workflow & CI behavior: `docs/development/DEVELOPMENT.md`（统一入口：环境/命令/CI/Sprint/运行手册/Feature Flag/发布/双循环灰度/类型检查基线）

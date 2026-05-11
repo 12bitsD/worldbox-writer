@@ -26,8 +26,7 @@ make integration
 更多背景请参考：
 
 - [README](README.md)
-- [开发指南](docs/development/DEVELOPMENT.md)
-- [敏捷开发指南](docs/development/AGILE_GUIDE.md)
+- [开发指南](docs/development/DEVELOPMENT.md)（统一入口：环境/命令/CI/Sprint 与 DoD/运行手册/发布/类型检查）
 
 ## 2. 分支与提交规范
 
@@ -69,7 +68,7 @@ feat(api): add waiting-state world edit endpoint
 
 类型债务现状见：
 
-- [TYPECHECK_BASELINE.md](docs/development/TYPECHECK_BASELINE.md)
+- [开发指南 §11 类型检查基线](docs/development/DEVELOPMENT.md#11-类型检查基线)
 
 ## 4. 文档更新要求
 
@@ -84,9 +83,7 @@ feat(api): add waiting-state world edit endpoint
 常见目标文档：
 
 - [README](README.md)
-- [开发指南](docs/development/DEVELOPMENT.md)
-- [发布流程](docs/development/RELEASE_PROCESS.md)
-- [运行手册](docs/development/RUNBOOK.md)
+- [开发指南](docs/development/DEVELOPMENT.md)（含发布流程、运行手册）
 
 ## 5. 代码评审约定
 

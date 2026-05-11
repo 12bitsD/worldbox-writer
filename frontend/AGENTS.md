@@ -39,5 +39,4 @@ High-risk areas:
 
 - `../AGENTS.md`
 - `../CONTRIBUTING.md`
-- `../docs/development/DEVELOPMENT.md`
-- `../docs/development/RUNBOOK.md`
+- `../docs/development/DEVELOPMENT.md`（含 §7 运行手册）
