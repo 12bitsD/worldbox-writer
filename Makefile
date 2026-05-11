@@ -3,7 +3,7 @@ BOOTSTRAP_PYTHON ?= python3
 PNPM_VERSION ?= 9.15.9
 MODEL_EVAL_PROVIDERS ?= all
 
-.PHONY: help setup setup-backend setup-frontend fmt lint lint-backend lint-frontend typecheck test test-backend test-frontend check integration model-eval perf dev-api dev-web clean-reports
+.PHONY: help setup setup-backend setup-frontend fmt lint lint-backend lint-frontend typecheck test test-backend test-frontend check integration model-eval intermediate-eval perf dev-api dev-web clean-reports
 
 help:
 	@printf '%s\n' \
@@ -16,6 +16,7 @@ help:
 		'  check            Run lint + typecheck + test' \
 		'  integration      Run pytest integration tests locally' \
 		'  model-eval       Run the Sprint 9 multi-model evaluation flow' \
+		'  intermediate-eval Run P0 intermediate node LLM-as-judge eval' \
 		'  perf             Run the Sprint 9 capacity gate' \
 		'  dev-api          Start the FastAPI server' \
 		'  dev-web          Start the Vite dev server'
@@ -60,6 +61,9 @@ integration:
 
 model-eval:
 	MODEL_EVAL_PROVIDERS=$(MODEL_EVAL_PROVIDERS) PYTHON_BIN=$(PYTHON) ./scripts/ci/model-eval.sh
+
+intermediate-eval:
+	$(PYTHON) scripts/eval/intermediate_eval.py --node critic --red-team --blue-team --node actor_intent --input tests/test_evals/fixtures/intermediate_eval/actor_intent.jsonl
 
 perf:
 	PYTHON_BIN=$(PYTHON) ./scripts/ci/perf-gate.sh

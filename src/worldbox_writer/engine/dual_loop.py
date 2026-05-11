@@ -28,6 +28,7 @@ from worldbox_writer.core.dual_loop import (
     SceneScript,
 )
 from worldbox_writer.core.models import Character, StoryNode, WorldState
+from worldbox_writer.evals.sample_collector import collect_sample
 from worldbox_writer.memory.memory_manager import (
     EVENT_ENTRY_KIND,
     REFLECTION_ENTRY_KIND,
@@ -35,7 +36,7 @@ from worldbox_writer.memory.memory_manager import (
     MemoryManager,
 )
 from worldbox_writer.prompting.registry import load_prompt_template
-from worldbox_writer.utils.llm import chat_completion
+from worldbox_writer.utils.llm import chat_completion, get_last_llm_call_metadata
 
 FEATURE_DUAL_LOOP_ENV = "FEATURE_DUAL_LOOP_ENABLED"
 ISOLATED_ACTOR_RUNTIME_MODE = "isolated-actor-runtime-v1"
@@ -309,6 +310,7 @@ def invoke_isolated_actor_intent(
         max_tokens=320,
         top_p=0.95,
     )
+    llm_metadata = get_last_llm_call_metadata() or {}
     if not raw.strip():
         raise ValueError("Actor returned an empty completion")
 
@@ -342,6 +344,26 @@ def invoke_isolated_actor_intent(
             "tick": scene_plan.tick,
             "visible_character_ids": list(prompt_trace.visible_character_ids),
         },
+    )
+    collect_sample(
+        "actor_intent",
+        {
+            "prompt_trace": prompt_trace,
+            "scene_plan": scene_plan,
+            "character": character,
+        },
+        intent,
+        metadata={
+            "role": "actor",
+            "model": str(llm_metadata.get("model") or ""),
+            "llm_metadata": llm_metadata,
+            "downstream_decision": {
+                "intent_id": intent.intent_id,
+                "scene_id": intent.scene_id,
+            },
+        },
+        raw_output=raw,
+        parsed_output=intent,
     )
     return intent, prompt_trace
 

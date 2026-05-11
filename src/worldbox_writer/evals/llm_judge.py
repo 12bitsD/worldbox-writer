@@ -315,16 +315,19 @@ def _committee_overall(
     weights: Mapping[str, float],
 ) -> tuple[float, dict[str, float]]:
     """Compute weighted overall, normalizing weights over axes that have data."""
-    valid = {
-        axis: float(weights.get(axis, 0.0))
-        for axis, score in axis_scores.items()
-        if score is not None and weights.get(axis, 0.0) > 0
-    }
-    total_weight = sum(valid.values())
-    if not valid or total_weight <= 0:
+    valid_scores: dict[str, float] = {}
+    valid_weights: dict[str, float] = {}
+    for axis, score in axis_scores.items():
+        weight = weights.get(axis, 0.0)
+        if score is not None and weight > 0:
+            valid_scores[axis] = float(score)
+            valid_weights[axis] = float(weight)
+
+    total_weight = sum(valid_weights.values())
+    if not valid_weights or total_weight <= 0:
         return 0.0, {axis: 0.0 for axis in weights}
-    normalized = {axis: w / total_weight for axis, w in valid.items()}
-    overall = sum(float(axis_scores[axis]) * normalized[axis] for axis in normalized)
+    normalized = {axis: w / total_weight for axis, w in valid_weights.items()}
+    overall = sum(valid_scores[axis] * normalized[axis] for axis in normalized)
     full_weights = {axis: 0.0 for axis in weights}
     full_weights.update(normalized)
     return round(overall, 2), full_weights

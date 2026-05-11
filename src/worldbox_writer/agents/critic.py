@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, cast
 
 from worldbox_writer.core.dual_loop import ActionIntent, IntentCritique, ScenePlan
 from worldbox_writer.core.models import WorldState
+from worldbox_writer.evals.sample_collector import collect_sample
 from worldbox_writer.utils.llm import chat_completion, get_last_llm_call_metadata
 
 CRITIC_ACCEPTED = "accepted"
@@ -131,7 +132,32 @@ class CriticAgent:
                 "error": str(exc)[:200],
             }
             return {}
-        return self._parse_json_response(raw)
+        parsed = self._parse_json_response(raw)
+        collect_sample(
+            "critic_review",
+            {
+                "messages": messages,
+                "world": {
+                    "premise": world.premise,
+                    "world_rules": list(world.world_rules),
+                    "constraints": [
+                        constraint.model_dump(mode="json")
+                        for constraint in world.active_constraints()
+                    ],
+                },
+                "scene_plan": scene_plan,
+                "intent": intent,
+            },
+            parsed,
+            metadata={
+                "role": "gate_keeper",
+                "model": str((self.last_call_metadata or {}).get("model") or ""),
+                "llm_metadata": self.last_call_metadata or {},
+            },
+            raw_output=raw,
+            parsed_output=parsed,
+        )
+        return parsed
 
     def _build_review_messages(
         self,

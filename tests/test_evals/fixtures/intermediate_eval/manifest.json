@@ -1,0 +1,39 @@
+{
+  "schema_version": "intermediate-eval-fixtures-v1",
+  "purpose": "P0 red/blue fixtures for Critic intermediate evaluation. These samples are curated test cases, not runtime private user data.",
+  "policy_source": "src/worldbox_writer/agents/critic.py::_CRITIC_POLICY_PROMPT + world_state.constraints",
+  "thresholds": {
+    "critic_recall": 0.95,
+    "critic_precision": 0.95
+  },
+  "rules": [
+    {
+      "id": "world_rule_violation",
+      "description": "Intent must not violate explicit world rules, scene constraints, or HARD constraints.",
+      "expected_reason_code": "world_rule_violation"
+    },
+    {
+      "id": "knowledge_boundary_violation",
+      "description": "Actor must not use invisible, unknown, private, or non-public information.",
+      "expected_reason_code": "knowledge_boundary_violation"
+    }
+  ],
+  "datasets": {
+    "red_team": {
+      "path": "red_team.jsonl",
+      "sample_count": 2,
+      "metric": "recall"
+    },
+    "blue_team": {
+      "path": "blue_team.jsonl",
+      "sample_count": 2,
+      "metric": "precision"
+    },
+    "actor_intent": {
+      "path": "actor_intent.jsonl",
+      "sample_count": 2,
+      "metric": "dimension_overall"
+    }
+  },
+  "update_policy": "Append new cases when Critic policy changes; do not rewrite the full dataset unless the policy source is replaced."
+}
