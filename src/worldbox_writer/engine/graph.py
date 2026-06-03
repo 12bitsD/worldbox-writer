@@ -50,6 +50,7 @@ from worldbox_writer.engine.dual_loop import (
     run_isolated_actor_runtime,
 )
 from worldbox_writer.engine.services import actor_event_service as _actor_event
+from worldbox_writer.engine.services import actor_runtime_service as _actor_runtime
 from worldbox_writer.engine.services import (
     boundary_revision_service as _boundary_revision,
 )
@@ -102,6 +103,7 @@ _actor_memory_query = _actor_event.actor_memory_query
 _alive_characters = _actor_event.alive_characters
 _build_actor_event_prompt = _actor_event.build_actor_event_prompt
 _resolve_branch_pacing = _actor_event.resolve_branch_pacing
+_run_actor_runtime_bridge = _actor_runtime.run_actor_runtime_bridge
 
 
 def rebuild_memory_from_world(
@@ -218,51 +220,20 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
         }
 
     if scene_plan is not None and dual_loop_enabled():
-        runtime_result = run_isolated_actor_runtime(
+        actor_runtime = _run_actor_runtime_bridge(
             world,
             memory,
             scene_plan=scene_plan,
+            runtime_mode=ISOLATED_ACTOR_RUNTIME_MODE,
+            run_runtime_func=run_isolated_actor_runtime,
+            critic_factory=CriticAgent,
+            gm_factory=GMAgent,
         )
-        critic = CriticAgent()
-        intent_critiques = critic.review_batch(
-            world,
-            scene_plan,
-            runtime_result.action_intents,
-        )
-        critique_lookup = {
-            critique.intent_id: critique for critique in intent_critiques
-        }
-        accepted_intents = [
-            intent
-            for intent in runtime_result.action_intents
-            if critique_lookup.get(intent.intent_id) is None
-            or critique_lookup[intent.intent_id].accepted
-        ]
-        accepted_intent_ids = {intent.intent_id for intent in accepted_intents}
-        gm = GMAgent()
-        scene_script = gm.settle_scene(
-            world,
-            scene_plan,
-            runtime_result.action_intents,
-            intent_critiques,
-        )
-        candidate = scene_script.summary
-        intent_payloads = [
-            intent.model_dump(mode="json") for intent in runtime_result.action_intents
-        ]
-        critique_payloads = [
-            critique.model_dump(mode="json") for critique in intent_critiques
-        ]
-        trace_payloads = [
-            trace.model_dump(mode="json") for trace in runtime_result.prompt_traces
-        ]
-        scene_script_payload = scene_script.model_dump(mode="json")
-        world.metadata["last_actor_runtime_mode"] = ISOLATED_ACTOR_RUNTIME_MODE
-        world.metadata["last_actor_intents"] = intent_payloads
-        world.metadata["last_critic_verdicts"] = critique_payloads
-        world.metadata["last_actor_accepted_intent_ids"] = sorted(accepted_intent_ids)
-        world.metadata["last_prompt_traces"] = trace_payloads
-        world.metadata["last_scene_script"] = scene_script_payload
+        runtime_result = actor_runtime.runtime_result
+        intent_critiques = actor_runtime.intent_critiques
+        accepted_intents = actor_runtime.accepted_intents
+        scene_script = actor_runtime.scene_script
+        candidate = actor_runtime.candidate_event
 
         _emit_telemetry(
             state,
@@ -298,7 +269,7 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
                     if not critique.accepted
                 ],
             },
-            **_llm_telemetry_fields(critic.last_call_metadata),
+            **_llm_telemetry_fields(actor_runtime.critic_last_call_metadata),
         )
         _emit_telemetry(
             state,
