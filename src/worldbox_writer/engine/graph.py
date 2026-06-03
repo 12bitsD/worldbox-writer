@@ -56,6 +56,7 @@ from worldbox_writer.engine.services import (
     simulation_runner_service as _simulation_runner,
 )
 from worldbox_writer.engine.services import telemetry_service as _telemetry
+from worldbox_writer.engine.services import world_setup_service as _world_setup
 from worldbox_writer.engine.state import SimulationState
 from worldbox_writer.evals.llm_judge import judge_ai_prose_ticks
 from worldbox_writer.llm.gateway import DefaultCompletionGateway
@@ -106,6 +107,9 @@ _build_actor_event_prompt = _actor_event.build_actor_event_prompt
 _resolve_branch_pacing = _actor_event.resolve_branch_pacing
 _run_actor_runtime_bridge = _actor_runtime.run_actor_runtime_bridge
 _run_actor_turn = _actor_turn.run_actor_turn
+_initialize_world_skeleton = _world_setup.initialize_world_skeleton
+_plan_next_scene = _world_setup.plan_next_scene
+_enrich_world_settings = _world_setup.enrich_world_settings
 
 
 def rebuild_memory_from_world(
@@ -129,80 +133,71 @@ def rebuild_memory_from_world(
 
 def director_node(state: SimulationState) -> Dict[str, Any]:
     """Director Agent: parse premise, initialize world skeleton (first tick only)."""
-    if state.get("initialized"):
-        return {}
-
     world = state["world"]
-    agent = DirectorAgent()
-    # initialize_world(user_premise, existing_world=None)
-    updated_world = agent.initialize_world(world.premise, world)
-    llm_fields = _llm_telemetry_fields(agent.last_call_metadata)
-    _emit_telemetry(
-        state,
-        tick=updated_world.tick,
-        agent="director",
-        stage="world_initialized",
-        message="世界骨架初始化完成",
-        payload={
-            "characters": len(updated_world.characters),
-            "constraints": len(updated_world.constraints),
-        },
-        **llm_fields,
+    result = _initialize_world_skeleton(
+        world,
+        initialized=state.get("initialized", False),
+        director_factory=DirectorAgent,
+        llm_telemetry_fields_func=_llm_telemetry_fields,
     )
-    return {"world": updated_world, "initialized": True}
+    for event in result.telemetry_events:
+        _emit_telemetry(
+            state,
+            tick=result.state_update.get("world", world).tick,
+            agent=event.agent,
+            stage=event.stage,
+            level=event.level,
+            message=event.message,
+            payload=event.payload,
+            **event.llm_fields,
+        )
+    return result.state_update
 
 
 def scene_director_node(state: SimulationState) -> Dict[str, Any]:
     """Director Agent: plan the next scene before actor execution."""
     world = state["world"]
     memory: MemoryManager = state["memory"]
-    agent = DirectorAgent()
-    current_node = (
-        world.get_node(world.current_node_id) if world.current_node_id else None
+    result = _plan_next_scene(
+        world,
+        memory,
+        director_factory=DirectorAgent,
     )
-    query = current_node.description if current_node else world.premise
-    memory_context = memory.get_context_for_agent(query=query, max_entries=6)
-    scene_plan = agent.plan_scene(world, memory_context=memory_context)
-    _emit_telemetry(
-        state,
-        tick=world.tick,
-        agent="director",
-        stage="scene_planned",
-        message="Director 已生成下一幕 Scene Plan",
-        payload={
-            "scene_id": scene_plan.scene_id,
-            "title": scene_plan.title,
-            "objective": scene_plan.objective,
-            "narrative_pressure": scene_plan.narrative_pressure,
-            "spotlight_character_ids": list(scene_plan.spotlight_character_ids),
-        },
-    )
-    return {"world": world, "scene_plan": scene_plan}
+    for event in result.telemetry_events:
+        _emit_telemetry(
+            state,
+            tick=world.tick,
+            agent=event.agent,
+            stage=event.stage,
+            level=event.level,
+            message=event.message,
+            payload=event.payload,
+            **event.llm_fields,
+        )
+    return result.state_update
 
 
 def world_builder_node(state: SimulationState) -> Dict[str, Any]:
     """WorldBuilder Agent: expand world settings (first tick only)."""
-    if state.get("world_built"):
-        return {}
-
     world = state["world"]
-    agent = WorldBuilderAgent()
-    enriched_world = agent.expand_world(world)
-    llm_fields = _llm_telemetry_fields(agent.last_call_metadata)
-    _emit_telemetry(
-        state,
-        tick=enriched_world.tick,
-        agent="world_builder",
-        stage="world_enriched",
-        message="世界设定扩写完成",
-        payload={
-            "factions": len(enriched_world.factions),
-            "locations": len(enriched_world.locations),
-        },
-        **llm_fields,
+    result = _enrich_world_settings(
+        world,
+        world_built=state.get("world_built", False),
+        world_builder_factory=WorldBuilderAgent,
+        llm_telemetry_fields_func=_llm_telemetry_fields,
     )
-    enriched_world.metadata["world_builder_completed"] = True
-    return {"world": enriched_world, "world_built": True}
+    for event in result.telemetry_events:
+        _emit_telemetry(
+            state,
+            tick=result.state_update.get("world", world).tick,
+            agent=event.agent,
+            stage=event.stage,
+            level=event.level,
+            message=event.message,
+            payload=event.payload,
+            **event.llm_fields,
+        )
+    return result.state_update
 
 
 def actor_node(state: SimulationState) -> Dict[str, Any]:
