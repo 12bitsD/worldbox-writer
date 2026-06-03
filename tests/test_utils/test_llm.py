@@ -6,6 +6,7 @@ import pytest
 from worldbox_writer.utils import llm as llm_module
 from worldbox_writer.utils.llm import (
     EmptyLLMResponseError,
+    chat_completion_with_profile,
     get_provider_info,
     resolve_llm_route,
 )
@@ -165,6 +166,67 @@ def test_provider_info_reports_logic_and_creative_routes(monkeypatch):
 
     assert info["routing"]["logic"]["provider"] == "openai"
     assert info["routing"]["creative"]["provider"] == "kimi"
+
+
+def test_critic_and_judge_have_logic_routes(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("LLM_MODEL", "gpt-4.1-mini")
+    monkeypatch.setenv("LLM_PROVIDER_LOGIC", "kimi")
+    monkeypatch.setenv("LLM_MODEL_LOGIC", "kimi-k2.5")
+
+    critic_route = resolve_llm_route("critic")
+    judge_route = resolve_llm_route("judge")
+
+    assert critic_route.route_group == "logic"
+    assert critic_route.model == "kimi-k2.5"
+    assert judge_route.route_group == "logic"
+    assert judge_route.model == "kimi-k2.5"
+
+
+def test_chat_completion_with_profile_applies_sampling(monkeypatch):
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="OK"))]
+    )
+    captured = {}
+
+    def create(**kwargs):
+        captured.update(kwargs)
+        return response
+
+    client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("LLM_MODEL", "gpt-4.1-mini")
+    monkeypatch.setattr(llm_module, "get_llm_client", lambda route: client)
+
+    output = chat_completion_with_profile(
+        "critic_review", [{"role": "user", "content": "检查"}]
+    )
+
+    assert output == "OK"
+    assert captured["temperature"] == 0.0
+    assert captured["max_tokens"] == 360
+    metadata = llm_module.get_last_llm_call_metadata()
+    assert metadata["role"] == "critic"
+    assert metadata["sampling"]["profile_id"] == "critic_review"
+
+
+def test_chat_completion_old_entry_warns_deprecated(monkeypatch):
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="OK"))]
+    )
+    client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(create=lambda **_kwargs: response)
+        )
+    )
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("LLM_MODEL", "gpt-4.1-mini")
+    monkeypatch.setattr(llm_module, "get_llm_client", lambda route: client)
+
+    with pytest.warns(DeprecationWarning):
+        llm_module.chat_completion([{"role": "user", "content": "OK"}])
 
 
 def test_chat_completion_treats_empty_provider_response_as_failure(monkeypatch):

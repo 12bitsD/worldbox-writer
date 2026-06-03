@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import tempfile
 import time
 from pathlib import Path
@@ -11,6 +10,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 import worldbox_writer.api.server as server
+from worldbox_writer.config.settings import get_settings, set_runtime_db_path
 from worldbox_writer.core.models import Character, StoryNode, WorldState
 from worldbox_writer.storage.db import init_db
 
@@ -111,8 +111,8 @@ def run_capacity_gate(
     completion_timeout_s: float = 3.0,
 ) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="worldbox-perf-") as tmpdir:
-        db_path = os.path.join(tmpdir, "perf.db")
-        os.environ["DB_PATH"] = db_path
+        db_path = str(Path(tmpdir) / "perf.db")
+        set_runtime_db_path(db_path)
         init_db(db_path)
         server._sessions.clear()
 
@@ -168,23 +168,25 @@ def run_capacity_gate(
         finally:
             server.run_simulation = original_run_simulation
             server._sessions.clear()
+            set_runtime_db_path(None)
 
 
 def main() -> int:
+    settings = get_settings().perf
     report = run_capacity_gate(
-        session_count=int(os.environ.get("PERF_SESSION_COUNT", "6")),
-        max_ticks=int(os.environ.get("PERF_MAX_TICKS", "3")),
-        completion_timeout_s=float(os.environ.get("PERF_COMPLETION_TIMEOUT_S", "3.0")),
+        session_count=settings.session_count,
+        max_ticks=settings.max_ticks,
+        completion_timeout_s=settings.completion_timeout_s,
     )
-    output_path = Path(os.environ.get("PERF_GATE_OUTPUT", "artifacts/perf/report.json"))
+    output_path = Path(settings.gate_output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
         json.dumps(report, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
-    max_start_p95 = float(os.environ.get("PERF_MAX_START_P95_MS", "300"))
-    max_complete_p95 = float(os.environ.get("PERF_MAX_COMPLETE_P95_MS", "1200"))
+    max_start_p95 = settings.max_start_p95_ms
+    max_complete_p95 = settings.max_complete_p95_ms
 
     print(f"Performance report written to {output_path}")
     print(

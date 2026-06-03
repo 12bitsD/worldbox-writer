@@ -15,7 +15,6 @@ machine-actionable structures that all downstream agents can operate on.
 
 from __future__ import annotations
 
-import json
 from typing import Any, Dict, List, Optional, cast
 
 from worldbox_writer.core.dual_loop import ScenePlan
@@ -28,87 +27,12 @@ from worldbox_writer.core.models import (
     StoryNode,
     WorldState,
 )
-from worldbox_writer.utils.llm import chat_completion, get_last_llm_call_metadata
-
-# ---------------------------------------------------------------------------
-# Prompt templates
-# ---------------------------------------------------------------------------
-
-_SCENE_PLAN_PROMPT = """ScenePlan objective 质量要求：
-- objective 必须包含具体冲突：写清谁 vs 谁/什么，以及双方为了什么发生冲突。
-- objective 必须包含时空锚点：写清冲突发生在哪里、什么时候。
-- objective 必须包含赌注：写清角色赢/输分别会得到或失去什么。
-- 禁止概括性 objective，例如“推动故事”“发展情节”“解决矛盾”“推进主线”。
-- 每个 scene plan 必须至少有一个核心冲突，conflict_type 只能是 external、relationship、value、information_gap 之一。
-- 每个 scene 结尾必须有 suspense_hook，留下一个未解决的问题，不能把本幕冲突完全封口。
-- 每个 scene plan 必须至少有一个显性冲突和一个隐性张力；显性冲突是场面上可见的阻碍，隐性张力是信息差、旧承诺、关系裂痕、恐惧或秘密。"""
-
-_WORLD_INIT_SYSTEM_PROMPT = """你是 WorldBox Writer 多智能体小说创作系统的导演 Agent。
-你的任务是解析用户的故事前提，生成结构化的世界初始化数据。
-
-你必须只输出合法的 JSON，不要有任何 markdown 代码块或额外文字。
-
-JSON 结构如下：
-{
-  "title": "世界标题（简短有力）",
-  "premise": "故事前提的一段话摘要",
-  "world_rules": ["世界规则1", "世界规则2", ...],
-  "tone": "故事基调，如：黑暗、轻松、史诗等",
-  "characters": [
-    {
-      "name": "中文真实人名（如“李青山”“苏婉儿”），不要使用“破局者”“追猎者”“主角”等功能代号",
-      "description": "角色描述",
-      "personality": "性格特点",
-      "goals": ["目标1", "目标2"]
-    }
-  ],
-  "constraints": [
-    {
-      "name": "约束名称",
-      "description": "约束描述",
-      "constraint_type": "world_rule|narrative|style",
-      "severity": "hard|soft",
-      "rule": "机器可检查的规则陈述"
-    }
-  ],
-  "opening_nodes": [
-    {
-      "title": "节点标题",
-      "description": "节点描述（50-100字）",
-      "node_type": "setup|conflict|development|climax|resolution|branch"
-    }
-  ]
-}
-
-提取约束的原则：
-- 如果用户说"悲剧"，添加叙事约束：结局必须是悲剧或苦涩的
-- 如果提到世界规则，编码为 world_rule 约束
-- 如果提到风格偏好，编码为 style 约束
-- 至少添加一个关于故事弧线的叙事约束
-- 生成 2-4 个角色，1-2 个开场节点
-- 角色 name 必须像真实人物姓名，角色定位放入 description，不要把角色定位当名字
-""" + "\n\n" + _SCENE_PLAN_PROMPT
-
-_INTENT_UPDATE_SYSTEM_PROMPT = """你是 WorldBox Writer 的导演 Agent。用户在故事推演过程中提出了干预指令。
-你的任务是将这个指令转化为：
-1. 新的约束条件（确保用户意图在后续推演中持续生效）
-2. 故事新方向的简要说明
-
-只输出合法 JSON：
-{
-  "new_constraints": [
-    {
-      "name": "约束名称",
-      "description": "约束描述",
-      "constraint_type": "world_rule|narrative|style",
-      "severity": "hard|soft",
-      "rule": "规则陈述"
-    }
-  ],
-  "direction_summary": "一段话描述故事新方向"
-}
-"""
-
+from worldbox_writer.prompting.registry import load_prompt_template
+from worldbox_writer.utils.json_parsing import parse_json_object
+from worldbox_writer.utils.llm import (
+    chat_completion_with_profile,
+    get_last_llm_call_metadata,
+)
 
 # ---------------------------------------------------------------------------
 # Director Agent class
@@ -263,17 +187,23 @@ class DirectorAgent:
                 "status": "completed",
             }
             return cast(str, response.content)
-        content = chat_completion(messages, role="director", **kwargs)
+        profile_id = str(kwargs.pop("profile_id"))
+        content = chat_completion_with_profile(profile_id, messages)
         self.last_call_metadata = get_last_llm_call_metadata()
         return content
 
     def _call_llm_for_init(self, premise: str) -> Dict[str, Any]:
         messages = [
-            {"role": "system", "content": _WORLD_INIT_SYSTEM_PROMPT},
+            {
+                "role": "system",
+                "content": load_prompt_template(
+                    "director_system", variant="world_init"
+                ),
+            },
             {"role": "user", "content": f"用户故事前提：{premise}"},
         ]
         try:
-            response = self._invoke(messages, temperature=0.7, max_tokens=2048)
+            response = self._invoke(messages, profile_id="director_init")
         except Exception:
             return self._fallback_world_init_data(premise)
         parsed = self._parse_json_response(response)
@@ -281,11 +211,16 @@ class DirectorAgent:
 
     def _call_llm_for_intervention(self, instruction: str) -> Dict[str, Any]:
         messages = [
-            {"role": "system", "content": _INTENT_UPDATE_SYSTEM_PROMPT},
+            {
+                "role": "system",
+                "content": load_prompt_template(
+                    "director_system", variant="intent_update"
+                ),
+            },
             {"role": "user", "content": f"用户干预指令：{instruction}"},
         ]
         try:
-            response = self._invoke(messages, temperature=0.5, max_tokens=1024)
+            response = self._invoke(messages, profile_id="director_intervention")
         except Exception:
             return {
                 "new_constraints": [
@@ -302,34 +237,7 @@ class DirectorAgent:
         return self._parse_json_response(response)
 
     def _parse_json_response(self, content: str) -> Dict[str, Any]:
-        text = content.strip()
-        if text.startswith("```"):
-            lines = text.split("\n")
-            text = (
-                "\n".join(lines[1:-1])
-                if lines[-1].strip() == "```"
-                else "\n".join(lines[1:])
-            )
-        try:
-            return cast(Dict[str, Any], json.loads(text))
-        except json.JSONDecodeError:
-            # Try to extract JSON object from anywhere in the response
-            start = text.find("{")
-            if start == -1:
-                return {}
-            # Find matching closing brace by counting depth
-            depth = 0
-            for i in range(start, len(text)):
-                if text[i] == "{":
-                    depth += 1
-                elif text[i] == "}":
-                    depth -= 1
-                    if depth == 0:
-                        try:
-                            return cast(Dict[str, Any], json.loads(text[start : i + 1]))
-                        except json.JSONDecodeError:
-                            break
-            return {}
+        return parse_json_object(content)
 
     def _build_world_state(
         self, data: Dict[str, Any], existing_world: Optional[WorldState] = None
@@ -542,11 +450,9 @@ class DirectorAgent:
             f"scene: {objective}. Only output the title, nothing else."
         )
         try:
-            generated_title = chat_completion(
+            generated_title = chat_completion_with_profile(
+                "director_title",
                 [{"role": "user", "content": prompt}],
-                role="director",
-                temperature=0.8,
-                max_tokens=50,
             )
         except Exception:
             return fallback_title

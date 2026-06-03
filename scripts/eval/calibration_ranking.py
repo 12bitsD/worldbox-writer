@@ -80,9 +80,20 @@ def spearman_rank_correlation(values_a: list[float], values_b: list[float]) -> f
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--runs", type=int, default=3)
-    parser.add_argument("--temperature", type=float, default=0.2)
-    parser.add_argument("--max-tokens", type=int, default=320)
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=None,
+        help="Override judge profile temperature. Defaults to profile value.",
+    )
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=None,
+        help="Override judge profile max_tokens. Defaults to profile value.",
+    )
     parser.add_argument("--model", default=None)
+    parser.add_argument("--judge-error-retries", type=int, default=3)
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
     parser.add_argument("--spearman-threshold", type=float, default=0.95)
     parser.add_argument(
@@ -129,19 +140,39 @@ def main(argv: Sequence[str] | None = None) -> int:
         runs: list[dict[str, Any]] = []
         for run_idx in range(args.runs):
             t0 = time.time()
-            run = judge_committee(
-                text,
-                model=args.model,
-                temperature=args.temperature,
-                max_tokens=args.max_tokens,
-                concurrency=1,
-            )
+            attempts = max(1, args.judge_error_retries + 1)
+            for attempt_idx in range(attempts):
+                run = judge_committee(
+                    text,
+                    model=args.model,
+                    temperature=args.temperature,
+                    max_tokens=args.max_tokens,
+                    concurrency=1,
+                )
+                error_count = len(run.get("errors") or [])
+                if not error_count or attempt_idx == attempts - 1:
+                    break
+                print(
+                    f"  [{sample_idx}/{n_samples} {sample_id} "
+                    f"run#{run_idx + 1}/{args.runs}] retrying after "
+                    f"{error_count} judge errors "
+                    f"(attempt {attempt_idx + 1}/{attempts})",
+                    flush=True,
+                )
             elapsed = round(time.time() - t0, 1)
             runs.append(run)
+            error_count = len(run.get("errors") or [])
             print(
                 f"  [{sample_idx}/{n_samples} {sample_id} run#{run_idx + 1}/{args.runs}] "
-                f"overall={run['overall']} vetoed={run['vetoed']} elapsed={elapsed}s"
+                f"overall={run['overall']} vetoed={run['vetoed']} "
+                f"errors={error_count} elapsed={elapsed}s",
+                flush=True,
             )
+            if error_count:
+                raise RuntimeError(
+                    "judge_committee returned errors for "
+                    f"{sample_id} run {run_idx + 1}: {run['errors']}"
+                )
 
         overalls = [r["overall"] for r in runs]
         veto_count = sum(1 for r in runs if r["vetoed"])
@@ -229,6 +260,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "runs": args.runs,
             "temperature": args.temperature,
             "max_tokens": args.max_tokens,
+            "judge_error_retries": args.judge_error_retries,
             "model": args.model,
             "provider": os.environ.get("LLM_PROVIDER"),
             "fixture_dir": str(fixture_dir),

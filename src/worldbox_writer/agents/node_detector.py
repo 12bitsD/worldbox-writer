@@ -10,13 +10,17 @@ Detection criteria:
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from typing import Any, List, Optional, cast
 
 from worldbox_writer.core.models import NodeType, StoryNode, WorldState
-from worldbox_writer.utils.llm import chat_completion, get_last_llm_call_metadata
+from worldbox_writer.prompting.registry import load_prompt_template
+from worldbox_writer.utils.json_parsing import parse_json_object
+from worldbox_writer.utils.llm import (
+    chat_completion_with_profile,
+    get_last_llm_call_metadata,
+)
 
 # ---------------------------------------------------------------------------
 # Result types
@@ -78,36 +82,6 @@ _HIGH_STAKES_KEYWORDS_EN = {
 }
 
 _HIGH_STAKES_KEYWORDS = _HIGH_STAKES_KEYWORDS_ZH | _HIGH_STAKES_KEYWORDS_EN
-
-# ---------------------------------------------------------------------------
-# Prompt template
-# ---------------------------------------------------------------------------
-
-_DETECTOR_SYSTEM_PROMPT = """你是 WorldBox Writer 的关键节点探测器。
-你的任务是判断当前故事节点是否是需要暂停并询问用户的关键时刻。
-
-只输出合法 JSON：
-{
-  "should_intervene": true|false,
-  "urgency": "low|medium|high",
-  "reason": "为什么这是关键时刻（展示给用户）",
-  "context_summary": "当前故事状态的2-3句摘要",
-  "suggested_options": ["具体的剧情走向选项1（如角色做出什么选择）", "具体的剧情走向选项2", "具体的剧情走向选项3"]
-}
-每个选项应该是具体的剧情方向，不要用"继续推演"之类的通用选项。
-
-需要干预的情况：
-- 角色面临死亡或永久伤害
-- 重要关系即将发生不可逆的改变
-- 故事即将越过不可返回的节点
-- 当前方向与用户可能的意图冲突
-
-不需要干预的情况：
-- 常规故事发展
-- 小事件
-- 故事明显按预期推进
-"""
-
 
 # ---------------------------------------------------------------------------
 # Node Detector class
@@ -201,7 +175,8 @@ class NodeDetector:
                 "status": "completed",
             }
             return cast(str, response.content)
-        content = chat_completion(messages, role="node_detector", **kwargs)
+        profile_id = str(kwargs.pop("profile_id"))
+        content = chat_completion_with_profile(profile_id, messages)
         self.last_call_metadata = get_last_llm_call_metadata()
         return content
 
@@ -259,7 +234,7 @@ class NodeDetector:
         recent_summary = " → ".join(n.title for n in recent_nodes)
 
         messages = [
-            {"role": "system", "content": _DETECTOR_SYSTEM_PROMPT},
+            {"role": "system", "content": load_prompt_template("node_detector_system")},
             {
                 "role": "user",
                 "content": (
@@ -271,7 +246,7 @@ class NodeDetector:
             },
         ]
         try:
-            response = self._invoke(messages, temperature=0.3, max_tokens=512)
+            response = self._invoke(messages, profile_id="node_detector")
         except Exception:
             return InterventionSignal(
                 should_intervene=False,
@@ -290,36 +265,13 @@ class NodeDetector:
         )
 
     def _parse_json_response(self, content: str) -> dict[str, Any]:
-        text = content.strip()
-        if text.startswith("```"):
-            lines = text.split("\n")
-            text = (
-                "\n".join(lines[1:-1])
-                if lines[-1].strip() == "```"
-                else "\n".join(lines[1:])
-            )
-        try:
-            return cast(dict[str, Any], json.loads(text))
-        except json.JSONDecodeError:
-            start = text.find("{")
-            if start != -1:
-                depth = 0
-                for i in range(start, len(text)):
-                    if text[i] == "{":
-                        depth += 1
-                    elif text[i] == "}":
-                        depth -= 1
-                        if depth == 0:
-                            try:
-                                return cast(
-                                    dict[str, Any], json.loads(text[start : i + 1])
-                                )
-                            except json.JSONDecodeError:
-                                break
-            return {
+        return parse_json_object(
+            content,
+            default={
                 "should_intervene": False,
                 "urgency": "low",
                 "reason": "",
                 "context_summary": "",
                 "suggested_options": [],
-            }
+            },
+        )

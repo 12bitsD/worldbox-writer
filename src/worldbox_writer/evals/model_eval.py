@@ -1,24 +1,26 @@
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from worldbox_writer.utils.llm import chat_completion
+from worldbox_writer.config.settings import get_settings
+from worldbox_writer.prompting.registry import load_prompt_template
+from worldbox_writer.utils.llm import chat_completion_with_profile, get_provider_info
 
 DEFAULT_CASES: list[dict[str, Any]] = [
     {
         "id": "logic-structured-action",
+        "profile_id": "model_eval_logic_structured_action",
         "role": "actor",
         "route_group": "logic",
-        "temperature": 0.2,
-        "max_tokens": 180,
         "messages": [
             {
                 "role": "system",
-                "content": ("你是结构化事件规划器。只输出 JSON，不要额外解释。"),
+                "content": load_prompt_template(
+                    "model_eval_system", variant="logic_structured_action"
+                ),
             },
             {
                 "role": "user",
@@ -32,14 +34,15 @@ DEFAULT_CASES: list[dict[str, Any]] = [
     },
     {
         "id": "logic-memory-summary",
+        "profile_id": "model_eval_logic_memory_summary",
         "role": "memory",
         "route_group": "logic",
-        "temperature": 0.2,
-        "max_tokens": 220,
         "messages": [
             {
                 "role": "system",
-                "content": "你是记忆归档器，请输出 3 条中文要点。",
+                "content": load_prompt_template(
+                    "model_eval_system", variant="logic_memory_summary"
+                ),
             },
             {
                 "role": "user",
@@ -49,14 +52,15 @@ DEFAULT_CASES: list[dict[str, Any]] = [
     },
     {
         "id": "creative-scene",
+        "profile_id": "model_eval_creative_scene",
         "role": "narrator",
         "route_group": "creative",
-        "temperature": 0.8,
-        "max_tokens": 320,
         "messages": [
             {
                 "role": "system",
-                "content": "你是一位中文小说作者，输出 120-220 字正文。",
+                "content": load_prompt_template(
+                    "model_eval_system", variant="creative_scene"
+                ),
             },
             {
                 "role": "user",
@@ -66,14 +70,15 @@ DEFAULT_CASES: list[dict[str, Any]] = [
     },
     {
         "id": "creative-worldbuild",
+        "profile_id": "model_eval_creative_worldbuild",
         "role": "world_builder",
         "route_group": "creative",
-        "temperature": 0.6,
-        "max_tokens": 240,
         "messages": [
             {
                 "role": "system",
-                "content": "你是世界构建师，请输出 3 条设定要点。",
+                "content": load_prompt_template(
+                    "model_eval_system", variant="creative_worldbuild"
+                ),
             },
             {
                 "role": "user",
@@ -83,14 +88,15 @@ DEFAULT_CASES: list[dict[str, Any]] = [
     },
     {
         "id": "creative-dialogue",
+        "profile_id": "model_eval_creative_dialogue",
         "role": "narrator",
         "route_group": "creative",
-        "temperature": 0.7,
-        "max_tokens": 260,
         "messages": [
             {
                 "role": "system",
-                "content": "你是一位中文小说作者，请输出带对话的正文。",
+                "content": load_prompt_template(
+                    "model_eval_system", variant="creative_dialogue"
+                ),
             },
             {
                 "role": "user",
@@ -158,19 +164,18 @@ def aggregate_case_results(
 
 
 def run_model_eval() -> dict[str, Any]:
+    settings = get_settings().model_eval
     thresholds = {
-        "logic": float(os.environ.get("MODEL_EVAL_LOGIC_THRESHOLD", "0.75")),
-        "creative": float(os.environ.get("MODEL_EVAL_CREATIVE_THRESHOLD", "0.72")),
-        "default": float(os.environ.get("MODEL_EVAL_DEFAULT_THRESHOLD", "0.75")),
+        "logic": settings.logic_threshold,
+        "creative": settings.creative_threshold,
+        "default": settings.default_threshold,
     }
 
     case_results: list[dict[str, Any]] = []
     for case in DEFAULT_CASES:
-        output = chat_completion(
+        output = chat_completion_with_profile(
+            case["profile_id"],
             case["messages"],
-            role=case["role"],
-            temperature=float(case.get("temperature", 0.4)),
-            max_tokens=int(case.get("max_tokens", 220)),
         )
         evaluation = check_case_output(case, output)
         case_results.append(
@@ -188,7 +193,7 @@ def run_model_eval() -> dict[str, Any]:
     return {
         "report_type": "route_health",
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "provider": os.environ.get("LLM_PROVIDER", "default"),
+        "provider": get_provider_info()["logic"]["provider"],
         "cases": case_results,
         "routes": routes,
     }
@@ -196,9 +201,7 @@ def run_model_eval() -> dict[str, Any]:
 
 def main() -> int:
     report = run_model_eval()
-    output_path = Path(
-        os.environ.get("MODEL_EVAL_OUTPUT", "artifacts/model-eval/report.json")
-    )
+    output_path = Path(get_settings().model_eval.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
         json.dumps(report, ensure_ascii=False, indent=2),

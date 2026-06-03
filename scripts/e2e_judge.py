@@ -437,6 +437,7 @@ def run_real_simulation(
                     "chapter_title": narrator_output.chapter_title,
                     "word_count": narrator_output.word_count,
                     "style_notes": narrator_output.style_notes,
+                    "metadata": narrator_output.metadata or {},
                 },
                 "action_intents": action_intents,
                 "intent_critiques": intent_critiques,

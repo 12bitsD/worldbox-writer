@@ -1,0 +1,256 @@
+{
+  "schema_version": "baseline-v1",
+  "generated_at": "2026-05-12T21:28:52.836616+00:00",
+  "config": {
+    "chapters_per_simulation": 4,
+    "judge_runs_per_chapter": 2,
+    "temperature": 0.2,
+    "max_tokens": 320,
+    "model": null,
+    "provider": "kimi-coding",
+    "premises_run": [
+      "city_aftermath"
+    ],
+    "committee_schema": "committee-v0.2 (post-R4 prompt fixes)",
+    "calibration_passed_at": "Sprint 25 R4 (Spearman ρ = 0.9848)"
+  },
+  "totals": {
+    "simulations": 1,
+    "duration_seconds": 7723.08
+  },
+  "simulations": [
+    {
+      "id": "city_aftermath",
+      "premise": "秋雨连下半个月的旧城里，独居老巷的陶匠林叔接到一个穿青衫年轻人的上门订烧——客人指定要烧一只七年前不该再烧的老款酒坛，并放下一笔远超手工价的银元；林叔的小学徒注意到，那笔银元里夹着一枚已停产十年的旧城通行牌。",
+      "chapter_count": 4,
+      "chapter_overall_mean": 1.482,
+      "chapter_overall_std": 2.965,
+      "chapter_overalls": [
+        0.0,
+        0.0,
+        0.0,
+        5.93
+      ],
+      "axis_means": {
+        "emotion_axis": 6.6,
+        "structure_axis": 6.84,
+        "prose_axis": 5.92
+      },
+      "veto_total": 6,
+      "warnings": [],
+      "chapters": [
+        {
+          "chapter": 1,
+          "node_id": "6917c207-23d7-4b10-abeb-5796e3f24b15",
+          "rendered_chars": 944,
+          "overall_mean": 0.0,
+          "overall_std": 0.0,
+          "veto_count": 2,
+          "axis_means": {
+            "emotion_axis": 5.33,
+            "structure_axis": 6.0,
+            "prose_axis": 4.17
+          },
+          "committee_runs": [
+            {
+              "overall": 0.0,
+              "vetoed": true,
+              "veto_reasons": [
+                "ai_prose_ticks"
+              ],
+              "axis_scores": {
+                "emotion_axis": 4.0,
+                "structure_axis": 6.0,
+                "prose_axis": 4.33
+              },
+              "errors": [
+                {
+                  "dim_id": "tension_pressure",
+                  "parse_status": "parse_failed",
+                  "error": "ReadTimeout: The read operation timed out"
+                }
+              ]
+            },
+            {
+              "overall": 0.0,
+              "vetoed": true,
+              "veto_reasons": [
+                "ai_prose_ticks"
+              ],
+              "axis_scores": {
+                "emotion_axis": 6.67,
+                "structure_axis": 6.0,
+                "prose_axis": 4.0
+              },
+              "errors": [
+                {
+                  "dim_id": "material_specificity",
+                  "parse_status": "parse_failed",
+                  "error": null
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "chapter": 2,
+          "node_id": "1c675e70-5cbd-47c2-8d9b-bc927cdfb966",
+          "rendered_chars": 515,
+          "overall_mean": 0.0,
+          "overall_std": 0.0,
+          "veto_count": 2,
+          "axis_means": {
+            "emotion_axis": 8.0,
+            "structure_axis": 7.38,
+            "prose_axis": 5.83
+          },
+          "committee_runs": [
+            {
+              "overall": 0.0,
+              "vetoed": true,
+              "veto_reasons": [
+                "ai_prose_ticks"
+              ],
+              "axis_scores": {
+                "emotion_axis": 8.0,
+                "structure_axis": 7.0,
+                "prose_axis": 5.0
+              },
+              "errors": [
+                {
+                  "dim_id": "desire_clarity",
+                  "parse_status": "parse_failed",
+                  "error": "ReadTimeout: The read operation timed out"
+                },
+                {
+                  "dim_id": "dialogue_voice",
+                  "parse_status": "parse_failed",
+                  "error": "ReadTimeout: The read operation timed out"
+                }
+              ]
+            },
+            {
+              "overall": 0.0,
+              "vetoed": true,
+              "veto_reasons": [
+                "ai_prose_ticks"
+              ],
+              "axis_scores": {
+                "emotion_axis": 8.0,
+                "structure_axis": 7.75,
+                "prose_axis": 6.67
+              },
+              "errors": [
+                {
+                  "dim_id": "desire_clarity",
+                  "parse_status": "parse_failed",
+                  "error": "ReadTimeout: The read operation timed out"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "chapter": 3,
+          "node_id": "e7fec7e8-8da7-4639-ad39-07f7a2987f96",
+          "rendered_chars": 469,
+          "overall_mean": 0.0,
+          "overall_std": 0.0,
+          "veto_count": 2,
+          "axis_means": {
+            "emotion_axis": 7.75,
+            "structure_axis": 8.0,
+            "prose_axis": 7.0
+          },
+          "committee_runs": [
+            {
+              "overall": 0.0,
+              "vetoed": true,
+              "veto_reasons": [
+                "ai_prose_ticks"
+              ],
+              "axis_scores": {
+                "emotion_axis": 8.0,
+                "structure_axis": 7.75,
+                "prose_axis": 7.0
+              },
+              "errors": [
+                {
+                  "dim_id": "tension_pressure",
+                  "parse_status": "parse_failed",
+                  "error": null
+                }
+              ]
+            },
+            {
+              "overall": 0.0,
+              "vetoed": true,
+              "veto_reasons": [
+                "ai_prose_ticks"
+              ],
+              "axis_scores": {
+                "emotion_axis": 7.5,
+                "structure_axis": 8.25,
+                "prose_axis": 7.0
+              },
+              "errors": [
+                {
+                  "dim_id": "conflict_density",
+                  "parse_status": "parse_failed",
+                  "error": null
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "chapter": 4,
+          "node_id": "91a55522-d673-4b48-abb8-fcf48e7a8993",
+          "rendered_chars": 1031,
+          "overall_mean": 5.93,
+          "overall_std": 0.141,
+          "veto_count": 0,
+          "axis_means": {
+            "emotion_axis": 5.33,
+            "structure_axis": 6.0,
+            "prose_axis": 6.67
+          },
+          "committee_runs": [
+            {
+              "overall": 6.03,
+              "vetoed": false,
+              "veto_reasons": [],
+              "axis_scores": {
+                "emotion_axis": 5.33,
+                "structure_axis": 7.0,
+                "prose_axis": 6.0
+              },
+              "errors": []
+            },
+            {
+              "overall": 5.83,
+              "vetoed": false,
+              "veto_reasons": [],
+              "axis_scores": {
+                "emotion_axis": 5.33,
+                "structure_axis": 5.0,
+                "prose_axis": 7.33
+              },
+              "errors": []
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "aggregate": {
+    "overall_mean": 1.482,
+    "overall_std": 0.0,
+    "axis_means": {
+      "emotion_axis": 6.6,
+      "structure_axis": 6.84,
+      "prose_axis": 5.92
+    },
+    "n_simulations_with_data": 1
+  }
+}

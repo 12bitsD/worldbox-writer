@@ -28,12 +28,13 @@ it everywhere.
 from __future__ import annotations
 
 import json
-import os
 import time as _time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Mapping
 
+from worldbox_writer.config.settings import get_settings
 from worldbox_writer.evals.dimension_prompts import (
+    AI_PROSE_TICKS,
     ALL_DIMENSIONS,
     CROSS_PASSAGE_DIMENSIONS,
     DIMENSION_AXIS_MAP,
@@ -42,14 +43,13 @@ from worldbox_writer.evals.dimension_prompts import (
     build_multi_chapter_user_message,
     build_user_message,
 )
-from worldbox_writer.utils.llm import chat_completion
+from worldbox_writer.utils.llm import chat_completion_with_profile
 
 DEFAULT_JUDGE_MODEL = "gpt-5.5"
-JUDGE_MODEL_ENV = "WORLDBOX_JUDGE_MODEL"
 
 
 def _resolve_judge_model(model: str | None) -> str:
-    return model or os.environ.get(JUDGE_MODEL_ENV, DEFAULT_JUDGE_MODEL)
+    return model or get_settings().model_eval.judge_model
 
 
 def _fenced_blocks(raw: str) -> list[str]:
@@ -78,6 +78,16 @@ def _json_candidates(raw: str) -> list[str]:
     if start != -1 and end != -1 and end > start:
         candidates.append(raw[start : end + 1].strip())
     candidates.append(raw.strip())
+    decoder = json.JSONDecoder()
+    for idx, char in enumerate(raw):
+        if char != "{":
+            continue
+        try:
+            parsed, _ = decoder.raw_decode(raw[idx:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            candidates.append(json.dumps(parsed, ensure_ascii=False))
     return candidates
 
 
@@ -102,6 +112,27 @@ COMMITTEE_AXIS_WEIGHTS: dict[str, float] = {
     "prose_axis": 0.3,
 }
 COMMITTEE_TOXIC_VETO_THRESHOLD = 8.0
+_AI_PROSE_TRANSLATION_MARKERS = ("哦，我的天", "天哪", "上帝啊", "这真是")
+_FORCED_STUPIDITY_SETUP_MARKERS = ("智将", "老祖", "谋主")
+_FORCED_STUPIDITY_EVIDENCE_MARKERS = (
+    "我告诉你一个秘密",
+    "我连后手都告诉你",
+    "地址我也告诉你",
+    "给你三息时间",
+    "没有问送信人是谁",
+    "没有派一个斥候",
+    "立刻发兵",
+)
+_FORCED_STUPIDITY_PAYOFF_BLOCKERS = (
+    "摊开",
+    "递出",
+    "拿出",
+    "露出",
+    "铜钱",
+    "发带",
+    "遗物",
+    "笔迹",
+)
 
 
 _QUOTE_NORMALIZATION = str.maketrans(
@@ -121,7 +152,11 @@ def _normalize_for_substring(s: str) -> str:
     text. We accept that as still being a valid quote, but reject anything
     not derivable from the original after this normalization.
     """
-    return "".join(ch for ch in s.translate(_QUOTE_NORMALIZATION) if not ch.isspace())
+    return "".join(
+        ch
+        for ch in s.translate(_QUOTE_NORMALIZATION)
+        if not ch.isspace() and ch not in {'"', "'"}
+    )
 
 
 def _evidence_in_text(text: str, quote: str) -> bool:
@@ -135,13 +170,80 @@ def _evidence_in_text(text: str, quote: str) -> bool:
     return _normalize_for_substring(quote) in _normalize_for_substring(text)
 
 
+def _sentence_containing(text: str, marker: str) -> str:
+    index = text.find(marker)
+    if index == -1:
+        return ""
+    left = max(
+        text.rfind("\n", 0, index),
+        text.rfind("。", 0, index),
+        text.rfind("！", 0, index),
+        text.rfind("？", 0, index),
+    )
+    right_candidates = [
+        pos
+        for pos in (
+            text.find("\n", index),
+            text.find("。", index),
+            text.find("！", index),
+            text.find("？", index),
+        )
+        if pos != -1
+    ]
+    right = min(right_candidates) + 1 if right_candidates else len(text)
+    return text[left + 1 : right].strip()[:240]
+
+
+def _ai_prose_ticks_rule_floor(text: str) -> tuple[float, str, str] | None:
+    for marker in _AI_PROSE_TRANSLATION_MARKERS:
+        if marker in text:
+            return (
+                8.0,
+                _sentence_containing(text, marker),
+                "ai_prose_ticks.translation_tone",
+            )
+    if text.count("你或许不知道") >= 2:
+        return (
+            8.0,
+            _sentence_containing(text, "你或许不知道"),
+            "ai_prose_ticks.expository_dialogue",
+        )
+    return None
+
+
+def _forced_stupidity_rule_floor(text: str) -> tuple[float, str, str, str] | None:
+    if any(marker in text for marker in _FORCED_STUPIDITY_PAYOFF_BLOCKERS):
+        return None
+    setup = ""
+    for marker in _FORCED_STUPIDITY_SETUP_MARKERS:
+        setup = _sentence_containing(text, marker)
+        if setup:
+            break
+    if not setup:
+        return None
+
+    evidence = ""
+    for marker in _FORCED_STUPIDITY_EVIDENCE_MARKERS:
+        evidence = _sentence_containing(text, marker)
+        if evidence:
+            break
+    if not evidence:
+        return None
+    rule = (
+        "forced_stupidity.illogical_trust"
+        if "送信人" in evidence or "斥候" in evidence or "发兵" in evidence
+        else "forced_stupidity.villain_monologuing"
+    )
+    return 8.0, evidence, setup, rule
+
+
 def _committee_call_one(
     dim: DimensionPrompt,
     text: str,
     *,
     model: str | None,
-    temperature: float,
-    max_tokens: int,
+    temperature: float | None,
+    max_tokens: int | None,
 ) -> dict[str, Any]:
     """Run one dimension prompt against text and return a normalized record."""
     started = _time.time()
@@ -152,9 +254,9 @@ def _committee_call_one(
     raw = ""
     error: str | None = None
     try:
-        raw = chat_completion(
+        raw = chat_completion_with_profile(
+            "judge_committee",
             messages,
-            role="narrator",
             model=model,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -180,6 +282,31 @@ def _committee_call_one(
 
     evidence_quote = str(parsed.get("evidence_quote") or "")[:240]
     setup_quote = str(parsed.get("setup_quote") or "")[:240]
+    rule_hit = str(parsed.get("rule_hit") or "")
+    coercions: list[str] = []
+
+    if dim.dim_id == "ai_prose_ticks":
+        ai_floor = _ai_prose_ticks_rule_floor(text)
+        if ai_floor is not None:
+            floor_score, floor_evidence, floor_rule = ai_floor
+            if score is None or score < floor_score:
+                score = floor_score
+                coercions.append("ai_prose_ticks_rule_floor")
+            applicable = True
+            evidence_quote = floor_evidence or evidence_quote
+            rule_hit = floor_rule
+
+    if dim.dim_id == "forced_stupidity":
+        forced_floor = _forced_stupidity_rule_floor(text)
+        if forced_floor is not None:
+            floor_score, floor_evidence, floor_setup, floor_rule = forced_floor
+            if score is None or score < floor_score:
+                score = floor_score
+                coercions.append("forced_stupidity_rule_floor")
+            applicable = True
+            evidence_quote = floor_evidence or evidence_quote
+            setup_quote = floor_setup or setup_quote
+            rule_hit = floor_rule
 
     # Schema coercions enforced post-parse:
     # 1. forced_stupidity v0.2 hard rule — applicable=true requires BOTH
@@ -190,7 +317,6 @@ def _committee_call_one(
     # 2. Evidence substring validation — when score ≥ 5, evidence_quote
     #    must be a real substring of the input. R3 found judges occasionally
     #    paraphrase or invent the quote. Fabricated quote → demote score to 4.
-    coercions: list[str] = []
     if dim.dim_id == "forced_stupidity" and applicable is True:
         if score is None:
             applicable = False
@@ -228,7 +354,7 @@ def _committee_call_one(
         "evidence_invalid": evidence_invalid,
         "setup_quote": setup_quote,
         "setup_invalid": setup_invalid,
-        "rule_hit": str(parsed.get("rule_hit") or ""),
+        "rule_hit": rule_hit,
         "reasoning": str(parsed.get("reasoning") or "")[:120],
         "raw_excerpt": raw[:240],
         "parse_status": parse_status,
@@ -337,8 +463,8 @@ def judge_committee(
     text: str,
     *,
     model: str | None = None,
-    temperature: float = 0.2,
-    max_tokens: int = 320,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
     concurrency: int = 1,
     weights: Mapping[str, float] | None = None,
 ) -> dict[str, Any]:
@@ -423,6 +549,23 @@ def judge_committee(
     }
 
 
+def judge_ai_prose_ticks(
+    text: str,
+    *,
+    model: str | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+) -> dict[str, Any]:
+    """Run only the ai_prose_ticks toxic dimension."""
+    return _committee_call_one(
+        AI_PROSE_TICKS,
+        text,
+        model=_resolve_judge_model(model),
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+
+
 # ===========================================================================
 # Sprint 25 R5 — judge_multi_chapter API (cross-passage dimensions)
 # ===========================================================================
@@ -448,8 +591,8 @@ def _multichapter_call_one(
     chapters: list[str],
     *,
     model: str | None,
-    temperature: float,
-    max_tokens: int,
+    temperature: float | None,
+    max_tokens: int | None,
 ) -> dict[str, Any]:
     """Run one cross-passage prompt against the chapter sequence."""
     started = _time.time()
@@ -460,9 +603,9 @@ def _multichapter_call_one(
     raw = ""
     error: str | None = None
     try:
-        raw = chat_completion(
+        raw = chat_completion_with_profile(
+            "judge_multi_chapter",
             messages,
-            role="narrator",
             model=model,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -528,8 +671,8 @@ def judge_multi_chapter(
     chapters: list[str],
     *,
     model: str | None = None,
-    temperature: float = 0.2,
-    max_tokens: int = 360,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
     concurrency: int = 1,
 ) -> dict[str, Any]:
     """Score a chapter sequence on the 4 cross-passage dimensions.

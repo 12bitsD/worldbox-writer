@@ -4,7 +4,9 @@
 
 ## 保留文件
 
-- `SPRINT_25.md`：当前 Sprint — 评测体系重建（Eval-as-Goal-Language）
+- `LAUNCH_PLAN.md`：**v0.1.0-beta 上线计划（Sprint 26 → 30）**，5 类标签（EVAL/CRAFT/PLAT/STAB/RLS）+ 上线门 + Trade-off + 决策记录
+- `SPRINT_25.md`：上一 Sprint — 评测体系重建（Eval-as-Goal-Language），R6 收尾，状态见 `orchestrator/state.json`
+- `orchestrator/`：Sprint 25 各 round 的执行记录与 handoff（已归档）
 
 ## 归档说明
 

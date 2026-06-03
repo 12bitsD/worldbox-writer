@@ -30,6 +30,7 @@
 ## 5. Sprint 与迭代编排
 
 - [Sprint 文档清单](sprints/README.md)
+- **[v0.1.0-beta 上线计划（Sprint 26 → 30）](sprints/LAUNCH_PLAN.md)** — 5 类标签（EVAL/CRAFT/PLAT/STAB/RLS）+ 上线门 + Trade-off
 - [Sprint 25 计划](sprints/SPRINT_25.md)
 - [Orchestrator 总控手册（已归档）](sprints/orchestrator/README.md) — 北极星、双轴评估、四档标准、迭代主流程
 - [Orchestrator 当前状态快照](sprints/orchestrator/state.json)

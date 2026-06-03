@@ -132,7 +132,7 @@
     "Sprint 26 第一攻击点 = Narrator ai_prose_ticks（baseline 数据明确指出）"
   ],
   "handoff_to_codex": {
-    "MUST_READ_FIRST": "docs/orchestrator/HANDOFF_TO_CODEX.md (硬规则 + 反模式 + 工作流; 不读这个开始干会浪费 2-4 round 重新踩坑)",
+    "MUST_READ_FIRST": "docs/sprints/orchestrator/HANDOFF_TO_CODEX.md (硬规则 + 反模式 + 工作流; 不读这个开始干会浪费 2-4 round 重新踩坑)",
     "context": "Sprint 25 评测体系 v1.0 已就绪。当前生产系统在 R4 baseline 上为 L0（overall 3.73 / veto 46% 全由 ai_prose_ticks 触发 / 三轴均值已在 L2 接近线）。Sprint 26 第一攻击点明确",
     "tasks": [
       {

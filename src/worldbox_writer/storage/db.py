@@ -8,22 +8,16 @@ WorldState 整体序列化为 JSON 存入 state_json 列。
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from worldbox_writer.config.settings import get_settings
 from worldbox_writer.core.models import WorldState
-
-# ---------------------------------------------------------------------------
-# Database path
-# ---------------------------------------------------------------------------
-
-_DEFAULT_DB_PATH = os.path.join(os.getcwd(), "worldbox.db")
 
 
 def _get_db_path() -> str:
-    return os.environ.get("DB_PATH", _DEFAULT_DB_PATH)
+    return get_settings().storage.db_path
 
 
 # ---------------------------------------------------------------------------

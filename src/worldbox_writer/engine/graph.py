@@ -23,11 +23,9 @@ WorldBox Writer — Simulation Engine (LangGraph StateGraph).
 
 from __future__ import annotations
 
-import json
 from typing import Any, Dict, Literal, Optional, cast
 
 from langgraph.graph import END, START, StateGraph
-from typing_extensions import NotRequired, TypedDict
 
 from worldbox_writer.agents.critic import CriticAgent
 from worldbox_writer.agents.director import DirectorAgent, derive_title_from_premise
@@ -38,10 +36,8 @@ from worldbox_writer.agents.world_builder import WorldBuilderAgent
 from worldbox_writer.core.dual_loop import (
     ActionIntent,
     IntentCritique,
-    NarratorInput,
     PromptTrace,
     ScenePlan,
-    SceneScript,
 )
 from worldbox_writer.core.models import (
     NodeType,
@@ -54,37 +50,30 @@ from worldbox_writer.engine.dual_loop import (
     dual_loop_enabled,
     run_isolated_actor_runtime,
 )
+from worldbox_writer.engine.services import narration_service as _narration
+from worldbox_writer.engine.state import SimulationState
+from worldbox_writer.evals.llm_judge import judge_ai_prose_ticks
 from worldbox_writer.memory.memory_manager import MemoryManager
-from worldbox_writer.utils.llm import chat_completion, get_last_llm_call_metadata
-
-# ---------------------------------------------------------------------------
-# Graph State
-# ---------------------------------------------------------------------------
-
-
-class SimulationState(TypedDict):
-    """LangGraph shared state, passed through the entire simulation graph."""
-
-    world: WorldState
-    memory: MemoryManager
-    scene_plan: Optional[ScenePlan]
-    action_intents: NotRequired[list[ActionIntent]]
-    intent_critiques: NotRequired[list[IntentCritique]]
-    prompt_traces: NotRequired[list[PromptTrace]]
-    scene_script: NotRequired[Optional[SceneScript]]
-    candidate_event: str
-    validation_passed: bool
-    needs_intervention: bool
-    initialized: bool
-    world_built: bool
-    max_ticks: int
-    error: str
-    sim_id: str
-    trace_id: str
-    streaming_callbacks: Optional[Dict]
-
+from worldbox_writer.prompting.registry import load_prompt_template
+from worldbox_writer.utils.llm import (
+    chat_completion_with_profile,
+    get_last_llm_call_metadata,
+)
 
 _GATE_KEEPER_SELF_HEAL_ATTEMPTS = 2
+
+AI_PROSE_TICKS_BANNED_MARKERS = _narration.AI_PROSE_TICKS_BANNED_MARKERS
+NarrationService = _narration.NarrationService
+_ai_prose_ticks_hit = _narration.ai_prose_ticks_hit
+_ai_prose_ticks_summary = _narration.ai_prose_ticks_summary
+_build_narrator_input_v2 = _narration.build_narrator_input_v2
+_format_prompt_lines = _narration.format_prompt_lines
+_has_banned_ai_prose_marker = _narration.has_banned_ai_prose_marker
+_json_retry_narrator_messages = _narration.json_retry_narrator_messages
+_load_scene_script_for_node = _narration.load_scene_script_for_node
+_parse_narrator_prose = _narration.parse_narrator_prose
+_scene_beat_line = _narration.scene_beat_line
+_strict_narrator_messages = _narration.strict_narrator_messages
 
 
 _POSITIVE_RELATIONSHIP_KEYWORDS = {
@@ -232,76 +221,6 @@ def _ordered_lineage_nodes(world: WorldState) -> list[StoryNode]:
     return ordered
 
 
-def _format_prompt_lines(items: list[str], empty: str = "（无）") -> str:
-    lines = [str(item).strip() for item in items if str(item).strip()]
-    if not lines:
-        return empty
-    return "\n".join(f"- {line}" for line in lines)
-
-
-def _load_scene_script_for_node(node: StoryNode) -> Optional[SceneScript]:
-    raw_scene_script = node.metadata.get("scene_script")
-    if isinstance(raw_scene_script, SceneScript):
-        return raw_scene_script
-    if not isinstance(raw_scene_script, dict):
-        return None
-    try:
-        return SceneScript.model_validate(raw_scene_script)
-    except Exception:
-        return None
-
-
-def _scene_beat_line(beat: Any) -> str:
-    actor_prefix = f"{beat.actor_name}：" if getattr(beat, "actor_name", None) else ""
-    outcome = getattr(beat, "outcome", "")
-    if outcome:
-        return f"{actor_prefix}{beat.summary} -> {outcome}"
-    return f"{actor_prefix}{beat.summary}"
-
-
-def _build_narrator_input_v2(
-    current_node: StoryNode,
-    *,
-    scene_script: Optional[SceneScript],
-    narrative_context: str,
-    chars_info: list[str],
-    locations_text: str,
-) -> NarratorInput:
-    if scene_script is None:
-        return NarratorInput(
-            source="story_node",
-            title=current_node.title,
-            summary=current_node.description,
-            memory_context=narrative_context,
-            character_summaries=chars_info,
-            location_context=locations_text,
-            metadata={"node_id": str(current_node.id)},
-        )
-
-    beats = [_scene_beat_line(beat) for beat in scene_script.beats]
-    return NarratorInput(
-        source="scene_script",
-        scene_id=scene_script.scene_id,
-        script_id=scene_script.script_id,
-        title=scene_script.title or current_node.title,
-        summary=scene_script.summary or current_node.description,
-        public_facts=list(scene_script.public_facts),
-        beats=beats,
-        participating_character_ids=list(scene_script.participating_character_ids),
-        rejected_intent_ids=list(scene_script.rejected_intent_ids),
-        memory_context=narrative_context,
-        character_summaries=chars_info,
-        location_context=locations_text,
-        metadata={
-            "node_id": str(current_node.id),
-            "source_node_id": scene_script.source_node_id,
-            "accepted_intent_count": len(scene_script.accepted_intent_ids),
-            "rejected_intent_count": len(scene_script.rejected_intent_ids),
-            "beat_count": len(scene_script.beats),
-        },
-    )
-
-
 def rebuild_memory_from_world(
     world: WorldState,
     *,
@@ -430,15 +349,7 @@ def _revise_candidate_event(
     messages = [
         {
             "role": "system",
-            "content": (
-                "你是 WorldBox Writer 的边界修正器。"
-                "请根据拒绝原因和修正建议，对候选事件做最小必要修改。"
-                "要求：\n"
-                "1. 保持原事件核心戏剧张力\n"
-                "2. 必须满足修正建议\n"
-                "3. 输出 50-100 字事件描述\n"
-                "4. 只输出修正后的事件，不要解释"
-            ),
+            "content": load_prompt_template("graph_system", variant="boundary_reviser"),
         },
         {
             "role": "user",
@@ -451,13 +362,7 @@ def _revise_candidate_event(
             ),
         },
     ]
-    return chat_completion(
-        messages,
-        role="gate_keeper",
-        temperature=0.2,
-        max_tokens=220,
-        top_p=0.9,
-    ).strip()
+    return chat_completion_with_profile("boundary_reviser", messages).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -751,15 +656,7 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
     messages = [
         {
             "role": "system",
-            "content": (
-                "你是一个故事世界的推演引擎。根据当前世界状态，生成下一个合理的故事事件。\n"
-                "要求：\n"
-                "1. 事件必须符合世界规则和角色性格\n"
-                "2. 事件要推动故事发展，制造冲突或转折\n"
-                "3. 如果提供了 Scene Plan，必须优先服从 Director 的场景目标、聚光灯和叙事压力\n"
-                "4. 用一段简洁的描述（50-100字）描述这个事件\n"
-                "5. 只输出事件描述，不要有其他内容"
-            ),
+            "content": load_prompt_template("graph_system", variant="actor_event"),
         },
         {
             "role": "user",
@@ -778,9 +675,7 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
         },
     ]
 
-    candidate = chat_completion(
-        messages, role="actor", temperature=0.8, max_tokens=200, top_p=0.95
-    )
+    candidate = chat_completion_with_profile("actor_event", messages)
     llm_fields = _llm_telemetry_fields(get_last_llm_call_metadata())
     _emit_telemetry(
         state,
@@ -1107,222 +1002,21 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
     }
 
 
+def _narration_service() -> NarrationService:
+    return NarrationService(
+        chat_completion_func=chat_completion_with_profile,
+        judge_ai_prose_ticks_func=judge_ai_prose_ticks,
+        get_last_metadata_func=get_last_llm_call_metadata,
+        load_prompt_template_func=load_prompt_template,
+        emit_telemetry_func=_emit_telemetry,
+        llm_telemetry_fields_func=_llm_telemetry_fields,
+        load_scene_script_func=_load_scene_script_for_node,
+    )
+
+
 def narrator_node(state: SimulationState) -> Dict[str, Any]:
     """Narrator Agent: render current node into literary prose."""
-    world = state["world"]
-    memory: MemoryManager = state["memory"]
-
-    if not world.current_node_id:
-        return {}
-
-    current_node = world.get_node(world.current_node_id)
-    if not current_node or current_node.is_rendered:
-        return {}
-
-    scene_script = _load_scene_script_for_node(current_node)
-    narrative_query = (
-        scene_script.summary
-        if scene_script is not None and scene_script.summary
-        else current_node.description
-    )
-
-    chars_info = []
-    for cid in current_node.character_ids[:3]:
-        char = world.get_character(cid)
-        if char:
-            chars_info.append(f"{char.name}（{char.personality}）")
-
-    narrative_context = memory.get_context_for_agent(
-        query=narrative_query, max_entries=5
-    )
-
-    locations_text = (
-        "、".join([loc.get("name", "") for loc in world.locations[:2]])
-        if world.locations
-        else ""
-    )
-
-    narrator_input = _build_narrator_input_v2(
-        current_node,
-        scene_script=scene_script,
-        narrative_context=narrative_context,
-        chars_info=chars_info,
-        locations_text=locations_text,
-    )
-    current_node.metadata["narrator_input_v2"] = narrator_input.model_dump(mode="json")
-
-    if narrator_input.source == "scene_script":
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "你是一位出色的中文网络小说作家。你的任务是根据 GM 提供的场景脚本，"
-                    "创作一段引人入胜的小说章节。\n\n"
-                    "写作风格要求：\n"
-                    "1. 第三人称叙述，800-1500字\n"
-                    "2. 开头用环境描写建立氛围（天气、光线、声音、气味）\n"
-                    "3. 角色对话要有个性——用语气、用词、口癖体现性格差异\n"
-                    "4. 穿插角色的心理活动和微表情描写\n"
-                    "5. 段落之间有节奏变化：紧张时短句，舒缓时长句\n"
-                    "6. 章节结尾留悬念或情绪钩子\n\n"
-                    "创作边界：\n"
-                    "- 以 SceneScript 的 beats 为剧情骨架，在此基础上丰富细节\n"
-                    "- 不要改变 beats 中定义的核心事实（谁做了什么、结果是什么）\n"
-                    "- 可以添加：环境细节、配角反应、角色内心独白、感官描写\n"
-                    "- 不要写入 rejected intent ids 对应的被拒绝意图\n"
-                    "- 与前文记忆保持一致，不要与已有记忆矛盾\n\n"
-                    "输出合法 JSON：\n"
-                    '{"prose": "小说正文...", "style_notes": "本段风格说明"}'
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"世界背景：{world.premise}\n"
-                    f"主要地点：{narrator_input.location_context}\n\n"
-                    f"涉及角色：{', '.join(narrator_input.character_summaries)}\n\n"
-                    f"故事记忆（按时间排序）：\n{narrator_input.memory_context}\n\n"
-                    "SceneScript（唯一客观事实源）：\n"
-                    f"标题：{narrator_input.title}\n"
-                    f"客观摘要：{narrator_input.summary}\n"
-                    "公开事实：\n"
-                    f"{_format_prompt_lines(narrator_input.public_facts)}\n"
-                    "已结算 beats：\n"
-                    f"{_format_prompt_lines(narrator_input.beats)}\n"
-                    "Rejected intent ids（禁止写入）：\n"
-                    f"{_format_prompt_lines(narrator_input.rejected_intent_ids)}\n\n"
-                    "请基于以上 SceneScript 渲染小说正文："
-                ),
-            },
-        ]
-    else:
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "你是一位出色的中文网络小说作家。你的任务是根据 GM 提供的场景脚本，"
-                    "创作一段引人入胜的小说章节。\n\n"
-                    "写作风格要求：\n"
-                    "1. 第三人称叙述，800-1500字\n"
-                    "2. 开头用环境描写建立氛围（天气、光线、声音、气味）\n"
-                    "3. 角色对话要有个性——用语气、用词、口癖体现性格差异\n"
-                    "4. 穿插角色的心理活动和微表情描写\n"
-                    "5. 段落之间有节奏变化：紧张时短句，舒缓时长句\n"
-                    "6. 章节结尾留悬念或情绪钩子\n\n"
-                    "创作边界：\n"
-                    "- 以 beats 为剧情骨架，在此基础上丰富细节\n"
-                    "- 不要改变核心事实（谁做了什么、结果是什么）\n"
-                    "- 可以添加：环境细节、配角反应、角色内心独白、感官描写\n"
-                    "- 与前文记忆保持一致，不要与已有记忆矛盾\n\n"
-                    "输出合法 JSON：\n"
-                    '{"prose": "小说正文...", "style_notes": "本段风格说明"}'
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"世界背景：{world.premise}\n"
-                    f"主要地点：{narrator_input.location_context}\n\n"
-                    f"涉及角色：{', '.join(narrator_input.character_summaries)}\n\n"
-                    f"故事记忆（按时间排序）：\n{narrator_input.memory_context}\n\n"
-                    f"当前事件（需要渲染）：{narrator_input.summary}\n\n"
-                    "请将此事件渲染为小说文本："
-                ),
-            },
-        ]
-
-    callbacks = state.get("streaming_callbacks") or {}
-    on_start_cb = callbacks.get("on_start")
-    on_end_cb = callbacks.get("on_end")
-
-    if on_start_cb:
-        _emit_telemetry(
-            state,
-            tick=world.tick,
-            agent="narrator",
-            stage="started",
-            message="开始渲染小说文本",
-            payload={
-                "node_id": str(current_node.id),
-                "title": current_node.title,
-                "narrator_input_source": narrator_input.source,
-                "scene_id": narrator_input.scene_id,
-                "script_id": narrator_input.script_id,
-                "beat_count": len(narrator_input.beats),
-            },
-        )
-        on_start_cb(
-            node_id=str(current_node.id),
-            title=current_node.title,
-            description=current_node.description,
-            tick=world.tick,
-            node_type=current_node.node_type.value,
-        )
-
-    try:
-        raw_output = chat_completion(
-            messages,
-            role="narrator",
-            temperature=0.8,
-            max_tokens=2000,
-            top_p=0.95,
-            on_token=callbacks.get("on_token"),
-        )
-        if not raw_output.strip():
-            raise ValueError("Narrator returned an empty completion")
-        # Strip markdown code block wrapper if present
-        clean = raw_output.strip()
-        if clean.startswith("```"):
-            clean = clean.split("\n", 1)[-1]
-        if clean.endswith("```"):
-            clean = clean.rsplit("```", 1)[0]
-        clean = clean.strip()
-        # Parse JSON response to extract prose field
-        try:
-            parsed = json.loads(clean)
-            prose = parsed.get("prose", raw_output)
-        except (json.JSONDecodeError, TypeError):
-            prose = raw_output
-    except Exception:
-        prose = (
-            f"{current_node.title}继续展开。{narrator_input.summary}"
-            "人物在既有事实和约束下推进选择，新的局势也随之积蓄。"
-        )
-    llm_fields = _llm_telemetry_fields(get_last_llm_call_metadata())
-
-    if on_end_cb:
-        on_end_cb()
-    _emit_telemetry(
-        state,
-        tick=world.tick,
-        agent="narrator",
-        stage="completed",
-        message="小说文本渲染完成",
-        payload={
-            "node_id": str(current_node.id),
-            "title": current_node.title,
-            "narrator_input_source": narrator_input.source,
-            "scene_id": narrator_input.scene_id,
-            "script_id": narrator_input.script_id,
-        },
-        **llm_fields,
-    )
-
-    current_node.rendered_text = prose.strip()
-    current_node.is_rendered = True
-    world.nodes[world.current_node_id] = current_node
-
-    on_node_rendered_cb = callbacks.get("on_node_rendered")
-    if on_node_rendered_cb:
-        on_node_rendered_cb(current_node, world)
-
-    # Update character memory
-    for cid in current_node.character_ids[:3]:
-        char = world.get_character(cid)
-        if char:
-            char.add_memory(narrator_input.summary[:80])
-
-    return {"world": world}
+    return _narration_service().render_current_node(state)
 
 
 # ---------------------------------------------------------------------------

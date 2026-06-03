@@ -76,7 +76,7 @@ def test_e2e_judge_mock_flag_runs_judge_committee(tmp_path, monkeypatch) -> None
     module = _load_script_module()
     output_path = tmp_path / "report.json"
 
-    def fake_chat(messages, **_kwargs):
+    def fake_chat(_profile_id, messages, **_kwargs):
         system = messages[0]["content"]
         if "cross-passage" in system or "跨章节" in system:
             return _xp_payload(score=7.0)
@@ -84,7 +84,7 @@ def test_e2e_judge_mock_flag_runs_judge_committee(tmp_path, monkeypatch) -> None
 
     import worldbox_writer.evals.llm_judge as llm_judge_mod
 
-    monkeypatch.setattr(llm_judge_mod, "chat_completion", fake_chat)
+    monkeypatch.setattr(llm_judge_mod, "chat_completion_with_profile", fake_chat)
 
     exit_code = module.main(
         ["--mock", "--judge-runs-per-chapter", "1", "--output", str(output_path)]

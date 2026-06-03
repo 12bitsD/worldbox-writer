@@ -1,0 +1,160 @@
+profiles:
+  - profile_id: director_init
+    role: director
+    temperature: 0.7
+    max_tokens: 2048
+    notes: Initial world JSON generation.
+  - profile_id: director_intervention
+    role: director
+    temperature: 0.5
+    max_tokens: 1024
+    notes: User intervention to persistent constraints.
+  - profile_id: director_title
+    role: director
+    temperature: 0.8
+    max_tokens: 50
+    notes: Short scene/chapter title generation.
+  - profile_id: actor_propose
+    role: actor
+    temperature: 0.8
+    max_tokens: 300
+    notes: Single-character action proposal.
+  - profile_id: actor_synthesize
+    role: actor
+    temperature: 0.7
+    max_tokens: 300
+    notes: Merge actor proposals into one event.
+  - profile_id: actor_event
+    role: actor
+    temperature: 0.8
+    top_p: 0.95
+    max_tokens: 200
+    notes: Production graph candidate event generation.
+  - profile_id: actor_intent
+    role: actor
+    temperature: 0.75
+    top_p: 0.95
+    max_tokens: 320
+    notes: Dual-loop actor intent JSON generation.
+  - profile_id: critic_review
+    role: critic
+    temperature: 0.0
+    max_tokens: 360
+    notes: Critic policy review; uses critic role, not gate_keeper.
+  - profile_id: gate_keeper_validate
+    role: gate_keeper
+    temperature: 0.0
+    max_tokens: 512
+    notes: Validate a proposed node against active constraints.
+  - profile_id: boundary_reviser
+    role: gate_keeper
+    temperature: 0.2
+    top_p: 0.9
+    max_tokens: 220
+    notes: Minimal revision of rejected candidate events.
+  - profile_id: node_detector
+    role: node_detector
+    temperature: 0.3
+    max_tokens: 512
+    notes: Semantic intervention detection.
+  - profile_id: world_builder_location
+    role: world_builder
+    temperature: 0.7
+    max_tokens: 500
+    notes: On-demand location expansion.
+  - profile_id: world_builder_expand
+    role: world_builder
+    temperature: 0.7
+    max_tokens: 2000
+    notes: Initial world lore expansion.
+  - profile_id: narrator_render
+    role: narrator
+    temperature: 0.8
+    top_p: 0.95
+    max_tokens: 2000
+    notes: Production graph scene-script rendering.
+  - profile_id: narrator_agent_render
+    role: narrator
+    temperature: 0.75
+    max_tokens: 800
+    notes: Legacy NarratorAgent node rendering.
+  - profile_id: narrator_fast_forward
+    role: narrator
+    temperature: 0.5
+    max_tokens: 800
+    notes: Fast-forward skeleton summary.
+  - profile_id: narrator_title
+    role: narrator
+    temperature: 0.7
+    max_tokens: 30
+    notes: Short chapter title generation.
+  - profile_id: narrator_iterative_skeleton
+    role: narrator
+    temperature: 0.3
+    max_tokens: 700
+    notes: Iterative narrator skeleton stage.
+  - profile_id: narrator_iterative_expansion
+    role: narrator
+    temperature: 0.65
+    max_tokens: 1600
+    notes: Iterative narrator expansion stage.
+  - profile_id: narrator_iterative_polish
+    role: narrator
+    temperature: 0.75
+    max_tokens: 2400
+    notes: Iterative narrator polish stage.
+  - profile_id: narrator_iterative_judge
+    role: judge
+    temperature: 0.2
+    max_tokens: 500
+    notes: Iterative narrator stage judge.
+  - profile_id: memory_consistency
+    role: memory
+    temperature: 0.0
+    max_tokens: 200
+    notes: Memory consistency check.
+  - profile_id: memory_character_arc
+    role: memory
+    temperature: 0.5
+    max_tokens: 100
+    notes: Character arc summary.
+  - profile_id: memory_summarize
+    role: memory
+    temperature: 0.2
+    max_tokens: 260
+    notes: Memory compaction summary.
+  - profile_id: judge_committee
+    role: judge
+    temperature: 0.2
+    max_tokens: 320
+    notes: Per-chapter quality committee.
+  - profile_id: judge_multi_chapter
+    role: judge
+    temperature: 0.2
+    max_tokens: 360
+    notes: Cross-chapter judge dimensions.
+  - profile_id: model_eval_logic_structured_action
+    role: actor
+    temperature: 0.2
+    max_tokens: 180
+    notes: Model eval structured action case.
+  - profile_id: model_eval_logic_memory_summary
+    role: memory
+    temperature: 0.2
+    max_tokens: 220
+    notes: Model eval memory summary case.
+  - profile_id: model_eval_creative_scene
+    role: narrator
+    temperature: 0.8
+    max_tokens: 320
+    notes: Model eval creative scene case.
+  - profile_id: model_eval_creative_worldbuild
+    role: world_builder
+    temperature: 0.6
+    max_tokens: 240
+    notes: Model eval creative worldbuilding case.
+  - profile_id: model_eval_creative_dialogue
+    role: narrator
+    temperature: 0.7
+    max_tokens: 260
+    notes: Model eval creative dialogue case.

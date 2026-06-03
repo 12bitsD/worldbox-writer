@@ -23,7 +23,7 @@ from worldbox_writer.evals.llm_judge import (
     _resolve_judge_model,
     parse_judge_response,
 )
-from worldbox_writer.utils.llm import chat_completion
+from worldbox_writer.utils.llm import chat_completion_with_profile
 
 INTERMEDIATE_SCHEMA_VERSION = "intermediate-judge-v0.1"
 
@@ -272,12 +272,12 @@ def _judge_one_dimension(
                 f"{source_text}"
             )
         try:
-            raw = chat_completion(
+            raw = chat_completion_with_profile(
+                "judge_committee",
                 [
                     {"role": "system", "content": dim.system_prompt},
                     {"role": "user", "content": user_content},
                 ],
-                role="narrator",
                 model=judge_model,
                 temperature=temperature,
                 max_tokens=max_tokens,

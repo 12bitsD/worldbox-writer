@@ -9,59 +9,18 @@ single-shot ceiling.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from typing import Any, Optional, cast
 
 from worldbox_writer.agents.narrator import NarratorOutput
 from worldbox_writer.core.dual_loop import NarratorInput, SceneBeat, SceneScript
 from worldbox_writer.core.models import NodeType, StoryNode, WorldState
-from worldbox_writer.utils.llm import chat_completion, get_last_llm_call_metadata
-
-_SKELETON_SYSTEM_PROMPT = """你是 WorldBox Writer 的场景骨架师。
-
-任务：把 SceneScript 转成可扩写的 bullet list。
-
-要求：
-1. 只列要点，不写完整小说句子
-2. 覆盖场景、行动、对话要点和结果
-3. 不新增改变因果的新事实
-4. 每条 bullet 必须对应 summary、public_facts 或 beats 中的信息
-"""
-
-_EXPANSION_SYSTEM_PROMPT = """你是 WorldBox Writer 的场景扩写作者。
-
-任务：基于骨架写段落式草稿，目标 500-800 字。
-
-要求：
-1. 加入环境描写、感官细节和角色动作
-2. 让角色通过动作和短对话推进冲突
-3. 保持 SceneScript 的核心事实不变
-4. 输出连续段落，不输出分析说明
-"""
-
-_POLISH_SYSTEM_PROMPT = """你是 WorldBox Writer 的小说润色作者。
-
-任务：把草稿润色成 800-1500 字最终 prose。
-
-负面约束：
-- 禁用模板化开头和安全收尾
-- 禁用机械排比
-- 禁用解释性对话
-- 避免堆砌比喻和抽象情绪词
-
-正面要求：
-1. 调整长短句节奏
-2. 增加潜台词和停顿
-3. 用具体物件、声音、气味承载情绪
-4. 消除 AI 味，只输出小说正文
-"""
-
-_JUDGE_SYSTEM_PROMPT = """你是严格的小说质量评委，只输出合法 JSON。
-
-输出格式：
-{"score": 0-10, "feedback": "一句话指出下一轮最需要修正的问题"}
-"""
+from worldbox_writer.prompting.registry import load_prompt_template
+from worldbox_writer.utils.json_parsing import parse_json_object
+from worldbox_writer.utils.llm import (
+    chat_completion_with_profile,
+    get_last_llm_call_metadata,
+)
 
 _NEGATIVE_CONSTRAINTS = (
     "禁用模板化开头；禁用机械排比；禁用解释性对话；"
@@ -252,8 +211,7 @@ class NarratorIterativeAgent:
             self._skeleton_messages(context),
             text_keys=("skeleton", "outline", "content"),
             fallback=self._fallback_skeleton(context),
-            temperature=0.3,
-            max_tokens=700,
+            profile_id="narrator_iterative_skeleton",
         )
         skeleton_stage = self._evaluate_stage("skeleton", skeleton)
 
@@ -269,8 +227,7 @@ class NarratorIterativeAgent:
             ),
             text_keys=("draft", "prose", "content"),
             fallback=self._fallback_expansion(context, skeleton),
-            temperature=0.65,
-            max_tokens=1600,
+            profile_id="narrator_iterative_expansion",
         )
         expansion_stage = self._evaluate_stage("expansion", expansion)
 
@@ -285,8 +242,7 @@ class NarratorIterativeAgent:
             ),
             text_keys=("prose", "final", "content"),
             fallback=expansion,
-            temperature=0.75,
-            max_tokens=2400,
+            profile_id="narrator_iterative_polish",
         )
         polish_stage = self._evaluate_stage("polish", polish)
 
@@ -321,14 +277,12 @@ class NarratorIterativeAgent:
         *,
         text_keys: tuple[str, ...],
         fallback: str,
-        temperature: float,
-        max_tokens: int,
+        profile_id: str,
     ) -> str:
         try:
             raw = self._invoke_generation(
                 messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
+                profile_id=profile_id,
             )
         except Exception:
             return fallback
@@ -368,7 +322,8 @@ class NarratorIterativeAgent:
             }
             return cast(str, response.content)
 
-        content = chat_completion(messages, role="narrator", **kwargs)
+        profile_id = str(kwargs.pop("profile_id"))
+        content = chat_completion_with_profile(profile_id, messages)
         self.last_call_metadata = get_last_llm_call_metadata()
         return content
 
@@ -376,16 +331,16 @@ class NarratorIterativeAgent:
         if self.judge_llm is not None:
             response = self.judge_llm.invoke(messages)
             return cast(str, response.content)
-        return chat_completion(
-            messages,
-            role="narrator",
-            temperature=0.2,
-            max_tokens=500,
-        )
+        return chat_completion_with_profile("narrator_iterative_judge", messages)
 
     def _skeleton_messages(self, context: _RenderContext) -> list[dict[str, str]]:
         return [
-            {"role": "system", "content": _SKELETON_SYSTEM_PROMPT},
+            {
+                "role": "system",
+                "content": load_prompt_template(
+                    "narrator_iterative_system", variant="skeleton"
+                ),
+            },
             {
                 "role": "user",
                 "content": (
@@ -412,7 +367,12 @@ class NarratorIterativeAgent:
             f"\n上一轮 judge 反馈：{previous_feedback}\n" if previous_feedback else ""
         )
         return [
-            {"role": "system", "content": _EXPANSION_SYSTEM_PROMPT},
+            {
+                "role": "system",
+                "content": load_prompt_template(
+                    "narrator_iterative_system", variant="expansion"
+                ),
+            },
             {
                 "role": "user",
                 "content": (
@@ -438,7 +398,12 @@ class NarratorIterativeAgent:
             f"\n上一轮 judge 反馈：{previous_feedback}\n" if previous_feedback else ""
         )
         return [
-            {"role": "system", "content": _POLISH_SYSTEM_PROMPT},
+            {
+                "role": "system",
+                "content": load_prompt_template(
+                    "narrator_iterative_system", variant="polish"
+                ),
+            },
             {
                 "role": "user",
                 "content": (
@@ -461,7 +426,12 @@ class NarratorIterativeAgent:
     ) -> list[dict[str, str]]:
         threshold = self.thresholds[stage]
         return [
-            {"role": "system", "content": _JUDGE_SYSTEM_PROMPT},
+            {
+                "role": "system",
+                "content": load_prompt_template(
+                    "narrator_iterative_system", variant="judge"
+                ),
+            },
             {
                 "role": "user",
                 "content": (
@@ -608,34 +578,7 @@ class NarratorIterativeAgent:
         return raw
 
     def _parse_json_object(self, raw: str) -> dict[str, Any]:
-        text = str(raw or "").strip()
-        if text.startswith("```"):
-            lines = text.split("\n")
-            text = (
-                "\n".join(lines[1:-1])
-                if lines[-1].strip() == "```"
-                else "\n".join(lines[1:])
-            ).strip()
-        try:
-            parsed = json.loads(text)
-            return dict(parsed) if isinstance(parsed, dict) else {}
-        except json.JSONDecodeError:
-            start = text.find("{")
-            if start == -1:
-                return {}
-            depth = 0
-            for index in range(start, len(text)):
-                if text[index] == "{":
-                    depth += 1
-                elif text[index] == "}":
-                    depth -= 1
-                    if depth == 0:
-                        try:
-                            parsed = json.loads(text[start : index + 1])
-                            return dict(parsed) if isinstance(parsed, dict) else {}
-                        except json.JSONDecodeError:
-                            return {}
-            return {}
+        return parse_json_object(raw)
 
     def _coerce_score(
         self,

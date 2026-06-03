@@ -67,3 +67,34 @@ class WikiCharacterPayload(BaseModel):
     goals: List[str] = Field(default_factory=list)
     status: str = "alive"
     metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class SaveWikiRequest(BaseModel):
+    title: str
+    premise: str
+    world_rules: List[str] = Field(default_factory=list)
+    factions: List[WikiEntityPayload] = Field(default_factory=list)
+    locations: List[WikiEntityPayload] = Field(default_factory=list)
+    characters: List[WikiCharacterPayload] = Field(default_factory=list)
+
+
+class UpdateNodeRenderedTextRequest(BaseModel):
+    rendered_text: str
+    rendered_html: Optional[str] = None
+
+
+class CreateBranchRequest(BaseModel):
+    source_node_id: str
+    label: Optional[str] = None
+    switch_immediately: bool = True
+    continue_simulation: bool = True
+    pacing: str = "balanced"
+
+
+class SwitchBranchRequest(BaseModel):
+    branch_id: str
+
+
+class UpdateBranchPacingRequest(BaseModel):
+    branch_id: str
+    pacing: str

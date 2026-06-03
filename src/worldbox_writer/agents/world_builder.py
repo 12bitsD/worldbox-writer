@@ -12,62 +12,15 @@ generates the necessary details on demand.
 
 from __future__ import annotations
 
-import json
 from typing import Any, Dict, List, Optional, cast
 
 from worldbox_writer.core.models import WorldState
-from worldbox_writer.utils.llm import chat_completion, get_last_llm_call_metadata
-
-# ---------------------------------------------------------------------------
-# Prompt templates
-# ---------------------------------------------------------------------------
-
-_WORLD_EXPAND_SYSTEM_PROMPT = """你是 WorldBox Writer 的世界构建 Agent。
-你的任务是基于故事前提，扩展和丰富世界设定。
-
-只输出合法 JSON：
-{
-  "factions": [
-    {
-      "name": "势力名称",
-      "description": "势力描述",
-      "ideology": "意识形态/价值观",
-      "power_level": "weak|moderate|strong|dominant",
-      "relationships": {"其他势力名": "关系描述"}
-    }
-  ],
-  "locations": [
-    {
-      "name": "地点名称",
-      "description": "地点描述",
-      "atmosphere": "氛围描述",
-      "significance": "在故事中的重要性"
-    }
-  ],
-  "power_system": {
-    "name": "力量体系名称",
-    "description": "体系描述",
-    "levels": ["等级1", "等级2", "等级3"],
-    "rules": ["规则1", "规则2"]
-  },
-  "history": "世界历史背景（一段话）",
-  "current_tensions": ["当前紧张局势1", "当前紧张局势2"]
-}
-"""
-
-_LOCATION_EXPAND_PROMPT = """你是世界构建 Agent。根据故事上下文，为一个新地点生成详细设定。
-
-只输出合法 JSON：
-{
-  "name": "地点名称",
-  "description": "详细描述（100字以内）",
-  "atmosphere": "氛围",
-  "key_features": ["特征1", "特征2"],
-  "inhabitants": ["居民类型"],
-  "significance": "在故事中的重要性"
-}
-"""
-
+from worldbox_writer.prompting.registry import load_prompt_template
+from worldbox_writer.utils.json_parsing import parse_json_object
+from worldbox_writer.utils.llm import (
+    chat_completion_with_profile,
+    get_last_llm_call_metadata,
+)
 
 # ---------------------------------------------------------------------------
 # WorldBuilder Agent class
@@ -103,7 +56,12 @@ class WorldBuilderAgent:
     ) -> Dict[str, Any]:
         """Generate details for a new location referenced in the story."""
         messages = [
-            {"role": "system", "content": _LOCATION_EXPAND_PROMPT},
+            {
+                "role": "system",
+                "content": load_prompt_template(
+                    "world_builder_system", variant="location_expand"
+                ),
+            },
             {
                 "role": "user",
                 "content": (
@@ -114,7 +72,7 @@ class WorldBuilderAgent:
             },
         ]
         try:
-            response = self._invoke(messages, temperature=0.7, max_tokens=500)
+            response = self._invoke(messages, profile_id="world_builder_location")
         except Exception:
             return self._fallback_location_data(location_hint)
         return self._parse_json_response(response) or self._fallback_location_data(
@@ -164,7 +122,8 @@ class WorldBuilderAgent:
                 "status": "completed",
             }
             return cast(str, response.content)
-        content = chat_completion(messages, role="world_builder", **kwargs)
+        profile_id = str(kwargs.pop("profile_id"))
+        content = chat_completion_with_profile(profile_id, messages)
         self.last_call_metadata = get_last_llm_call_metadata()
         return content
 
@@ -177,7 +136,12 @@ class WorldBuilderAgent:
         )
 
         messages = [
-            {"role": "system", "content": _WORLD_EXPAND_SYSTEM_PROMPT},
+            {
+                "role": "system",
+                "content": load_prompt_template(
+                    "world_builder_system", variant="world_expand"
+                ),
+            },
             {
                 "role": "user",
                 "content": (
@@ -189,7 +153,7 @@ class WorldBuilderAgent:
             },
         ]
         try:
-            response = self._invoke(messages, temperature=0.7, max_tokens=2000)
+            response = self._invoke(messages, profile_id="world_builder_expand")
         except Exception:
             return self._fallback_expansion_data(world)
         parsed = self._parse_json_response(response)
@@ -225,33 +189,7 @@ class WorldBuilderAgent:
         return world
 
     def _parse_json_response(self, content: str) -> Dict[str, Any]:
-        text = content.strip()
-        if text.startswith("```"):
-            lines = text.split("\n")
-            text = (
-                "\n".join(lines[1:-1])
-                if lines[-1].strip() == "```"
-                else "\n".join(lines[1:])
-            )
-        try:
-            return cast(Dict[str, Any], json.loads(text))
-        except json.JSONDecodeError:
-            start = text.find("{")
-            if start != -1:
-                depth = 0
-                for i in range(start, len(text)):
-                    if text[i] == "{":
-                        depth += 1
-                    elif text[i] == "}":
-                        depth -= 1
-                        if depth == 0:
-                            try:
-                                return cast(
-                                    Dict[str, Any], json.loads(text[start : i + 1])
-                                )
-                            except json.JSONDecodeError:
-                                break
-            return {}
+        return parse_json_object(content)
 
     def _fallback_expansion_data(self, world: WorldState) -> Dict[str, Any]:
         premise = world.premise or "当前故事世界"

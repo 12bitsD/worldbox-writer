@@ -10,7 +10,6 @@ Responsibilities:
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from typing import Any, List, Optional, cast
 
@@ -20,7 +19,12 @@ from worldbox_writer.core.models import (
     StoryNode,
     WorldState,
 )
-from worldbox_writer.utils.llm import chat_completion, get_last_llm_call_metadata
+from worldbox_writer.prompting.registry import load_prompt_template
+from worldbox_writer.utils.json_parsing import parse_json_object
+from worldbox_writer.utils.llm import (
+    chat_completion_with_profile,
+    get_last_llm_call_metadata,
+)
 
 # ---------------------------------------------------------------------------
 # Result types
@@ -51,34 +55,6 @@ class ValidationResult:
     @property
     def warning_violations(self) -> List[ConstraintViolation]:
         return [v for v in self.violations if not v.is_blocking]
-
-
-# ---------------------------------------------------------------------------
-# Prompt template
-# ---------------------------------------------------------------------------
-
-_GATE_KEEPER_SYSTEM_PROMPT = """你是 WorldBox Writer 的边界守卫 Agent。
-你的任务是检查提议的故事节点是否违反了活跃的约束条件。
-
-只输出合法 JSON，不要有任何额外文字：
-{
-  "violations": [
-    {
-      "constraint_name": "约束名称",
-      "severity": "hard|soft",
-      "explanation": "为什么违反了这个约束",
-      "is_blocking": true|false
-    }
-  ],
-  "revision_hint": "如果有违规，建议如何修改节点以符合约束"
-}
-
-规则：
-- 只报告真实的违规，不要无中生有
-- HARD 约束违规时 is_blocking 必须为 true
-- SOFT 约束违规时 is_blocking 必须为 false
-- 如果没有违规，返回 {"violations": [], "revision_hint": ""}
-"""
 
 
 # ---------------------------------------------------------------------------
@@ -133,7 +109,8 @@ class GateKeeperAgent:
                 "status": "completed",
             }
             return cast(str, response.content)
-        content = chat_completion(messages, role="gate_keeper", **kwargs)
+        profile_id = str(kwargs.pop("profile_id"))
+        content = chat_completion_with_profile(profile_id, messages)
         self.last_call_metadata = get_last_llm_call_metadata()
         return content
 
@@ -146,14 +123,14 @@ class GateKeeperAgent:
         node_text = f"标题：{node.title}\n描述：{node.description}"
 
         messages = [
-            {"role": "system", "content": _GATE_KEEPER_SYSTEM_PROMPT},
+            {"role": "system", "content": load_prompt_template("gate_keeper_system")},
             {
                 "role": "user",
                 "content": f"活跃约束：\n{constraints_text}\n\n提议节点：\n{node_text}",
             },
         ]
         try:
-            response = self._invoke(messages, temperature=0.0, max_tokens=512)
+            response = self._invoke(messages, profile_id="gate_keeper_validate")
         except Exception:
             return self._fallback_validation_data(constraints, node)
         return self._parse_json_response(response)
@@ -197,33 +174,9 @@ class GateKeeperAgent:
         )
 
     def _parse_json_response(self, content: str) -> dict[str, Any]:
-        text = content.strip()
-        if text.startswith("```"):
-            lines = text.split("\n")
-            text = (
-                "\n".join(lines[1:-1])
-                if lines[-1].strip() == "```"
-                else "\n".join(lines[1:])
-            )
-        try:
-            return cast(dict[str, Any], json.loads(text))
-        except json.JSONDecodeError:
-            start = text.find("{")
-            if start != -1:
-                depth = 0
-                for i in range(start, len(text)):
-                    if text[i] == "{":
-                        depth += 1
-                    elif text[i] == "}":
-                        depth -= 1
-                        if depth == 0:
-                            try:
-                                return cast(
-                                    dict[str, Any], json.loads(text[start : i + 1])
-                                )
-                            except json.JSONDecodeError:
-                                break
-            return {"violations": [], "revision_hint": ""}
+        return parse_json_object(
+            content, default={"violations": [], "revision_hint": ""}
+        )
 
     def _fallback_validation_data(
         self, constraints: List[Constraint], node: StoryNode

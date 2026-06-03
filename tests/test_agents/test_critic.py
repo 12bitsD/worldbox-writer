@@ -67,12 +67,16 @@ def _mock_chat_completion(
     payload: dict[str, Any],
     captured: list[list[dict[str, str]]] | None = None,
 ) -> None:
-    def fake_chat_completion(messages: list[dict[str, str]], **_kwargs: Any) -> str:
+    def fake_chat_completion(
+        _profile_id: str, messages: list[dict[str, str]], **_kwargs: Any
+    ) -> str:
         if captured is not None:
             captured.append(messages)
         return json.dumps(payload, ensure_ascii=False)
 
-    monkeypatch.setattr(critic_module, "chat_completion", fake_chat_completion)
+    monkeypatch.setattr(
+        critic_module, "chat_completion_with_profile", fake_chat_completion
+    )
 
 
 def test_critic_uses_llm_not_hardcoded_markers(
@@ -148,10 +152,14 @@ def test_critic_fallback_accepted_on_llm_error(
     scene_plan = _scene_plan(alice, bob)
     intent = _intent(scene_plan, alice, bob)
 
-    def failing_chat_completion(_messages: list[dict[str, str]], **_kwargs: Any) -> str:
+    def failing_chat_completion(
+        _profile_id: str, _messages: list[dict[str, str]], **_kwargs: Any
+    ) -> str:
         raise RuntimeError("mock llm unavailable")
 
-    monkeypatch.setattr(critic_module, "chat_completion", failing_chat_completion)
+    monkeypatch.setattr(
+        critic_module, "chat_completion_with_profile", failing_chat_completion
+    )
 
     verdict = CriticAgent().review_intent(world, scene_plan=scene_plan, intent=intent)
 

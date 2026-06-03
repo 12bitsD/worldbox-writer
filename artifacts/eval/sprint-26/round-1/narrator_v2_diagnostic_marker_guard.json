@@ -1,0 +1,391 @@
+{
+  "text": "烛芯爆了个灯花，暗下去。\n\n陈砚猛地抬袖遮脸，肩膀抖得厉害，膝盖一顶，蒲团翻倒。他跌下去，右手顺势插进暗格缝隙，玉佩棱角硌进掌心。指节抵住木壁，一道刮痕，白生生的，是新的。\n\n有人来过。\n\n他喉间哽了半声，睫毛垂着，视线却往上抬。谢无衣的残魂在将灭的烛火里凝出轮廓，腰间悬着半枚玉佩，纹路与他掌中那枚凹凸相对。\n\n\"你们这一代，\"枯瘦的手指戳到他眉心，\"连藏东西都学你爹藏得蠢。\"\n\n陈砚不动，呼吸乱得像受惊的兔子。\n\n\"玉佩贴肉收好。\"谢无衣的声音粗粝，\"第七人名字我偏不告诉你，怕你这双眼睛——\"手指往下压了压，\"先死在他手里。\"",
+  "chapter": {
+    "chapter": 1,
+    "node_id": "9befd235-947d-4892-947e-1023ffc72a0f",
+    "rendered_text": "烛芯爆了个灯花，暗下去。\n\n陈砚猛地抬袖遮脸，肩膀抖得厉害，膝盖一顶，蒲团翻倒。他跌下去，右手顺势插进暗格缝隙，玉佩棱角硌进掌心。指节抵住木壁，一道刮痕，白生生的，是新的。\n\n有人来过。\n\n他喉间哽了半声，睫毛垂着，视线却往上抬。谢无衣的残魂在将灭的烛火里凝出轮廓，腰间悬着半枚玉佩，纹路与他掌中那枚凹凸相对。\n\n\"你们这一代，\"枯瘦的手指戳到他眉心，\"连藏东西都学你爹藏得蠢。\"\n\n陈砚不动，呼吸乱得像受惊的兔子。\n\n\"玉佩贴肉收好。\"谢无衣的声音粗粝，\"第七人名字我偏不告诉你，怕你这双眼睛——\"手指往下压了压，\"先死在他手里。\"",
+    "narrator": {
+      "chapter_title": "烛影藏锋",
+      "word_count": 267,
+      "style_notes": "以动作错位制造双重表演，用残魂触碰的实体感替代情绪比喻，短句推进，对话截断留余压。",
+      "metadata": {
+        "narrator_ai_prose_ticks_check": {
+          "enabled": true,
+          "initial": {
+            "applicable": true,
+            "score": 3.0,
+            "rule_hit": "ai_prose_ticks.over_metaphor",
+            "evidence_quote": "",
+            "parse_status": "ok",
+            "error": null,
+            "elapsed_ms": 8159
+          },
+          "initial_runs": [
+            {
+              "applicable": true,
+              "score": 3.0,
+              "rule_hit": "ai_prose_ticks.over_metaphor",
+              "evidence_quote": "",
+              "parse_status": "ok",
+              "error": null,
+              "elapsed_ms": 8159
+            },
+            {
+              "applicable": true,
+              "score": 8.0,
+              "rule_hit": "ai_prose_ticks.over_metaphor",
+              "evidence_quote": "他缩着肩膀往后蹭，喉管里挤出半截呜咽，像是被这突来的残魂吓破了胆。右手却在跌倒的刹那探入蒲团暗格",
+              "parse_status": "ok",
+              "error": null,
+              "elapsed_ms": 10864
+            }
+          ],
+          "initial_hit": true,
+          "initial_marker_hit": true,
+          "rerendered": true,
+          "final": {
+            "applicable": true,
+            "score": 3.0,
+            "rule_hit": "ai_prose_ticks.over_metaphor",
+            "evidence_quote": "",
+            "parse_status": "ok",
+            "error": null,
+            "elapsed_ms": 7875
+          },
+          "final_runs": [
+            {
+              "applicable": true,
+              "score": 3.0,
+              "rule_hit": "ai_prose_ticks.over_metaphor",
+              "evidence_quote": "",
+              "parse_status": "ok",
+              "error": null,
+              "elapsed_ms": 4154
+            },
+            {
+              "applicable": true,
+              "score": 3.0,
+              "rule_hit": "ai_prose_ticks.over_metaphor",
+              "evidence_quote": "",
+              "parse_status": "ok",
+              "error": null,
+              "elapsed_ms": 7875
+            }
+          ],
+          "final_hit": false,
+          "final_marker_hit": true,
+          "strict_raw": {
+            "prose": "烛芯爆了个灯花，暗下去。\n\n陈砚猛地抬袖遮脸，肩膀抖得厉害，膝盖一顶，蒲团翻倒。他跌下去，右手顺势插进暗格缝隙，玉佩棱角硌进掌心。指节抵住木壁，一道刮痕，白生生的，是新的。\n\n有人来过。\n\n他喉间哽了半声，睫毛垂着，视线却往上抬。谢无衣的残魂在将灭的烛火里凝出轮廓，腰间悬着半枚玉佩，纹路与他掌中那枚凹凸相对。\n\n\"你们这一代，\"枯瘦的手指戳到他眉心，\"连藏东西都学你爹藏得蠢。\"\n\n陈砚不动，呼吸乱得像受惊的兔子。\n\n\"玉佩贴肉收好。\"谢无衣的声音粗粝，\"第七人名字我偏不告诉你，怕你这双眼睛——\"手指往下压了压，\"先死在他手里。\"",
+            "style_notes": "以动作错位制造双重表演，用残魂触碰的实体感替代情绪比喻，短句推进，对话截断留余压。"
+          }
+        }
+      }
+    },
+    "warnings": []
+  },
+  "overall": 6.13,
+  "weighted_pre_veto": 6.13,
+  "axis_scores": {
+    "emotion_axis": 5.33,
+    "structure_axis": 5.0,
+    "prose_axis": 8.33
+  },
+  "vetoed": false,
+  "veto_reasons": [],
+  "toxic": {
+    "ai_prose_ticks": {
+      "applicable": true,
+      "score": 3.0,
+      "hit": false,
+      "evidence_quote": "",
+      "rule_hit": "ai_prose_ticks.over_metaphor"
+    },
+    "forced_stupidity": {
+      "applicable": false,
+      "score": null,
+      "hit": false,
+      "evidence_quote": "",
+      "rule_hit": ""
+    },
+    "preachiness": {
+      "applicable": true,
+      "score": 2.0,
+      "hit": false,
+      "evidence_quote": "",
+      "rule_hit": "preachiness.moral_lesson"
+    }
+  },
+  "errors": [],
+  "per_dimension": {
+    "desire_clarity": {
+      "dim_id": "desire_clarity",
+      "category": "per_passage",
+      "applicable": true,
+      "score": 4.0,
+      "evidence_quote": "玉佩贴肉收好。第七人名字我偏不告诉你，怕你这双眼睛——先死在他手里。",
+      "evidence_invalid": true,
+      "setup_quote": "",
+      "setup_invalid": false,
+      "rule_hit": "desire_clarity.specific_object",
+      "reasoning": "目标具体：藏玉佩、防第七人；有代价暗示（先死在他手里）；但\"为什么\"偏隐晦，缺深层动机铺陈。",
+      "raw_excerpt": "{\"applicable\":true,\"score\":8,\"evidence_quote\":\"玉佩贴肉收好。第七人名字我偏不告诉你，怕你这双眼睛——先死在他手里。\",\"rule_hit\":\"desire_clarity.specific_object\",\"reasoning\":\"目标具体：藏玉佩、防第七人；有代价暗示（先死在他手里）；但\\\"为什么\\\"偏隐晦，缺深层动机铺陈。\"}",
+      "parse_status": "ok",
+      "error": null,
+      "elapsed_ms": 4946,
+      "coercions": [
+        "evidence_quote_not_in_source",
+        "score_demoted_due_to_fabricated_evidence"
+      ]
+    },
+    "tension_pressure": {
+      "dim_id": "tension_pressure",
+      "category": "per_passage",
+      "applicable": true,
+      "score": 4.0,
+      "evidence_quote": "第七人名字我偏不告诉你，怕你这双眼睛——先死在他手里。",
+      "evidence_invalid": true,
+      "setup_quote": "",
+      "setup_invalid": false,
+      "rule_hit": "tension_pressure.asymmetric_info",
+      "reasoning": "信息不对称极强：敌人已潜入（新刮痕），残魂 withholding 关键情报，主角藏物被嘲'蠢'，表面弱势但暗有动作。",
+      "raw_excerpt": "{\"applicable\":true,\"score\":8,\"evidence_quote\":\"第七人名字我偏不告诉你，怕你这双眼睛——先死在他手里。\",\"rule_hit\":\"tension_pressure.asymmetric_info\",\"reasoning\":\"信息不对称极强：敌人已潜入（新刮痕），残魂 withholding 关键情报，主角藏物被嘲'蠢'，表面弱势但暗有动作。\"}",
+      "parse_status": "ok",
+      "error": null,
+      "elapsed_ms": 6048,
+      "coercions": [
+        "evidence_quote_not_in_source",
+        "score_demoted_due_to_fabricated_evidence"
+      ]
+    },
+    "info_show_dont_tell": {
+      "dim_id": "info_show_dont_tell",
+      "category": "per_passage",
+      "applicable": true,
+      "score": 8.0,
+      "evidence_quote": "右手顺势插进暗格缝隙，玉佩棱角硌进掌心。指节抵住木壁，一道刮痕，白生生的，是新的",
+      "evidence_invalid": false,
+      "setup_quote": "",
+      "setup_invalid": false,
+      "rule_hit": "info_show_dont_tell.specific_object",
+      "reasoning": "玉佩、暗格、刮痕等物件动作自然透露藏物习惯与危机；残魂对话带潜台词，无纯说明段。\"第七人\"信息 withholding 略硬。",
+      "raw_excerpt": "{\"applicable\":true,\"score\":8,\"evidence_quote\":\"右手顺势插进暗格缝隙，玉佩棱角硌进掌心。指节抵住木壁，一道刮痕，白生生的，是新的\",\"rule_hit\":\"info_show_dont_tell.specific_object\",\"reasoning\":\"玉佩、暗格、刮痕等物件动作自然透露藏物习惯与危机；残魂对话带潜台词，无纯说明段。\\\"第七人\\\"信息 withholding 略硬。\"}",
+      "parse_status": "ok",
+      "error": null,
+      "elapsed_ms": 10423,
+      "coercions": []
+    },
+    "prose_friction": {
+      "dim_id": "prose_friction",
+      "category": "per_passage",
+      "applicable": true,
+      "score": 8.0,
+      "evidence_quote": "烛芯爆了个灯花，暗下去。陈砚猛地抬袖遮脸，肩膀抖得厉害，膝盖一顶，蒲团翻倒。",
+      "evidence_invalid": false,
+      "setup_quote": "",
+      "setup_invalid": false,
+      "rule_hit": "prose_friction.pacing",
+      "reasoning": "短句节奏利落，动作链紧凑；偶有从句嵌套，整体手机阅读友好。",
+      "raw_excerpt": "{\"applicable\": true, \"score\": 8, \"evidence_quote\": \"烛芯爆了个灯花，暗下去。陈砚猛地抬袖遮脸，肩膀抖得厉害，膝盖一顶，蒲团翻倒。\", \"rule_hit\": \"prose_friction.pacing\", \"reasoning\": \"短句节奏利落，动作链紧凑；偶有从句嵌套，整体手机阅读友好。\"}",
+      "parse_status": "ok",
+      "error": null,
+      "elapsed_ms": 6293,
+      "coercions": []
+    },
+    "material_specificity": {
+      "dim_id": "material_specificity",
+      "category": "per_passage",
+      "applicable": true,
+      "score": 9.0,
+      "evidence_quote": "烛芯爆了个灯花，暗下去。陈砚猛地抬袖遮脸，肩膀抖得厉害，膝盖一顶，蒲团翻倒。",
+      "evidence_invalid": false,
+      "setup_quote": "",
+      "setup_invalid": false,
+      "rule_hit": "material_specificity.sensory_object",
+      "reasoning": "灯花爆响、袖遮脸、膝盖顶翻蒲团、玉佩棱角硌掌心、刮痕白生生，动作全由具体物件承载；仅\"呼吸乱得像受惊的兔子\"一处形容词稍弱。",
+      "raw_excerpt": "{\"applicable\":true,\"score\":9,\"evidence_quote\":\"烛芯爆了个灯花，暗下去。陈砚猛地抬袖遮脸，肩膀抖得厉害，膝盖一顶，蒲团翻倒。\",\"rule_hit\":\"material_specificity.sensory_object\",\"reasoning\":\"灯花爆响、袖遮脸、膝盖顶翻蒲团、玉佩棱角硌掌心、刮痕白生生，动作全由具体物件承载；仅\\\"呼吸乱得像受惊的兔子\\\"一处形容词稍弱。\"}",
+      "parse_status": "ok",
+      "error": null,
+      "elapsed_ms": 5630,
+      "coercions": []
+    },
+    "dialogue_voice": {
+      "dim_id": "dialogue_voice",
+      "category": "per_passage",
+      "applicable": true,
+      "score": 8.0,
+      "evidence_quote": "连藏东西都学你爹藏得蠢。",
+      "evidence_invalid": false,
+      "setup_quote": "",
+      "setup_invalid": false,
+      "rule_hit": "dialogue_voice.distinct_fingerprint",
+      "reasoning": "谢无衣粗砺直白、带压迫感，陈砚以动作代言语；两'人'节奏差异鲜明，但陈砚无台词，指纹略单薄。",
+      "raw_excerpt": "{\"applicable\":true,\"score\":8,\"evidence_quote\":\"连藏东西都学你爹藏得蠢。\",\"rule_hit\":\"dialogue_voice.distinct_fingerprint\",\"reasoning\":\"谢无衣粗砺直白、带压迫感，陈砚以动作代言语；两'人'节奏差异鲜明，但陈砚无台词，指纹略单薄。\"}",
+      "parse_status": "ok",
+      "error": null,
+      "elapsed_ms": 1559,
+      "coercions": []
+    },
+    "conflict_density": {
+      "dim_id": "conflict_density",
+      "category": "per_passage",
+      "applicable": true,
+      "score": 8.0,
+      "evidence_quote": "第七人名字我偏不告诉你，怕你这双眼睛——",
+      "evidence_invalid": false,
+      "setup_quote": "",
+      "setup_invalid": false,
+      "rule_hit": "conflict_density.hook_per_200",
+      "reasoning": "每200字内推进新钩子：暗格玉佩、有人来过、残魂现身、第七人悬念，几乎无空转。",
+      "raw_excerpt": "{\"applicable\":true,\"score\":8,\"evidence_quote\":\"第七人名字我偏不告诉你，怕你这双眼睛——\",\"rule_hit\":\"conflict_density.hook_per_200\",\"reasoning\":\"每200字内推进新钩子：暗格玉佩、有人来过、残魂现身、第七人悬念，几乎无空转。\"}",
+      "parse_status": "ok",
+      "error": null,
+      "elapsed_ms": 1613,
+      "coercions": []
+    },
+    "payoff_intensity": {
+      "dim_id": "payoff_intensity",
+      "category": "conditional",
+      "applicable": false,
+      "score": null,
+      "evidence_quote": "",
+      "evidence_invalid": false,
+      "setup_quote": "",
+      "setup_invalid": false,
+      "rule_hit": "",
+      "reasoning": "无主角胜利/获益/底牌揭晓/压制反派的爆发瞬间，仅为悬念铺垫与威胁对话",
+      "raw_excerpt": "{\"applicable\": false, \"score\": null, \"evidence_quote\": \"\", \"rule_hit\": \"\", \"reasoning\": \"无主角胜利/获益/底牌揭晓/压制反派的爆发瞬间，仅为悬念铺垫与威胁对话\"}",
+      "parse_status": "ok",
+      "error": null,
+      "elapsed_ms": 1084,
+      "coercions": []
+    },
+    "golden_start_density": {
+      "dim_id": "golden_start_density",
+      "category": "conditional",
+      "applicable": true,
+      "score": 4.0,
+      "evidence_quote": "玉佩贴肉收好。第七人名字我偏不告诉你，怕你这双眼睛——先死在他手里。",
+      "evidence_invalid": true,
+      "setup_quote": "",
+      "setup_invalid": false,
+      "rule_hit": "golden_opening.1",
+      "reasoning": "500字内危机（有人来过、残魂警告）+金手指（阴阳玉佩、残魂指引）+主线钩子（第七人、先死在他手里）全用冲突呈现，无废字。",
+      "raw_excerpt": "{\"applicable\": true, \"score\": 9, \"evidence_quote\": \"玉佩贴肉收好。第七人名字我偏不告诉你，怕你这双眼睛——先死在他手里。\", \"rule_hit\": \"golden_opening.1\", \"reasoning\": \"500字内危机（有人来过、残魂警告）+金手指（阴阳玉佩、残魂指引）+主线钩子（第七人、先死在他手里）全用冲突呈现，无废字。\"}",
+      "parse_status": "ok",
+      "error": null,
+      "elapsed_ms": 1520,
+      "coercions": [
+        "evidence_quote_not_in_source",
+        "score_demoted_due_to_fabricated_evidence"
+      ]
+    },
+    "cliffhanger_pull": {
+      "dim_id": "cliffhanger_pull",
+      "category": "conditional",
+      "applicable": true,
+      "score": 4.0,
+      "evidence_quote": "第七人名字我偏不告诉你，怕你这双眼睛——先死在他手里。",
+      "evidence_invalid": true,
+      "setup_quote": "",
+      "setup_invalid": false,
+      "rule_hit": "cliffhanger.suspense_unrevealed",
+      "reasoning": "核心悬念（第七人身份）故意扣住，叠加死亡威胁，形成双重钩子；动作与对话同时收束在真相前1秒。",
+      "raw_excerpt": "{\"applicable\": true, \"score\": 9, \"evidence_quote\": \"第七人名字我偏不告诉你，怕你这双眼睛——先死在他手里。\", \"rule_hit\": \"cliffhanger.suspense_unrevealed\", \"reasoning\": \"核心悬念（第七人身份）故意扣住，叠加死亡威胁，形成双重钩子；动作与对话同时收束在真相前1秒。\"}",
+      "parse_status": "ok",
+      "error": null,
+      "elapsed_ms": 1472,
+      "coercions": [
+        "evidence_quote_not_in_source",
+        "score_demoted_due_to_fabricated_evidence"
+      ]
+    },
+    "antagonist_integrity": {
+      "dim_id": "antagonist_integrity",
+      "category": "conditional",
+      "applicable": true,
+      "score": 4.0,
+      "evidence_quote": "第七人名字我偏不告诉你，怕你这双眼睛——先死在他手里。",
+      "evidence_invalid": true,
+      "setup_quote": "",
+      "setup_invalid": false,
+      "rule_hit": "villain_credibility",
+      "reasoning": "谢无衣残魂作为信息压制方，故意隐瞒关键信息制造博弈空间，嘲讽主角藏物方式却暴露自身观察痕迹，动机自洽（保护/试探），有来有回。",
+      "raw_excerpt": "{\"applicable\": true, \"score\": 7, \"evidence_quote\": \"第七人名字我偏不告诉你，怕你这双眼睛——先死在他手里。\", \"rule_hit\": \"villain_credibility\", \"reasoning\": \"谢无衣残魂作为信息压制方，故意隐瞒关键信息制造博弈空间，嘲讽主角藏物方式却暴露自身观察痕迹，动机自洽（保护/试探），有来有回。\"}",
+      "parse_status": "ok",
+      "error": null,
+      "elapsed_ms": 1770,
+      "coercions": [
+        "evidence_quote_not_in_source",
+        "score_demoted_due_to_fabricated_evidence"
+      ]
+    },
+    "cost_paid": {
+      "dim_id": "cost_paid",
+      "category": "conditional",
+      "applicable": false,
+      "score": null,
+      "evidence_quote": "",
+      "evidence_invalid": false,
+      "setup_quote": "",
+      "setup_invalid": false,
+      "rule_hit": "cost_paid.none",
+      "reasoning": "片段仅含对话与心理描写，主角未使用任何力量、底牌或规则突破，维度不适用。",
+      "raw_excerpt": "{\"applicable\":false,\"score\":null,\"evidence_quote\":\"\",\"rule_hit\":\"cost_paid.none\",\"cost_inventory\":\"无力量使用/底牌/越级行动/规则突破，无代价\",\"reasoning\":\"片段仅含对话与心理描写，主角未使用任何力量、底牌或规则突破，维度不适用。\"}",
+      "parse_status": "ok",
+      "error": null,
+      "elapsed_ms": 5147,
+      "coercions": []
+    },
+    "forced_stupidity": {
+      "dim_id": "forced_stupidity",
+      "category": "conditional",
+      "applicable": false,
+      "score": null,
+      "evidence_quote": "",
+      "evidence_invalid": false,
+      "setup_quote": "",
+      "setup_invalid": false,
+      "rule_hit": "",
+      "reasoning": "无降智；陈砚伪装受惊实为藏玉佩、察刮痕，谢无衣是信息给予者非对手，无payoff/forced_stupidity结构",
+      "raw_excerpt": "```json\n{\"applicable\":false,\"score\":null,\"evidence_quote\":\"\",\"setup_quote\":\"\",\"trigger_check\":\"(1) 主角展示物件？No——玉佩仅藏于暗格/贴肉，未向任何人展示摊开。(2) 物件呼应铺垫？——玉佩与谢无衣残魂腰间半枚凹凸相对，属信息揭示但非向对手展示。(3) 反派反应？——无反派角色，谢无衣是残魂指点者而非对手。A/B/C任一no，跳到Step 4。Step 4：无反派/智将做出违",
+      "parse_status": "ok",
+      "error": null,
+      "elapsed_ms": 9431,
+      "coercions": []
+    },
+    "preachiness": {
+      "dim_id": "preachiness",
+      "category": "toxic",
+      "applicable": true,
+      "score": 2.0,
+      "evidence_quote": "",
+      "evidence_invalid": false,
+      "setup_quote": "",
+      "setup_invalid": false,
+      "rule_hit": "preachiness.moral_lesson",
+      "reasoning": "纯叙事推进，无总结升华句，角色对话服务于悬疑情节而非输出价值观。",
+      "raw_excerpt": "{\"applicable\":true,\"score\":2,\"evidence_quote\":\"\",\"rule_hit\":\"preachiness.moral_lesson\",\"reasoning\":\"纯叙事推进，无总结升华句，角色对话服务于悬疑情节而非输出价值观。\"}",
+      "parse_status": "ok",
+      "error": null,
+      "elapsed_ms": 2925,
+      "coercions": []
+    },
+    "ai_prose_ticks": {
+      "dim_id": "ai_prose_ticks",
+      "category": "toxic",
+      "applicable": true,
+      "score": 3.0,
+      "evidence_quote": "",
+      "evidence_invalid": false,
+      "setup_quote": "",
+      "setup_invalid": false,
+      "rule_hit": "ai_prose_ticks.over_metaphor",
+      "reasoning": "呼吸乱得像受惊的兔子一处比喻，但密度极低，未达每2-3句一个的阈值。",
+      "raw_excerpt": "```json\n{\"applicable\":true,\"score\":3,\"evidence_quote\":\"\",\"rule_hit\":\"ai_prose_ticks.over_metaphor\",\"reasoning\":\"呼吸乱得像受惊的兔子一处比喻，但密度极低，未达每2-3句一个的阈值。\"}\n```",
+      "parse_status": "ok",
+      "error": null,
+      "elapsed_ms": 7828,
+      "coercions": []
+    }
+  }
+}

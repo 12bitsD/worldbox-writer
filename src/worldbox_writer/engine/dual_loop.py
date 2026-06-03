@@ -8,13 +8,12 @@ incrementally migrate runtime behavior behind a feature flag.
 
 from __future__ import annotations
 
-import json
-import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from worldbox_writer.agents.director import DirectorAgent
+from worldbox_writer.config.settings import get_settings
 from worldbox_writer.core.dual_loop import (
     DUAL_LOOP_ADAPTER_MODE,
     DUAL_LOOP_CONTRACT_VERSION,
@@ -36,9 +35,12 @@ from worldbox_writer.memory.memory_manager import (
     MemoryManager,
 )
 from worldbox_writer.prompting.registry import load_prompt_template
-from worldbox_writer.utils.llm import chat_completion, get_last_llm_call_metadata
+from worldbox_writer.utils.json_parsing import parse_json_object
+from worldbox_writer.utils.llm import (
+    chat_completion_with_profile,
+    get_last_llm_call_metadata,
+)
 
-FEATURE_DUAL_LOOP_ENV = "FEATURE_DUAL_LOOP_ENABLED"
 ISOLATED_ACTOR_RUNTIME_MODE = "isolated-actor-runtime-v1"
 
 
@@ -51,8 +53,7 @@ class IsolatedActorRuntimeResult:
 
 
 def dual_loop_enabled() -> bool:
-    raw = os.environ.get(FEATURE_DUAL_LOOP_ENV, "1").strip().lower()
-    return raw not in {"0", "false", "off", "no"}
+    return get_settings().feature.dual_loop_enabled
 
 
 def build_dual_loop_snapshot(
@@ -155,14 +156,7 @@ def build_prompt_trace(
         memory=memory,
     )
     visible_character_ids = _visible_character_ids(world, scene_plan, character)
-    system_prompt = load_prompt_template(
-        "actor_system",
-        default=(
-            "你是双循环推演引擎中的角色 Actor。"
-            "你只能基于当前场景的公开信息、你的私有记忆和你的目标做决定。"
-            "不要引用不可见角色、其他角色的私有记忆或全局剧本。"
-        ),
-    )
+    system_prompt = load_prompt_template("actor_system", variant="dual_loop")
     user_prompt = (
         f"场景目标：{scene_plan.objective}\n"
         f"叙事压力：{scene_plan.narrative_pressure}\n"
@@ -303,13 +297,7 @@ def invoke_isolated_actor_intent(
         },
         {"role": "user", "content": prompt_trace.assembled_prompt},
     ]
-    raw = chat_completion(
-        messages,
-        role="actor",
-        temperature=0.75,
-        max_tokens=320,
-        top_p=0.95,
-    )
+    raw = chat_completion_with_profile("actor_intent", messages)
     llm_metadata = get_last_llm_call_metadata() or {}
     if not raw.strip():
         raise ValueError("Actor returned an empty completion")
@@ -667,34 +655,7 @@ def _fallback_actor_summary(
 
 
 def _parse_json_object(content: str) -> Dict[str, Any]:
-    text = content.strip()
-    if text.startswith("```"):
-        lines = text.splitlines()
-        text = (
-            "\n".join(lines[1:-1])
-            if lines and lines[-1].strip() == "```"
-            else "\n".join(lines[1:])
-        )
-    try:
-        parsed = json.loads(text)
-        return parsed if isinstance(parsed, dict) else {}
-    except json.JSONDecodeError:
-        start = text.find("{")
-        if start == -1:
-            return {}
-        depth = 0
-        for index in range(start, len(text)):
-            if text[index] == "{":
-                depth += 1
-            elif text[index] == "}":
-                depth -= 1
-                if depth == 0:
-                    try:
-                        parsed = json.loads(text[start : index + 1])
-                    except json.JSONDecodeError:
-                        return {}
-                    return parsed if isinstance(parsed, dict) else {}
-    return {}
+    return parse_json_object(content)
 
 
 def _coerce_confidence(raw: Any) -> float:

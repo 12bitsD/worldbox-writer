@@ -218,7 +218,7 @@ def test_prompt_trace_separates_episodic_and_reflective_memory_layers() -> None:
 def test_isolated_actor_runtime_generates_branch_aware_intents(monkeypatch) -> None:
     calls: list[list[dict]] = []
 
-    def fake_chat_completion(messages, **kwargs):  # type: ignore[no-untyped-def]
+    def fake_chat_completion(_profile_id, messages, **kwargs):  # type: ignore[no-untyped-def]
         calls.append(messages)
         prompt = messages[1]["content"]
         if "你的身份：阿璃" in prompt:
@@ -244,7 +244,7 @@ def test_isolated_actor_runtime_generates_branch_aware_intents(monkeypatch) -> N
         )
 
     monkeypatch.setattr(
-        "worldbox_writer.engine.dual_loop.chat_completion",
+        "worldbox_writer.engine.dual_loop.chat_completion_with_profile",
         fake_chat_completion,
     )
 
@@ -284,8 +284,8 @@ def test_isolated_actor_runtime_generates_branch_aware_intents(monkeypatch) -> N
 
 def test_isolated_actor_runtime_salvages_plain_text_intent(monkeypatch) -> None:
     monkeypatch.setattr(
-        "worldbox_writer.engine.dual_loop.chat_completion",
-        lambda messages, **kwargs: "阿璃拔出断桥上的旧符钉，逼迫白夜解释昨夜的伏击。",
+        "worldbox_writer.engine.dual_loop.chat_completion_with_profile",
+        lambda _profile_id, messages, **kwargs: "阿璃拔出断桥上的旧符钉，逼迫白夜解释昨夜的伏击。",
     )
 
     world = WorldState(title="测试世界", premise="测试前提")
@@ -308,8 +308,8 @@ def test_isolated_actor_runtime_empty_completion_uses_story_forward_fallback(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
-        "worldbox_writer.engine.dual_loop.chat_completion",
-        lambda messages, **kwargs: "",
+        "worldbox_writer.engine.dual_loop.chat_completion_with_profile",
+        lambda _profile_id, messages, **kwargs: "",
     )
 
     world = WorldState(title="测试世界", premise="测试前提")

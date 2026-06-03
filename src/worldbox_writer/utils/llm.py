@@ -12,6 +12,7 @@ import json
 import math
 import os
 import time
+import warnings
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from functools import lru_cache
@@ -21,12 +22,22 @@ from uuid import uuid4
 import httpx
 from openai import OpenAI
 
+from worldbox_writer.config.profiles import load_sampling_profile
+
 MIMO_BASE_URL = "https://token-plan-cn.xiaomimimo.com/v1"
 KIMI_BASE_URL = "https://api.kimi.com/coding/"
 OLLAMA_BASE_URL = "http://localhost:11434/v1"
 DEFAULT_LLM_PROVIDER = "kimi"
 
-LOGIC_ROLES = {"director", "gate_keeper", "node_detector", "actor", "memory"}
+LOGIC_ROLES = {
+    "director",
+    "gate_keeper",
+    "node_detector",
+    "actor",
+    "memory",
+    "critic",
+    "judge",
+}
 CREATIVE_ROLES = {"narrator", "world_builder"}
 
 MIMO_MODEL_MAP = {
@@ -37,6 +48,8 @@ MIMO_MODEL_MAP = {
     "narrator": "mimo-v2-pro",
     "world_builder": "mimo-v2-pro",
     "memory": "mimo-v2-pro",
+    "critic": "mimo-v2-pro",
+    "judge": "mimo-v2-pro",
 }
 
 KIMI_MODEL_MAP = {
@@ -47,6 +60,8 @@ KIMI_MODEL_MAP = {
     "narrator": "kimi-k2.5",
     "world_builder": "kimi-k2.5",
     "memory": "kimi-k2.5",
+    "critic": "kimi-k2.5",
+    "judge": "kimi-k2.5",
 }
 
 GEMINI_MODEL_MAP = {
@@ -57,6 +72,8 @@ GEMINI_MODEL_MAP = {
     "narrator": "gemini-2.5-flash",
     "world_builder": "gemini-2.5-flash",
     "memory": "gemini-2.5-flash",
+    "critic": "gemini-2.5-flash",
+    "judge": "gemini-2.5-flash",
 }
 
 DEFAULT_PRICE_OVERRIDES: dict[str, dict[str, float]] = {}
@@ -100,6 +117,7 @@ class ResolvedLLMRoute:
     fallback_reason: Optional[str] = None
     benchmark_score: Optional[float] = None
     benchmark_threshold: Optional[float] = None
+    sampling: Optional[dict[str, Any]] = None
 
 
 _LAST_LLM_CALL_METADATA: ContextVar[Optional[dict[str, Any]]] = ContextVar(
@@ -608,10 +626,28 @@ def chat_completion(
     on_token: Optional[Callable[[str], None]] = None,
     top_p: Optional[float] = None,
     model: Optional[str] = None,
+    _suppress_deprecation_warning: bool = False,
+    _sampling_profile_id: Optional[str] = None,
 ) -> str:
+    if not _suppress_deprecation_warning:
+        warnings.warn(
+            "chat_completion(..., temperature=..., max_tokens=...) is deprecated; "
+            "use chat_completion_with_profile(profile_id, messages)",
+            DeprecationWarning,
+            stacklevel=2,
+        )
     resolved_route = resolve_llm_route(role)
     if model:
         resolved_route = replace(resolved_route, model=model)
+    if _sampling_profile_id:
+        sampling = {
+            "profile_id": _sampling_profile_id,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if top_p is not None:
+            sampling["top_p"] = top_p
+        resolved_route = replace(resolved_route, sampling=sampling)
     client = get_llm_client(resolved_route)
     extra_body = _get_extra_body(resolved_route.provider)
     request_id = f"llm_{uuid4().hex[:12]}"
@@ -675,6 +711,7 @@ def chat_completion(
                 "fallback_reason": resolved_route.fallback_reason,
                 "benchmark_score": resolved_route.benchmark_score,
                 "benchmark_threshold": resolved_route.benchmark_threshold,
+                "sampling": resolved_route.sampling,
                 "stream": on_token is not None or stream,
                 "estimated_prompt_tokens": prompt_tokens,
                 "estimated_completion_tokens": completion_tokens,
@@ -700,6 +737,7 @@ def chat_completion(
                 "fallback_reason": resolved_route.fallback_reason,
                 "benchmark_score": resolved_route.benchmark_score,
                 "benchmark_threshold": resolved_route.benchmark_threshold,
+                "sampling": resolved_route.sampling,
                 "stream": on_token is not None or stream,
                 "estimated_prompt_tokens": prompt_tokens,
                 "estimated_completion_tokens": 0,
@@ -713,6 +751,33 @@ def chat_completion(
             }
         )
         raise
+
+
+def chat_completion_with_profile(
+    profile_id: str,
+    messages: list,
+    *,
+    stream: bool = False,
+    on_token: Optional[Callable[[str], None]] = None,
+    model: Optional[str] = None,
+    temperature: Optional[float] = None,
+    max_tokens: Optional[int] = None,
+    top_p: Optional[float] = None,
+) -> str:
+    profile = load_sampling_profile(profile_id)
+    selected_model = model or profile.model_override
+    return chat_completion(
+        messages,
+        role=profile.role,
+        temperature=profile.temperature if temperature is None else temperature,
+        max_tokens=profile.max_tokens if max_tokens is None else max_tokens,
+        stream=stream,
+        on_token=on_token,
+        top_p=profile.top_p if top_p is None else top_p,
+        model=selected_model,
+        _suppress_deprecation_warning=True,
+        _sampling_profile_id=profile.profile_id,
+    )
 
 
 def get_provider_info() -> dict[str, Any]:

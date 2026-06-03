@@ -3,28 +3,25 @@
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 from uuid import uuid4
 
-COLLECT_SAMPLES_ENV = "WB_COLLECT_SAMPLES"
-SAMPLE_DIR_ENV = "WB_SAMPLE_DIR"
-SAMPLE_RUN_ID_ENV = "WB_SAMPLE_RUN_ID"
+from worldbox_writer.config.settings import get_settings
+
 DEFAULT_SAMPLE_DIR = Path("artifacts/intermediate_samples")
 
 _RUN_ID: str | None = None
 
 
 def sample_collection_enabled() -> bool:
-    raw = os.environ.get(COLLECT_SAMPLES_ENV, "").strip().lower()
-    return raw in {"1", "true", "yes", "on"}
+    return get_settings().sample.collect_samples
 
 
 def _run_id() -> str:
     global _RUN_ID
-    explicit = os.environ.get(SAMPLE_RUN_ID_ENV)
+    explicit = get_settings().sample.sample_run_id
     if explicit:
         return explicit
     if _RUN_ID is None:
@@ -69,7 +66,7 @@ def collect_sample(
     metadata = metadata or {}
     run_id = str(metadata.get("run_id") or _run_id())
     sample_id = str(metadata.get("sample_id") or f"sample_{uuid4().hex[:12]}")
-    root = Path(os.environ.get(SAMPLE_DIR_ENV, str(DEFAULT_SAMPLE_DIR)))
+    root = Path(get_settings().sample.sample_dir or str(DEFAULT_SAMPLE_DIR))
     path = root / node_name / f"{run_id}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
 

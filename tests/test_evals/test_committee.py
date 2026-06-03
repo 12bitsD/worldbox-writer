@@ -21,6 +21,7 @@ from worldbox_writer.evals.llm_judge import (
     COMMITTEE_AXIS_WEIGHTS,
     COMMITTEE_TOXIC_VETO_THRESHOLD,
     judge_committee,
+    parse_judge_response,
 )
 
 
@@ -51,7 +52,8 @@ def _route_by_dim(
     """Return a side_effect that matches the dim's prompt against ALL_DIMENSIONS."""
     overrides = overrides or {}
 
-    def side_effect(messages, **_kwargs):
+    def side_effect(*args, **_kwargs):
+        messages = args[-1]
         system = messages[0]["content"]
         for dim in ALL_DIMENSIONS:
             if dim.system_prompt == system:
@@ -66,7 +68,7 @@ def _route_by_dim(
 def test_committee_runs_all_dims_and_aggregates_three_axes() -> None:
     """All 15 dims dispatched; axis_scores cover emotion / structure / prose."""
     with patch(
-        "worldbox_writer.evals.llm_judge.chat_completion",
+        "worldbox_writer.evals.llm_judge.chat_completion_with_profile",
         side_effect=_route_by_dim(default_score=7.0),
     ) as mock_chat:
         result = judge_committee("文本片段。" * 50)
@@ -89,7 +91,7 @@ def test_committee_skips_inapplicable_conditional_from_axis_average() -> None:
         "payoff_intensity": _payload(applicable=False),
     }
     with patch(
-        "worldbox_writer.evals.llm_judge.chat_completion",
+        "worldbox_writer.evals.llm_judge.chat_completion_with_profile",
         side_effect=_route_by_dim(overrides=overrides, default_score=7.0),
     ):
         result = judge_committee("片段")
@@ -109,7 +111,7 @@ def test_committee_toxic_veto_triggers_when_any_toxic_score_high() -> None:
         "preachiness": _payload(score=9.0, evidence="经过这件事他明白了"),
     }
     with patch(
-        "worldbox_writer.evals.llm_judge.chat_completion",
+        "worldbox_writer.evals.llm_judge.chat_completion_with_profile",
         side_effect=_route_by_dim(overrides=overrides, default_score=7.0),
     ):
         result = judge_committee(text)
@@ -129,7 +131,7 @@ def test_committee_forced_stupidity_does_not_veto_when_inapplicable() -> None:
         "forced_stupidity": _payload(applicable=False),
     }
     with patch(
-        "worldbox_writer.evals.llm_judge.chat_completion",
+        "worldbox_writer.evals.llm_judge.chat_completion_with_profile",
         side_effect=_route_by_dim(overrides=overrides, default_score=7.0),
     ):
         result = judge_committee("片段")
@@ -155,7 +157,7 @@ def test_committee_forced_stupidity_vetoes_when_applicable_and_high() -> None:
     )
     overrides = {"forced_stupidity": fs_payload}
     with patch(
-        "worldbox_writer.evals.llm_judge.chat_completion",
+        "worldbox_writer.evals.llm_judge.chat_completion_with_profile",
         side_effect=_route_by_dim(overrides=overrides, default_score=7.0),
     ):
         result = judge_committee(text)
@@ -172,7 +174,7 @@ def test_committee_below_veto_threshold_does_not_trigger() -> None:
         "ai_prose_ticks": _payload(score=7.5, evidence="宛如一座雕像"),
     }
     with patch(
-        "worldbox_writer.evals.llm_judge.chat_completion",
+        "worldbox_writer.evals.llm_judge.chat_completion_with_profile",
         side_effect=_route_by_dim(overrides=overrides, default_score=7.0),
     ):
         result = judge_committee(text)
@@ -187,7 +189,7 @@ def test_committee_records_parse_failures_without_crashing() -> None:
     invalid_payload = "this is not json at all"
     overrides = {"desire_clarity": invalid_payload}
     with patch(
-        "worldbox_writer.evals.llm_judge.chat_completion",
+        "worldbox_writer.evals.llm_judge.chat_completion_with_profile",
         side_effect=_route_by_dim(overrides=overrides, default_score=7.0),
     ):
         result = judge_committee("片段")
@@ -197,6 +199,22 @@ def test_committee_records_parse_failures_without_crashing() -> None:
     assert any(err["dim_id"] == "desire_clarity" for err in result["errors"])
     # Other dims still successful → axes still computed
     assert result["axis_scores"]["structure_axis"] is not None
+
+
+def test_parse_judge_response_accepts_first_balanced_object() -> None:
+    raw = (
+        "先说明一句：\n"
+        '{"applicable": true, "score": 6.5, "evidence_quote": "片段", '
+        '"rule_hit": "demo", "reasoning": "ok"}\n'
+        "后续模型又补充了另一个对象："
+        '{"applicable": false, "score": null}'
+    )
+
+    parsed = parse_judge_response(raw)
+
+    assert parsed["applicable"] is True
+    assert parsed["score"] == 6.5
+    assert parsed["rule_hit"] == "demo"
 
 
 def test_committee_axis_map_covers_every_scoring_dim() -> None:
@@ -245,7 +263,7 @@ def test_forced_stupidity_applicable_true_with_null_score_coerced_to_false() -> 
     )
     overrides = {"forced_stupidity": fs_payload}
     with patch(
-        "worldbox_writer.evals.llm_judge.chat_completion",
+        "worldbox_writer.evals.llm_judge.chat_completion_with_profile",
         side_effect=_route_by_dim(overrides=overrides, default_score=7.0),
     ):
         result = judge_committee("片段")
@@ -279,7 +297,7 @@ def test_forced_stupidity_applicable_true_with_empty_setup_coerced_to_false() ->
     )
     overrides = {"forced_stupidity": fs_payload}
     with patch(
-        "worldbox_writer.evals.llm_judge.chat_completion",
+        "worldbox_writer.evals.llm_judge.chat_completion_with_profile",
         side_effect=_route_by_dim(overrides=overrides, default_score=7.0),
     ):
         result = judge_committee("片段中的某句出现")  # contains the evidence
@@ -304,7 +322,7 @@ def test_evidence_quote_not_in_source_demotes_score() -> None:
     )
     overrides = {"preachiness": payload}
     with patch(
-        "worldbox_writer.evals.llm_judge.chat_completion",
+        "worldbox_writer.evals.llm_judge.chat_completion_with_profile",
         side_effect=_route_by_dim(overrides=overrides, default_score=7.0),
     ):
         result = judge_committee("一段完全不同的文字")
@@ -320,7 +338,7 @@ def test_evidence_quote_not_in_source_demotes_score() -> None:
 
 
 def test_evidence_quote_with_curly_quotes_still_validates() -> None:
-    """Light normalization: curly “” match straight "". Other punctuation kept as-is."""
+    """Light normalization lets curly/straight/omitted quotes still match."""
     # Original uses curly quotes around the inner phrase
     text = "他说：“实不相瞒，名册关乎江湖。”"
     # Judge echoes it back with straight quotes — should still validate
@@ -336,7 +354,7 @@ def test_evidence_quote_with_curly_quotes_still_validates() -> None:
     )
     overrides = {"ai_prose_ticks": payload}
     with patch(
-        "worldbox_writer.evals.llm_judge.chat_completion",
+        "worldbox_writer.evals.llm_judge.chat_completion_with_profile",
         side_effect=_route_by_dim(overrides=overrides, default_score=7.0),
     ):
         result = judge_committee(text)
@@ -345,6 +363,91 @@ def test_evidence_quote_with_curly_quotes_still_validates() -> None:
     # Should NOT mark invalid — quote chars normalize to match
     assert apt["evidence_invalid"] is False
     assert apt["score"] == 7.0
+
+
+def test_forced_stupidity_setup_quote_with_omitted_quotes_still_validates() -> None:
+    text = '"七州之内的智将"这个外号，铁霸天自己最珍惜。'
+    setup_without_quotes = "七州之内的智将这个外号，铁霸天自己最珍惜"
+    payload = json.dumps(
+        {
+            "applicable": True,
+            "score": 9.0,
+            "evidence_quote": "铁霸天自己最珍惜",
+            "setup_quote": setup_without_quotes,
+            "rule_hit": "forced_stupidity.villain_monologuing",
+            "reasoning": "智将人设建立",
+        },
+        ensure_ascii=False,
+    )
+    overrides = {"forced_stupidity": payload}
+    with patch(
+        "worldbox_writer.evals.llm_judge.chat_completion_with_profile",
+        side_effect=_route_by_dim(overrides=overrides, default_score=7.0),
+    ):
+        result = judge_committee(text)
+
+    fs = result["per_dimension"]["forced_stupidity"]
+    assert fs["setup_invalid"] is False
+    assert fs["applicable"] is True
+    assert fs["score"] == 9.0
+    assert result["toxic"]["forced_stupidity"]["hit"] is True
+
+
+def test_ai_prose_ticks_translation_marker_applies_score_floor() -> None:
+    text = '"哦，我的天。"陈砚低声说，"这真是一个出乎意料的相遇。"'
+    payload = json.dumps(
+        {
+            "applicable": True,
+            "score": 3.0,
+            "evidence_quote": "",
+            "rule_hit": "ai_prose_ticks.none",
+            "reasoning": "漏判",
+        },
+        ensure_ascii=False,
+    )
+    overrides = {"ai_prose_ticks": payload}
+    with patch(
+        "worldbox_writer.evals.llm_judge.chat_completion_with_profile",
+        side_effect=_route_by_dim(overrides=overrides, default_score=7.0),
+    ):
+        result = judge_committee(text)
+
+    apt = result["per_dimension"]["ai_prose_ticks"]
+    assert apt["score"] == 8.0
+    assert apt["rule_hit"] == "ai_prose_ticks.translation_tone"
+    assert "ai_prose_ticks_rule_floor" in apt["coercions"]
+    assert result["toxic"]["ai_prose_ticks"]["hit"] is True
+
+
+def test_forced_stupidity_monologue_marker_applies_score_floor() -> None:
+    text = (
+        '"七州之内的智将"这个外号，铁霸天自己最珍惜。\n'
+        '"我告诉你一个秘密——本来今晚，我的人在西门伏下了三十个高手。"'
+    )
+    payload = json.dumps(
+        {
+            "applicable": False,
+            "score": None,
+            "evidence_quote": "",
+            "setup_quote": "",
+            "rule_hit": "",
+            "reasoning": "漏判",
+        },
+        ensure_ascii=False,
+    )
+    overrides = {"forced_stupidity": payload}
+    with patch(
+        "worldbox_writer.evals.llm_judge.chat_completion_with_profile",
+        side_effect=_route_by_dim(overrides=overrides, default_score=7.0),
+    ):
+        result = judge_committee(text)
+
+    fs = result["per_dimension"]["forced_stupidity"]
+    assert fs["applicable"] is True
+    assert fs["score"] == 8.0
+    assert fs["rule_hit"] == "forced_stupidity.villain_monologuing"
+    assert "forced_stupidity_rule_floor" in fs["coercions"]
+    assert result["toxic"]["forced_stupidity"]["hit"] is True
 
 
 def test_forced_stupidity_fabricated_setup_quote_coerced() -> None:
@@ -362,7 +465,7 @@ def test_forced_stupidity_fabricated_setup_quote_coerced() -> None:
     )
     overrides = {"forced_stupidity": payload}
     with patch(
-        "worldbox_writer.evals.llm_judge.chat_completion",
+        "worldbox_writer.evals.llm_judge.chat_completion_with_profile",
         side_effect=_route_by_dim(overrides=overrides, default_score=7.0),
     ):
         result = judge_committee("片段中的某句出现")  # contains evidence but not setup
@@ -403,7 +506,8 @@ def _cross_passage_payload(
 def _route_by_cross_dim(overrides: dict[str, str] | None = None) -> Any:
     overrides = overrides or {}
 
-    def side_effect(messages, **_kwargs):
+    def side_effect(*args, **_kwargs):
+        messages = args[-1]
         system = messages[0]["content"]
         for dim in CROSS_PASSAGE_DIMENSIONS:
             if dim.system_prompt == system:
@@ -418,7 +522,7 @@ def _route_by_cross_dim(overrides: dict[str, str] | None = None) -> Any:
 def test_multi_chapter_returns_applicable_false_for_single_chapter() -> None:
     """Less than 2 chapters → all dims applicable=false, overall None, no LLM calls."""
     with patch(
-        "worldbox_writer.evals.llm_judge.chat_completion",
+        "worldbox_writer.evals.llm_judge.chat_completion_with_profile",
         side_effect=AssertionError("should not call LLM with < 2 chapters"),
     ):
         result = judge_multi_chapter(["only one chapter"])
@@ -434,7 +538,7 @@ def test_multi_chapter_runs_4_dims_and_aggregates() -> None:
     """All 4 cross-passage dims dispatched; overall is mean of applicable scores."""
     chapters = ["章节一文本", "章节二文本", "章节三文本"]
     with patch(
-        "worldbox_writer.evals.llm_judge.chat_completion",
+        "worldbox_writer.evals.llm_judge.chat_completion_with_profile",
         side_effect=_route_by_cross_dim(),
     ) as mock_chat:
         result = judge_multi_chapter(chapters)
@@ -463,7 +567,7 @@ def test_multi_chapter_inapplicable_dim_excluded_from_overall() -> None:
         ),
     }
     with patch(
-        "worldbox_writer.evals.llm_judge.chat_completion",
+        "worldbox_writer.evals.llm_judge.chat_completion_with_profile",
         side_effect=_route_by_cross_dim(overrides=overrides),
     ):
         result = judge_multi_chapter(chapters)
@@ -481,7 +585,7 @@ def test_multi_chapter_fabricated_quote_demotes_high_score() -> None:
         "stakes_escalation": _cross_passage_payload(score=8.0, evidence=[fabricated]),
     }
     with patch(
-        "worldbox_writer.evals.llm_judge.chat_completion",
+        "worldbox_writer.evals.llm_judge.chat_completion_with_profile",
         side_effect=_route_by_cross_dim(overrides=overrides),
     ):
         result = judge_multi_chapter(chapters)
@@ -497,7 +601,7 @@ def test_multi_chapter_records_parse_failures() -> None:
     """Bad JSON for one dim is captured in errors[]; others still proceed."""
     overrides = {"setting_consistency": "not json at all"}
     with patch(
-        "worldbox_writer.evals.llm_judge.chat_completion",
+        "worldbox_writer.evals.llm_judge.chat_completion_with_profile",
         side_effect=_route_by_cross_dim(overrides=overrides),
     ):
         result = judge_multi_chapter(["章一", "章二"])

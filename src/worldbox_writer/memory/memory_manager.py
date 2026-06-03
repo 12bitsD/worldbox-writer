@@ -10,18 +10,20 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, cast
 from uuid import uuid4
 
+from worldbox_writer.config.settings import get_settings
 from worldbox_writer.core.models import Character, StoryNode, WorldState
+from worldbox_writer.prompting.registry import load_prompt_template
 from worldbox_writer.storage.db import (
     archive_memory_entries,
     load_memory_entries,
     save_memory_entry,
 )
-from worldbox_writer.utils.llm import chat_completion
+from worldbox_writer.utils.llm import chat_completion_with_profile
 
 SUMMARY_ARCHIVE_TAG = "summary_archive"
 SUMMARY_ENTRY_KIND = "summary"
@@ -369,11 +371,9 @@ class ChromaVectorStore:
 
         self.backend_name = CHROMA_VECTOR_BACKEND
         self._entries: Dict[str, MemoryEntry] = {}
-        embedding_fn = _HashedEmbeddingFunction(
-            int(os.environ.get("MEMORY_VECTOR_DIMENSIONS", DEFAULT_CHROMA_DIMENSIONS))
-        )
+        embedding_fn = _HashedEmbeddingFunction(get_settings().memory.vector_dimensions)
         if persist_path:
-            os.makedirs(persist_path, exist_ok=True)
+            Path(persist_path).mkdir(parents=True, exist_ok=True)
             self._client = chromadb.PersistentClient(path=persist_path)
         else:  # pragma: no cover - depends on optional runtime dependency
             self._client = chromadb.EphemeralClient()
@@ -466,9 +466,7 @@ class MemoryManager:
         self.sim_id = sim_id
         self.archive_threshold = max(archive_threshold, archive_keep_recent + 1)
         self.archive_keep_recent = max(1, archive_keep_recent)
-        requested_backend = vector_backend or os.environ.get(
-            "MEMORY_VECTOR_BACKEND", DEFAULT_VECTOR_BACKEND
-        )
+        requested_backend = vector_backend or get_settings().memory.vector_backend
         self.vector_backend_requested = _normalize_vector_backend_name(
             requested_backend
         )
@@ -699,10 +697,8 @@ class MemoryManager:
         messages = [
             {
                 "role": "system",
-                "content": (
-                    "你是故事一致性检查器。判断提议的事件是否与已有故事记忆相矛盾。\n"
-                    "只输出合法 JSON：\n"
-                    '{"is_consistent": true|false, "explanation": "说明"}'
+                "content": load_prompt_template(
+                    "memory_system", variant="consistency_check"
                 ),
             },
             {
@@ -716,9 +712,7 @@ class MemoryManager:
         ]
 
         try:
-            response = chat_completion(
-                messages, role="memory", temperature=0.0, max_tokens=200
-            )
+            response = chat_completion_with_profile("memory_consistency", messages)
             raw = json.loads(response.strip())
             return bool(raw.get("is_consistent", True)), str(raw.get("explanation", ""))
         except Exception:
@@ -744,9 +738,8 @@ class MemoryManager:
         messages = [
             {
                 "role": "system",
-                "content": (
-                    "你是角色弧线分析器。根据角色的经历，用一句话总结其故事弧线。\n"
-                    "只输出角色弧线描述，不要有其他内容。"
+                "content": load_prompt_template(
+                    "memory_system", variant="character_arc"
                 ),
             },
             {
@@ -760,8 +753,8 @@ class MemoryManager:
         ]
 
         try:
-            return chat_completion(
-                messages, role="memory", temperature=0.5, max_tokens=100
+            return chat_completion_with_profile(
+                "memory_character_arc", messages
             ).strip()
         except Exception:
             return f"{character.name}：经历了 {len(events)} 个故事节点"
@@ -834,7 +827,7 @@ class MemoryManager:
             try:
                 store = ChromaVectorStore(
                     collection_name=self._vector_collection_name(),
-                    persist_path=os.environ.get("MEMORY_VECTOR_PATH"),
+                    persist_path=get_settings().memory.vector_path,
                 )
             except Exception as exc:
                 self.vector_backend = SIMPLE_VECTOR_BACKEND
@@ -847,7 +840,7 @@ class MemoryManager:
             try:
                 store = ChromaVectorStore(
                     collection_name=self._vector_collection_name(),
-                    persist_path=os.environ.get("MEMORY_VECTOR_PATH"),
+                    persist_path=get_settings().memory.vector_path,
                 )
             except Exception as exc:
                 self.vector_backend = SIMPLE_VECTOR_BACKEND
@@ -863,7 +856,7 @@ class MemoryManager:
         return SimpleVectorStore()
 
     def _vector_collection_name(self) -> str:
-        prefix = os.environ.get("MEMORY_VECTOR_COLLECTION", DEFAULT_CHROMA_COLLECTION)
+        prefix = get_settings().memory.vector_collection
         parts = [
             _safe_collection_suffix(prefix),
             _safe_collection_suffix(self.sim_id),
@@ -930,12 +923,8 @@ class MemoryManager:
         messages = [
             {
                 "role": "system",
-                "content": (
-                    "你是长篇故事记忆归档器。请把一组旧事件压缩为可召回的记忆摘要。\n"
-                    "要求：\n"
-                    "1. 保留人物、地点、规则和因果变化\n"
-                    "2. 输出 3-5 条中文要点\n"
-                    "3. 每条要点尽量简洁，不要编造新事实"
+                "content": load_prompt_template(
+                    "memory_system", variant="summarize_entries"
                 ),
             },
             {
@@ -949,9 +938,7 @@ class MemoryManager:
         ]
 
         try:
-            summary = chat_completion(
-                messages, role="memory", temperature=0.2, max_tokens=260
-            ).strip()
+            summary = chat_completion_with_profile("memory_summarize", messages).strip()
             if summary:
                 return summary
         except Exception:

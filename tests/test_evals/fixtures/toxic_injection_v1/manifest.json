@@ -75,7 +75,7 @@
     "n_runs": 3,
     "recall_threshold_pct": 95,
     "false_positive_threshold_pct": 10,
-    "recall_definition": "命中样本上 target_dim score ≥ 8 的比例（命中 hit 即 toxic veto 触发）",
+    "recall_definition": "命中样本上 target_dim score ≥ 8 的多数投票通过比例；默认 runs=3 时至少 2/3 次命中算该样本通过",
     "false_positive_definition": "干净样本上任何 toxic dim score ≥ 8 的运行比例"
   }
 }

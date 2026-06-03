@@ -8,13 +8,17 @@ goals, memory, and relationships, then proposes the character's next action.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, cast
 from uuid import UUID
 
 from worldbox_writer.core.models import Character, NodeType, StoryNode, WorldState
-from worldbox_writer.utils.llm import chat_completion, get_last_llm_call_metadata
+from worldbox_writer.prompting.registry import load_prompt_template
+from worldbox_writer.utils.json_parsing import parse_json_object
+from worldbox_writer.utils.llm import (
+    chat_completion_with_profile,
+    get_last_llm_call_metadata,
+)
 
 # ---------------------------------------------------------------------------
 # Result types
@@ -34,47 +38,7 @@ class ActionProposal:
     consequence_hint: str
 
 
-# ---------------------------------------------------------------------------
-# Prompt template
-# ---------------------------------------------------------------------------
-
-_ACTOR_SYSTEM_PROMPT = """你是 WorldBox Writer 中的角色扮演 Agent，负责驱动一个具体角色的行动。
-你需要根据角色的性格、目标、记忆和当前处境，决定这个角色下一步会做什么。
-
-只输出合法 JSON：
-{
-  "action_type": "dialogue|action|decision|reaction",
-  "description": "角色的行动描述（50-100字，第三人称）",
-  "target_character": "行动指向的角色名（如果有）",
-  "emotional_state": "角色当前的情绪状态",
-  "consequence_hint": "这个行动可能带来的后果（一句话）"
-}
-
-行动类型说明：
-- dialogue: 角色说了什么
-- action: 角色做了什么
-- decision: 角色做出了什么决定
-- reaction: 角色对某件事的反应
-
-要求：
-1. 行动必须符合角色的性格和目标
-2. 行动要有戏剧性，推动故事发展
-3. 考虑角色的记忆和与其他角色的关系
-4. 不要违反世界规则
-
-负面约束：
-- 不要使用模板短语，例如“围绕...”“承接上一幕...”“采取具体行动...”“制造新的选择...”。
-- 不要写概括性描述，例如“处理危机”“应对挑战”；必须具体到动作和对象。
-- 不要使用排比句式，不要用整齐重复的句型堆叠情绪或行动。
-- 不要解释角色动机，例如“因为...所以...”；动机必须由行为、对象和反应体现。
-
-正面要求：
-- description 必须包含具体动作和具体对象，例如“拔出匕首”而不是“采取行动”。
-- description 必须包含时空信息，说明角色在哪里、什么时候行动。
-- 动机可见：description 必须让读者从角色的欲望、恐惧或处境中看出为什么此刻这样做。
-- description 必须体现角色性格；同一情境下，不同性格的角色应做出不同选择。
-- description 必须一句话说完，不要分段。
-"""
+ACTOR_SYSTEM_PROMPT_ID = "actor_system"
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +148,7 @@ class ActorAgent:
         ]
 
         try:
-            return self._invoke(messages, temperature=0.7, max_tokens=300).strip()
+            return self._invoke(messages, profile_id="actor_synthesize").strip()
         except Exception:
             return "；".join(
                 proposal.description
@@ -208,7 +172,8 @@ class ActorAgent:
                 "status": "completed",
             }
             return cast(str, response.content)
-        content = chat_completion(messages, role="actor", **kwargs)
+        profile_id = str(kwargs.pop("profile_id"))
+        content = chat_completion_with_profile(profile_id, messages)
         self.last_call_metadata = get_last_llm_call_metadata()
         return content
 
@@ -237,7 +202,10 @@ class ActorAgent:
         context_text = context_node.description if context_node else "故事刚刚开始"
 
         messages = [
-            {"role": "system", "content": _ACTOR_SYSTEM_PROMPT},
+            {
+                "role": "system",
+                "content": load_prompt_template(ACTOR_SYSTEM_PROMPT_ID),
+            },
             {
                 "role": "user",
                 "content": (
@@ -255,7 +223,7 @@ class ActorAgent:
         ]
 
         try:
-            response = self._invoke(messages, temperature=0.8, max_tokens=300)
+            response = self._invoke(messages, profile_id="actor_propose")
         except Exception:
             return self._fallback_action_data(character)
         return self._parse_json_response(response)
@@ -277,39 +245,15 @@ class ActorAgent:
         )
 
     def _parse_json_response(self, content: str) -> Dict[str, Any]:
-        text = content.strip()
-        if text.startswith("```"):
-            lines = text.split("\n")
-            text = (
-                "\n".join(lines[1:-1])
-                if lines[-1].strip() == "```"
-                else "\n".join(lines[1:])
-            )
-        try:
-            return cast(Dict[str, Any], json.loads(text))
-        except json.JSONDecodeError:
-            # Try to extract JSON object from anywhere in the response
-            start = text.find("{")
-            if start != -1:
-                depth = 0
-                for i in range(start, len(text)):
-                    if text[i] == "{":
-                        depth += 1
-                    elif text[i] == "}":
-                        depth -= 1
-                        if depth == 0:
-                            try:
-                                return cast(
-                                    Dict[str, Any], json.loads(text[start : i + 1])
-                                )
-                            except json.JSONDecodeError:
-                                break
-            return {
+        return parse_json_object(
+            content,
+            default={
                 "action_type": "action",
                 "description": "角色暂时陷入沉默，谨慎观察局势变化。",
                 "emotional_state": "平静",
                 "consequence_hint": "",
-            }
+            },
+        )
 
     def _fallback_action_data(self, character: Character) -> Dict[str, Any]:
         goal = character.goals[0] if character.goals else "当前处境"

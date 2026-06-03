@@ -78,9 +78,10 @@ def _judge_chapters(
     chapters: list[dict[str, Any]],
     *,
     model: str | None,
-    temperature: float,
-    max_tokens: int,
+    temperature: float | None,
+    max_tokens: int | None,
     judge_runs_per_chapter: int,
+    judge_error_retries: int,
 ) -> list[dict[str, Any]]:
     chapter_reports = []
     for chapter in chapters:
@@ -89,21 +90,65 @@ def _judge_chapters(
             continue
         committee_runs = []
         for run_idx in range(judge_runs_per_chapter):
-            t0 = time.time()
-            result = judge_committee(
-                rendered,
-                model=model,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                concurrency=1,
+            print(
+                f"      chapter {chapter['chapter']} "
+                f"judge_run#{run_idx + 1}/{judge_runs_per_chapter} started...",
+                flush=True,
             )
+            t0 = time.time()
+            attempts = max(1, judge_error_retries + 1)
+            for attempt_idx in range(attempts):
+                result = judge_committee(
+                    rendered,
+                    model=model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    concurrency=1,
+                )
+                error_count = len(result.get("errors") or [])
+                if not error_count or attempt_idx == attempts - 1:
+                    break
+                print(
+                    f"      chapter {chapter['chapter']} "
+                    f"judge_run#{run_idx + 1}: retrying after "
+                    f"{error_count} judge errors "
+                    f"(attempt {attempt_idx + 1}/{attempts})",
+                    flush=True,
+                )
             elapsed = round(time.time() - t0, 1)
             committee_runs.append(result)
+            error_count = len(result.get("errors") or [])
             print(
                 f"      chapter {chapter['chapter']} judge_run#{run_idx + 1}: "
                 f"overall={result['overall']} vetoed={result['vetoed']} "
-                f"elapsed={elapsed}s"
+                f"errors={error_count} "
+                f"elapsed={elapsed}s",
+                flush=True,
             )
+            if error_count:
+                per_dimension = result.get("per_dimension") or {}
+                diagnostics = []
+                for error_entry in result.get("errors") or []:
+                    dim_id = str(error_entry.get("dim_id") or "")
+                    dim_record = per_dimension.get(dim_id) or {}
+                    diagnostics.append(
+                        {
+                            "dim_id": dim_id,
+                            "parse_status": error_entry.get("parse_status"),
+                            "error": error_entry.get("error"),
+                            "raw_excerpt": dim_record.get("raw_excerpt", ""),
+                        }
+                    )
+                print(
+                    "      judge error diagnostics: "
+                    + json.dumps(diagnostics, ensure_ascii=False),
+                    flush=True,
+                )
+                raise RuntimeError(
+                    "judge_committee returned errors for "
+                    f"chapter {chapter['chapter']} run {run_idx + 1}: "
+                    f"{result['errors']}"
+                )
 
         overalls = [r["overall"] for r in committee_runs]
         veto_count = sum(1 for r in committee_runs if r["vetoed"])
@@ -135,6 +180,7 @@ def _judge_chapters(
                         "vetoed": r["vetoed"],
                         "veto_reasons": r["veto_reasons"],
                         "axis_scores": r["axis_scores"],
+                        "errors": r.get("errors", []),
                     }
                     for r in committee_runs
                 ],
@@ -148,9 +194,20 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--chapters", type=int, default=4)
     parser.add_argument("--judge-runs-per-chapter", type=int, default=2)
-    parser.add_argument("--temperature", type=float, default=0.2)
-    parser.add_argument("--max-tokens", type=int, default=320)
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=None,
+        help="Override judge profile temperature. Defaults to profile value.",
+    )
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=None,
+        help="Override judge profile max_tokens. Defaults to profile value.",
+    )
     parser.add_argument("--model", default=None)
+    parser.add_argument("--judge-error-retries", type=int, default=1)
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
     parser.add_argument(
         "--premises",
@@ -168,7 +225,7 @@ def main() -> int:
         wanted = {p.strip() for p in args.premises.split(",") if p.strip()}
         selected_premises = [p for p in PREMISES if p["id"] in wanted]
     if not selected_premises:
-        print(f"No premises matched: {args.premises}", file=sys.stderr)
+        print(f"No premises matched: {args.premises}", file=sys.stderr, flush=True)
         return 2
 
     started_at = time.time()
@@ -177,7 +234,8 @@ def main() -> int:
     for sim_idx, premise_entry in enumerate(selected_premises, start=1):
         print(
             f"\n=== [{sim_idx}/{len(selected_premises)}] simulation: "
-            f"{premise_entry['id']} ==="
+            f"{premise_entry['id']} ===",
+            flush=True,
         )
         sim_started = time.time()
         try:
@@ -187,7 +245,10 @@ def main() -> int:
                 simulation_id=f"r4-baseline-{premise_entry['id']}",
             )
         except Exception as exc:
-            print(f"  simulation failed: {type(exc).__name__}: {exc}")
+            print(
+                f"  simulation failed: {type(exc).__name__}: {exc}",
+                flush=True,
+            )
             simulations.append(
                 {
                     "id": premise_entry["id"],
@@ -200,7 +261,8 @@ def main() -> int:
         sim_elapsed = round(time.time() - sim_started, 1)
         print(
             f"  simulation gen: {len(sim_payload['chapters'])} chapters "
-            f"in {sim_elapsed}s, warnings={len(sim_payload.get('warnings', []))}"
+            f"in {sim_elapsed}s, warnings={len(sim_payload.get('warnings', []))}",
+            flush=True,
         )
 
         chapter_reports = _judge_chapters(
@@ -209,6 +271,7 @@ def main() -> int:
             temperature=args.temperature,
             max_tokens=args.max_tokens,
             judge_runs_per_chapter=args.judge_runs_per_chapter,
+            judge_error_retries=args.judge_error_retries,
         )
 
         chapter_overalls = [c["overall_mean"] for c in chapter_reports]
@@ -246,7 +309,8 @@ def main() -> int:
         simulations.append(sim_summary)
         print(
             f"  simulation summary: overall_mean={sim_summary['chapter_overall_mean']} "
-            f"axes={sim_summary['axis_means']}"
+            f"axes={sim_summary['axis_means']}",
+            flush=True,
         )
 
     duration = round(time.time() - started_at, 2)
@@ -273,6 +337,7 @@ def main() -> int:
             "judge_runs_per_chapter": args.judge_runs_per_chapter,
             "temperature": args.temperature,
             "max_tokens": args.max_tokens,
+            "judge_error_retries": args.judge_error_retries,
             "model": args.model,
             "provider": os.environ.get("LLM_PROVIDER"),
             "premises_run": [p["id"] for p in selected_premises],
@@ -307,11 +372,14 @@ def main() -> int:
         json.dumps(baseline, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
-    print(f"\nBaseline report: {output_path}")
-    print(f"Duration: {duration}s")
+    print(f"\nBaseline report: {output_path}", flush=True)
+    print(f"Duration: {duration}s", flush=True)
     agg = baseline["aggregate"]
-    print(f"Aggregate overall_mean: {agg['overall_mean']} (std {agg['overall_std']})")
-    print(f"Aggregate axis_means:   {agg['axis_means']}")
+    print(
+        f"Aggregate overall_mean: {agg['overall_mean']} (std {agg['overall_std']})",
+        flush=True,
+    )
+    print(f"Aggregate axis_means:   {agg['axis_means']}", flush=True)
     return 0
 
 

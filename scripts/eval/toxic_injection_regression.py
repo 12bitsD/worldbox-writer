@@ -6,8 +6,9 @@ times per sample, and reports recall + false-positive rate for the 3 toxic
 veto dimensions.
 
 Pass criteria:
-  - Recall on hit samples: at least 2 of N=3 runs flag the target_dim as
-    score ≥ 8 (≥ 95% recall measured per-sample-run).
+  - Recall on hit samples: each hit sample passes when at least a majority of
+    its runs flag the target_dim as score ≥ 8. Overall recall is measured as
+    passed hit samples / total hit samples.
   - False positive on clean samples: across all (clean × runs) pairs, fewer
     than 10% should have any toxic dim score ≥ 8.
   - Borderline samples: documented but not gated.
@@ -18,7 +19,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import statistics
 import sys
 import time
 from datetime import datetime, timezone
@@ -104,9 +104,13 @@ def main() -> int:
 
     duration = round(time.time() - started_at, 2)
 
-    # Compute recall on hit samples
+    # Compute recall on hit samples. The script doc has always described the
+    # gate as "at least 2 of N=3"; generalize that to a majority for other N.
+    hit_samples_total = 0
+    hit_samples_correct = 0
     hit_runs_total = 0
-    hit_runs_correct = 0  # target_dim score ≥ threshold
+    hit_runs_correct = 0
+    required_hits_per_sample = max(1, args.runs // 2 + 1)
     hit_per_sample: dict[str, dict[str, Any]] = {}
     for sid, sr in sample_results.items():
         if sr["expected_label"] != "hit":
@@ -118,16 +122,24 @@ def main() -> int:
             if run["toxic_dim_scores"].get(target) is not None
             and float(run["toxic_dim_scores"][target]) >= threshold
         )
+        sample_pass = target_hits >= required_hits_per_sample
+        hit_samples_total += 1
+        hit_samples_correct += int(sample_pass)
         hit_runs_total += len(sr["runs"])
         hit_runs_correct += target_hits
         hit_per_sample[sid] = {
             "target_dim": target,
             "target_hit_count": target_hits,
+            "required_hit_count": required_hits_per_sample,
             "n_runs": len(sr["runs"]),
             "recall_per_sample": round(target_hits / len(sr["runs"]), 3),
+            "sample_pass": sample_pass,
         }
-    overall_recall = (
+    run_level_recall = (
         round(hit_runs_correct / hit_runs_total, 3) if hit_runs_total else None
+    )
+    overall_recall = (
+        round(hit_samples_correct / hit_samples_total, 3) if hit_samples_total else None
     )
 
     # False positive on clean samples
@@ -191,6 +203,8 @@ def main() -> int:
             "recall_overall": overall_recall,
             "recall_threshold": manifest["evaluation_method"]["recall_threshold_pct"]
             / 100,
+            "run_level_recall": run_level_recall,
+            "required_hits_per_sample": required_hits_per_sample,
             "fp_rate_overall": overall_fp_rate,
             "fp_rate_threshold": manifest["evaluation_method"][
                 "false_positive_threshold_pct"
