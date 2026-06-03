@@ -18,8 +18,9 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from worldbox_writer.api.core.branching import (
     branch_cutoffs,
@@ -37,6 +38,7 @@ from worldbox_writer.api.core.serialization import (
     serialize_telemetry,
     serialize_world,
 )
+from worldbox_writer.api.errors import ApiError
 from worldbox_writer.api.routes.branches import build_branch_router
 from worldbox_writer.api.routes.deps import ApiRouteDeps
 from worldbox_writer.api.routes.simulations import build_simulation_router
@@ -187,6 +189,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(ApiError)
+async def api_error_handler(_request: Request, exc: ApiError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+    )
 
 
 def _collect_llm_diagnostics(events: List[TelemetryEvent]) -> Dict[str, Any]:

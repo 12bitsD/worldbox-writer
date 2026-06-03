@@ -13,10 +13,9 @@ import uuid
 from concurrent.futures import Executor
 from typing import Any, Callable, Dict, MutableMapping, Optional
 
-from fastapi import HTTPException
-
 from worldbox_writer.api.core.branching import normalize_branch_registry
 from worldbox_writer.api.core.serialization import serialize_node, serialize_world
+from worldbox_writer.api.errors import ApiError
 from worldbox_writer.api.schemas import SimulationResponse, StartSimulationRequest
 from worldbox_writer.api.session import (
     SimulationSession,
@@ -107,14 +106,14 @@ def branch_status(world: WorldState, branch_id: str) -> str:
 def restore_branch_world(sim_id: str, world: WorldState, branch_id: str) -> WorldState:
     world.branches = normalize_branch_registry(world.branches)
     if branch_id not in world.branches:
-        raise HTTPException(status_code=404, detail=f"分支 {branch_id} 不存在")
+        raise ApiError(status_code=404, detail=f"分支 {branch_id} 不存在")
 
     latest_node_id = world.branches[branch_id].get("latest_node_id")
     if latest_node_id:
         try:
             branch_world = restore_world_at_node(sim_id, latest_node_id, branch_id)
         except BranchSeedNotFoundError as exc:
-            raise HTTPException(status_code=409, detail=str(exc))
+            raise ApiError(status_code=409, detail=str(exc))
     else:
         branch_world = world.model_copy(deep=True)
     branch_world.branches = copy.deepcopy(world.branches)
@@ -178,7 +177,7 @@ class SimulationService:
 
         data = db_load_session(sim_id)
         if not data:
-            raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
+            raise ApiError(status_code=404, detail=f"推演 {sim_id} 不存在")
 
         world = data["world"]
         status = data["status"]
@@ -205,9 +204,9 @@ class SimulationService:
     def submit_intervention(self, sim_id: str, instruction: str) -> Dict[str, str]:
         session = self.sessions.get(sim_id)
         if not session:
-            raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
+            raise ApiError(status_code=404, detail=f"推演 {sim_id} 不存在")
         if session.status != "waiting":
-            raise HTTPException(
+            raise ApiError(
                 status_code=400,
                 detail=f"推演当前状态为 {session.status}，不需要干预",
             )
