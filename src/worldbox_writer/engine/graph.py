@@ -54,6 +54,9 @@ from worldbox_writer.engine.services import actor_runtime_service as _actor_runt
 from worldbox_writer.engine.services import (
     boundary_revision_service as _boundary_revision,
 )
+from worldbox_writer.engine.services import (
+    boundary_validation_service as _boundary_validation,
+)
 from worldbox_writer.engine.services import narration_service as _narration
 from worldbox_writer.engine.services import node_commit_service as _node_commit
 from worldbox_writer.engine.services import relationship_service as _relationships
@@ -68,7 +71,7 @@ from worldbox_writer.utils.llm import (
     get_last_llm_call_metadata,
 )
 
-_GATE_KEEPER_SELF_HEAL_ATTEMPTS = 2
+_GATE_KEEPER_SELF_HEAL_ATTEMPTS = _boundary_validation.DEFAULT_SELF_HEAL_ATTEMPTS
 
 AI_PROSE_TICKS_BANNED_MARKERS = _narration.AI_PROSE_TICKS_BANNED_MARKERS
 NarrationService = _narration.NarrationService
@@ -95,6 +98,7 @@ _emit_telemetry = _telemetry.emit_telemetry
 _llm_telemetry_fields = _telemetry.llm_telemetry_fields
 _resolve_branch_context = _telemetry.resolve_branch_context
 _revise_candidate_event = _boundary_revision.revise_candidate_event
+_validate_candidate_event = _boundary_validation.validate_candidate_event
 _commit_story_node = _node_commit.commit_story_node
 _node_importance = _node_commit.node_importance
 _story_node_title = _node_commit.story_node_title
@@ -354,104 +358,31 @@ def gate_keeper_node(state: SimulationState) -> Dict[str, Any]:
     world = state["world"]
     candidate = state.get("candidate_event", "")
 
-    agent = GateKeeperAgent()
-    attempts = 0
-
-    def validate_candidate(event_text: str):
-        temp_node = StoryNode(
-            title="候选事件",
-            description=event_text,
-            node_type=NodeType.DEVELOPMENT,
-        )
-        validation = agent.validate(world, temp_node)
-        return validation, _llm_telemetry_fields(agent.last_call_metadata)
-
-    # Use validate(world, node) — the canonical method
-    result, llm_fields = validate_candidate(candidate)
-
-    if not result.is_valid:
+    result = _validate_candidate_event(
+        world,
+        candidate,
+        validator_factory=GateKeeperAgent,
+        revise_candidate_func=_revise_candidate_event,
+        llm_telemetry_fields_func=_llm_telemetry_fields,
+        metadata_func=get_last_llm_call_metadata,
+        max_self_heal_attempts=_GATE_KEEPER_SELF_HEAL_ATTEMPTS,
+    )
+    for event in result.telemetry_events:
         _emit_telemetry(
             state,
             tick=world.tick,
             agent="gate_keeper",
-            stage="rejected",
-            level="warning",
-            message="候选事件被边界层拒绝",
-            payload={
-                "reason": result.rejection_reason,
-                "hint": result.revision_hint,
-            },
-            **llm_fields,
+            stage=event.stage,
+            level=event.level,
+            message=event.message,
+            payload=event.payload,
+            **event.llm_fields,
         )
 
-        while (
-            attempts < _GATE_KEEPER_SELF_HEAL_ATTEMPTS
-            and result.revision_hint
-            and candidate
-        ):
-            attempts += 1
-            candidate = _revise_candidate_event(
-                world,
-                candidate,
-                result.rejection_reason,
-                result.revision_hint,
-            )
-            revision_fields = _llm_telemetry_fields(get_last_llm_call_metadata())
-            _emit_telemetry(
-                state,
-                tick=world.tick,
-                agent="gate_keeper",
-                stage="revision_generated",
-                message="边界层根据修正建议生成了新的候选事件",
-                payload={"attempt": attempts, "preview": candidate[:80]},
-                **revision_fields,
-            )
-
-            result, llm_fields = validate_candidate(candidate)
-            if result.is_valid:
-                _emit_telemetry(
-                    state,
-                    tick=world.tick,
-                    agent="gate_keeper",
-                    stage="self_heal_passed",
-                    message="候选事件在自动修正后通过边界校验",
-                    payload={"attempt": attempts},
-                    **llm_fields,
-                )
-                return {"validation_passed": True, "candidate_event": candidate}
-
-            _emit_telemetry(
-                state,
-                tick=world.tick,
-                agent="gate_keeper",
-                stage="self_heal_rejected",
-                level="warning",
-                message="自动修正后的候选事件仍未通过边界校验",
-                payload={
-                    "attempt": attempts,
-                    "reason": result.rejection_reason,
-                    "hint": result.revision_hint,
-                },
-                **llm_fields,
-            )
-
-        return {
-            "validation_passed": False,
-            "candidate_event": (
-                f"[已被边界层拒绝] {result.rejection_reason}。"
-                f"建议：{result.revision_hint}"
-            ),
-        }
-
-    _emit_telemetry(
-        state,
-        tick=world.tick,
-        agent="gate_keeper",
-        stage="passed",
-        message="候选事件通过边界校验",
-        **llm_fields,
-    )
-    return {"validation_passed": True}
+    state_update: Dict[str, Any] = {"validation_passed": result.validation_passed}
+    if result.candidate_event is not None:
+        state_update["candidate_event"] = result.candidate_event
+    return state_update
 
 
 def node_detector_node(state: SimulationState) -> Dict[str, Any]:
