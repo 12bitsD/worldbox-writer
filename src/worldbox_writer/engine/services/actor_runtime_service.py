@@ -12,7 +12,9 @@ from worldbox_writer.core.dual_loop import (
     SceneScript,
 )
 from worldbox_writer.core.models import WorldState
-from worldbox_writer.engine.dual_loop import IsolatedActorRuntimeResult
+from worldbox_writer.engine.services.isolated_actor_service import (
+    IsolatedActorRuntimeResult,
+)
 from worldbox_writer.memory.memory_manager import MemoryManager
 
 
