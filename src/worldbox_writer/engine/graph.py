@@ -39,11 +39,7 @@ from worldbox_writer.core.dual_loop import (
     PromptTrace,
     ScenePlan,
 )
-from worldbox_writer.core.models import (
-    NodeType,
-    StoryNode,
-    WorldState,
-)
+from worldbox_writer.core.models import StoryNode, WorldState
 from worldbox_writer.engine.dual_loop import (
     ISOLATED_ACTOR_RUNTIME_MODE,
     dual_loop_enabled,
@@ -59,6 +55,7 @@ from worldbox_writer.engine.services import (
 )
 from worldbox_writer.engine.services import narration_service as _narration
 from worldbox_writer.engine.services import node_commit_service as _node_commit
+from worldbox_writer.engine.services import node_lifecycle_service as _node_lifecycle
 from worldbox_writer.engine.services import relationship_service as _relationships
 from worldbox_writer.engine.services import telemetry_service as _telemetry
 from worldbox_writer.engine.state import SimulationState
@@ -103,6 +100,7 @@ _commit_story_node = _node_commit.commit_story_node
 _node_importance = _node_commit.node_importance
 _story_node_title = _node_commit.story_node_title
 _story_node_type = _node_commit.story_node_type
+_run_node_lifecycle = _node_lifecycle.run_node_lifecycle
 _actor_memory_query = _actor_event.actor_memory_query
 _alive_characters = _actor_event.alive_characters
 _build_actor_event_prompt = _actor_event.build_actor_event_prompt
@@ -397,122 +395,41 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
     candidate = state.get("candidate_event", "")
     validation_passed = state.get("validation_passed", False)
 
-    if not validation_passed:
-        world.advance_tick()
-        _emit_telemetry(
-            state,
-            tick=world.tick,
-            agent="node_detector",
-            stage="skipped",
-            level="warning",
-            message="当前 tick 未固化故事节点",
-        )
-        return {"world": world, "needs_intervention": False}
-
-    commit_result = _commit_story_node(
+    result = _run_node_lifecycle(
         world,
-        candidate,
+        memory,
+        candidate=candidate,
+        validation_passed=validation_passed,
+        max_ticks=state.get("max_ticks", 10),
         scene_plan=scene_plan,
         scene_script=scene_script,
         action_intents=action_intents,
         intent_critiques=intent_critiques,
         prompt_traces=prompt_traces,
+        detector_factory=NodeDetector,
+        llm_telemetry_fields_func=_llm_telemetry_fields,
+        commit_story_node_func=_commit_story_node,
+        node_importance_func=_node_importance,
         select_character_ids_func=_select_character_ids_for_event,
         apply_relationship_updates_func=_apply_relationship_updates,
     )
-    new_node = commit_result.node
-    node_type = new_node.node_type
-    involved_character_ids = commit_result.involved_character_ids
-    relationships_changed = commit_result.relationships_changed
-    _emit_telemetry(
-        state,
-        tick=world.tick,
-        agent="node_detector",
-        stage="node_committed",
-        message="新故事节点已固化",
-        payload={
-            "node_id": str(new_node.id),
-            "node_type": new_node.node_type.value,
-            "title": new_node.title,
-            "characters": involved_character_ids,
-            "scene_id": scene_plan.scene_id if scene_plan else None,
-            "actor_intent_count": len(action_intents),
-            "critic_rejected_count": len(
-                [critique for critique in intent_critiques if not critique.accepted]
-            ),
-        },
-    )
-    if relationships_changed:
+    for event in result.telemetry_events:
         _emit_telemetry(
             state,
-            tick=world.tick,
-            agent="node_detector",
-            stage="relationships_updated",
-            message="角色关系已根据事件结果更新",
-            payload={"characters": involved_character_ids},
+            tick=result.world.tick,
+            agent=event.agent,
+            stage=event.stage,
+            level=event.level,
+            message=event.message,
+            payload=event.payload,
+            **event.llm_fields,
         )
-
-    # Record to memory
-    memory.record_event(new_node, world, importance=_node_importance(node_type))
-    reflection_entries = []
-    if scene_script is not None:
-        reflection_entries = memory.write_reflections_from_scene_script(
-            world,
-            scene_script,
-        )
-        if reflection_entries:
-            _emit_telemetry(
-                state,
-                tick=world.tick,
-                agent="memory",
-                stage="reflective_writeback",
-                message="认知记忆已写回角色反思层",
-                payload={
-                    "scene_id": scene_script.scene_id,
-                    "reflection_entries": len(reflection_entries),
-                    "character_ids": [
-                        entry.character_ids[0]
-                        for entry in reflection_entries
-                        if entry.character_ids
-                    ],
-                },
-            )
-
-    # Detect intervention need — use detect(node, world)
-    detector = NodeDetector()
-    signal = detector.detect(new_node, world)
-    # Only trigger intervention on ticks where tick % 3 == 1 (ticks 1, 4, 7, 10...)
-    frequency_gate = world.tick % 3 == 1
-    needs_intervention = (
-        signal is not None and signal.urgency in ["high", "critical"] and frequency_gate
-    )
-    new_node.requires_intervention = needs_intervention
-    detector_fields = _llm_telemetry_fields(detector.last_call_metadata)
-
-    if needs_intervention and signal:
-        world.request_intervention(signal.context)
-        if signal.suggested_options:
-            world.metadata["intervention_options"] = signal.suggested_options
-        _emit_telemetry(
-            state,
-            tick=world.tick,
-            agent="node_detector",
-            stage="intervention_requested",
-            level="warning",
-            message="检测到高优先级分歧，等待用户干预",
-            payload={"context": signal.context},
-            **detector_fields,
-        )
-
-    # Check story completion
-    if node_type == NodeType.RESOLUTION or world.tick >= state.get("max_ticks", 10):
-        world.is_complete = True
 
     return {
-        "world": world,
-        "memory": memory,
-        "needs_intervention": needs_intervention,
-        "scene_plan": scene_plan,
+        "world": result.world,
+        "memory": result.memory,
+        "needs_intervention": result.needs_intervention,
+        "scene_plan": result.scene_plan,
     }
 
 
