@@ -50,6 +50,9 @@ from worldbox_writer.engine.dual_loop import (
     dual_loop_enabled,
     run_isolated_actor_runtime,
 )
+from worldbox_writer.engine.services import (
+    boundary_revision_service as _boundary_revision,
+)
 from worldbox_writer.engine.services import narration_service as _narration
 from worldbox_writer.engine.services import relationship_service as _relationships
 from worldbox_writer.engine.services import telemetry_service as _telemetry
@@ -89,6 +92,7 @@ _apply_relationship_updates = _relationships.apply_relationship_updates
 _emit_telemetry = _telemetry.emit_telemetry
 _llm_telemetry_fields = _telemetry.llm_telemetry_fields
 _resolve_branch_context = _telemetry.resolve_branch_context
+_revise_candidate_event = _boundary_revision.revise_candidate_event
 
 
 def _resolve_branch_pacing(world: WorldState) -> str:
@@ -108,32 +112,6 @@ def rebuild_memory_from_world(
         sim_id=sim_id or None,
         short_term_limit=short_term_limit,
     )
-
-
-def _revise_candidate_event(
-    world: WorldState,
-    candidate: str,
-    rejection_reason: str,
-    revision_hint: str,
-) -> str:
-    """Ask the LLM to minimally revise a rejected candidate event."""
-    messages = [
-        {
-            "role": "system",
-            "content": load_prompt_template("graph_system", variant="boundary_reviser"),
-        },
-        {
-            "role": "user",
-            "content": (
-                f"世界前提：{world.premise}\n\n"
-                f"原候选事件：{candidate}\n\n"
-                f"拒绝原因：{rejection_reason}\n"
-                f"修正建议：{revision_hint}\n\n"
-                "请输出修正后的候选事件："
-            ),
-        },
-    ]
-    return chat_completion_with_profile("boundary_reviser", messages).strip()
 
 
 # ---------------------------------------------------------------------------
