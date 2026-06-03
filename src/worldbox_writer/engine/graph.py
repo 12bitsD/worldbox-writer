@@ -44,12 +44,12 @@ from worldbox_writer.core.models import (
     StoryNode,
     WorldState,
 )
-from worldbox_writer.core.pacing import pacing_or_default, pacing_prompt_hint
 from worldbox_writer.engine.dual_loop import (
     ISOLATED_ACTOR_RUNTIME_MODE,
     dual_loop_enabled,
     run_isolated_actor_runtime,
 )
+from worldbox_writer.engine.services import actor_event_service as _actor_event
 from worldbox_writer.engine.services import (
     boundary_revision_service as _boundary_revision,
 )
@@ -98,11 +98,10 @@ _commit_story_node = _node_commit.commit_story_node
 _node_importance = _node_commit.node_importance
 _story_node_title = _node_commit.story_node_title
 _story_node_type = _node_commit.story_node_type
-
-
-def _resolve_branch_pacing(world: WorldState) -> str:
-    branch_meta = world.branches.get(world.active_branch_id, {})
-    return pacing_or_default(str(branch_meta.get("pacing", "")))
+_actor_memory_query = _actor_event.actor_memory_query
+_alive_characters = _actor_event.alive_characters
+_build_actor_event_prompt = _actor_event.build_actor_event_prompt
+_resolve_branch_pacing = _actor_event.resolve_branch_pacing
 
 
 def rebuild_memory_from_world(
@@ -208,7 +207,7 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
     memory: MemoryManager = state["memory"]
     scene_plan = state.get("scene_plan")
 
-    alive_chars = [c for c in world.characters.values() if c.status.value == "alive"]
+    alive_chars = _alive_characters(world)
     if not alive_chars:
         return {
             "candidate_event": "世界陷入了沉寂，没有角色继续行动。",
@@ -344,92 +343,17 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
             "scene_script": scene_script,
         }
 
-    spotlight_chars = []
-    if scene_plan is not None:
-        for character_id in scene_plan.spotlight_character_ids:
-            character = world.get_character(character_id)
-            if character and character.status.value == "alive":
-                spotlight_chars.append(character)
-    active_chars = spotlight_chars or alive_chars
-
-    chars_summary = "\n".join(
-        [
-            f"- {c.name}（{c.personality}）目标：{', '.join(c.goals[:2])}；"
-            f"记忆：{c.memory[-1] if c.memory else '无'}"
-            for c in active_chars[:4]
-        ]
-    )
-
-    memory_query = scene_plan.objective if scene_plan else world.premise
+    memory_query = _actor_memory_query(world, scene_plan)
     memory_context = memory.get_context_for_agent(query=memory_query, max_entries=6)
-
-    active_constraints = world.active_constraints()
-    if scene_plan and scene_plan.constraints:
-        constraints_text = "\n".join(
-            [f"- [scene] {constraint}" for constraint in scene_plan.constraints[:5]]
-        )
-    else:
-        constraints_text = "\n".join(
-            [f"- [{c.severity.value}] {c.rule}" for c in active_constraints[:5]]
-        )
-
-    factions_text = (
-        "、".join([f.get("name", "") for f in world.factions[:3]])
-        if world.factions
-        else "无"
+    actor_prompt = _build_actor_event_prompt(
+        world,
+        scene_plan=scene_plan,
+        memory_context=memory_context,
+        system_prompt=load_prompt_template("graph_system", variant="actor_event"),
+        alive_chars=alive_chars,
     )
-    locations_text = (
-        "、".join([loc.get("name", "") for loc in world.locations[:3]])
-        if world.locations
-        else "无"
-    )
-    pacing = (
-        scene_plan.narrative_pressure if scene_plan else _resolve_branch_pacing(world)
-    )
-    pressure_guidance = ""
-    scene_plan_context = ""
-    if scene_plan is not None:
-        spotlight_names = "、".join([c.name for c in active_chars[:3]]) or "无"
-        pressure_guidance = str(
-            scene_plan.metadata.get("pressure_guidance", "")
-        ).strip()
-        plan_lines = [
-            f"当前场景计划：{scene_plan.title}",
-            f"场景目标：{scene_plan.objective}",
-            f"场景公开信息：{scene_plan.public_summary}",
-            f"聚光灯角色：{spotlight_names}",
-            f"叙事压力：{scene_plan.narrative_pressure}",
-        ]
-        if scene_plan.setting:
-            plan_lines.append(f"场景设定：{scene_plan.setting}")
-        if pressure_guidance:
-            plan_lines.append(f"导演提示：{pressure_guidance}")
-        scene_plan_context = "\n".join(plan_lines)
-    scene_plan_section = f"{scene_plan_context}\n\n" if scene_plan_context else ""
 
-    messages = [
-        {
-            "role": "system",
-            "content": load_prompt_template("graph_system", variant="actor_event"),
-        },
-        {
-            "role": "user",
-            "content": (
-                f"世界背景：{world.premise}\n\n"
-                f"主要势力：{factions_text}\n"
-                f"主要地点：{locations_text}\n\n"
-                f"{scene_plan_section}"
-                f"当前角色状态：\n{chars_summary}\n\n"
-                f"故事记忆（按时间排序）：\n{memory_context}\n\n"
-                f"世界约束：\n{constraints_text}\n\n"
-                f"{pacing_prompt_hint(pacing)}\n\n"
-                f"当前推演步数：{world.tick}\n\n"
-                "请生成下一个故事事件："
-            ),
-        },
-    ]
-
-    candidate = chat_completion_with_profile("actor_event", messages)
+    candidate = chat_completion_with_profile("actor_event", actor_prompt.messages)
     llm_fields = _llm_telemetry_fields(get_last_llm_call_metadata())
     _emit_telemetry(
         state,
@@ -439,13 +363,9 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
         message="生成了新的候选事件",
         payload={
             "preview": candidate.strip()[:80],
-            "pacing": pacing,
+            "pacing": actor_prompt.pacing,
             "scene_id": scene_plan.scene_id if scene_plan else None,
-            "spotlight_count": (
-                len(scene_plan.spotlight_character_ids)
-                if scene_plan
-                else len(active_chars[:3])
-            ),
+            "spotlight_count": actor_prompt.spotlight_count,
         },
         **llm_fields,
     )
