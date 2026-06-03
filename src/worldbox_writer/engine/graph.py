@@ -33,12 +33,6 @@ from worldbox_writer.agents.gate_keeper import GateKeeperAgent
 from worldbox_writer.agents.gm import GMAgent
 from worldbox_writer.agents.node_detector import NodeDetector
 from worldbox_writer.agents.world_builder import WorldBuilderAgent
-from worldbox_writer.core.dual_loop import (
-    ActionIntent,
-    IntentCritique,
-    PromptTrace,
-    ScenePlan,
-)
 from worldbox_writer.core.models import WorldState
 from worldbox_writer.engine.dual_loop import (
     ISOLATED_ACTOR_RUNTIME_MODE,
@@ -47,6 +41,7 @@ from worldbox_writer.engine.dual_loop import (
 )
 from worldbox_writer.engine.services import actor_event_service as _actor_event
 from worldbox_writer.engine.services import actor_runtime_service as _actor_runtime
+from worldbox_writer.engine.services import actor_turn_service as _actor_turn
 from worldbox_writer.engine.services import (
     boundary_revision_service as _boundary_revision,
 )
@@ -110,6 +105,7 @@ _alive_characters = _actor_event.alive_characters
 _build_actor_event_prompt = _actor_event.build_actor_event_prompt
 _resolve_branch_pacing = _actor_event.resolve_branch_pacing
 _run_actor_runtime_bridge = _actor_runtime.run_actor_runtime_bridge
+_run_actor_turn = _actor_turn.run_actor_turn
 
 
 def rebuild_memory_from_world(
@@ -215,144 +211,36 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
     memory: MemoryManager = state["memory"]
     scene_plan = state.get("scene_plan")
 
-    alive_chars = _alive_characters(world)
-    if not alive_chars:
-        return {
-            "candidate_event": "世界陷入了沉寂，没有角色继续行动。",
-            "action_intents": [],
-            "intent_critiques": [],
-            "prompt_traces": [],
-            "scene_script": None,
-        }
-
-    if scene_plan is not None and dual_loop_enabled():
-        actor_runtime = _run_actor_runtime_bridge(
-            world,
-            memory,
-            scene_plan=scene_plan,
-            runtime_mode=ISOLATED_ACTOR_RUNTIME_MODE,
-            run_runtime_func=run_isolated_actor_runtime,
-            critic_factory=CriticAgent,
-            gm_factory=GMAgent,
-        )
-        runtime_result = actor_runtime.runtime_result
-        intent_critiques = actor_runtime.intent_critiques
-        accepted_intents = actor_runtime.accepted_intents
-        scene_script = actor_runtime.scene_script
-        candidate = actor_runtime.candidate_event
-
-        _emit_telemetry(
-            state,
-            tick=world.tick,
-            agent="actor",
-            stage="isolated_intents_generated",
-            message="隔离 Actor 运行时已生成结构化意图",
-            payload={
-                "runtime_mode": ISOLATED_ACTOR_RUNTIME_MODE,
-                "scene_id": scene_plan.scene_id,
-                "actor_count": len(runtime_result.action_intents),
-                "branch_id": scene_plan.branch_id,
-                "intent_previews": [
-                    intent.summary[:80] for intent in runtime_result.action_intents
-                ],
-            },
-        )
-        _emit_telemetry(
-            state,
-            tick=world.tick,
-            agent="critic",
-            stage="intents_reviewed",
-            message="Critic 已完成角色意图审查",
-            payload={
-                "scene_id": scene_plan.scene_id,
-                "intent_count": len(runtime_result.action_intents),
-                "accepted_count": len(accepted_intents),
-                "rejected_count": len(runtime_result.action_intents)
-                - len(accepted_intents),
-                "rejected_reasons": [
-                    critique.reason_code
-                    for critique in intent_critiques
-                    if not critique.accepted
-                ],
-            },
-            **_llm_telemetry_fields(actor_runtime.critic_last_call_metadata),
-        )
-        _emit_telemetry(
-            state,
-            tick=world.tick,
-            agent="actor",
-            stage="proposal_generated",
-            message="隔离 Actor 意图已桥接为候选事件",
-            payload={
-                "preview": candidate[:80],
-                "pacing": scene_plan.narrative_pressure,
-                "scene_id": scene_plan.scene_id,
-                "spotlight_count": len(scene_plan.spotlight_character_ids),
-                "runtime_mode": ISOLATED_ACTOR_RUNTIME_MODE,
-                "accepted_intent_count": len(accepted_intents),
-                "rejected_intent_count": len(runtime_result.action_intents)
-                - len(accepted_intents),
-            },
-        )
-        _emit_telemetry(
-            state,
-            tick=world.tick,
-            agent="gm",
-            stage="scene_settled",
-            message="GM 已将合法角色意图结算为 Scene Script",
-            payload={
-                "scene_id": scene_plan.scene_id,
-                "script_id": scene_script.script_id,
-                "accepted_intent_count": len(scene_script.accepted_intent_ids),
-                "rejected_intent_count": len(scene_script.rejected_intent_ids),
-                "participating_character_ids": list(
-                    scene_script.participating_character_ids
-                ),
-                "settlement_mode": scene_script.metadata.get("settlement_mode"),
-            },
-        )
-        return {
-            "world": world,
-            "candidate_event": candidate,
-            "action_intents": runtime_result.action_intents,
-            "intent_critiques": intent_critiques,
-            "prompt_traces": runtime_result.prompt_traces,
-            "scene_script": scene_script,
-        }
-
-    memory_query = _actor_memory_query(world, scene_plan)
-    memory_context = memory.get_context_for_agent(query=memory_query, max_entries=6)
-    actor_prompt = _build_actor_event_prompt(
+    result = _run_actor_turn(
         world,
+        memory,
         scene_plan=scene_plan,
-        memory_context=memory_context,
-        system_prompt=load_prompt_template("graph_system", variant="actor_event"),
-        alive_chars=alive_chars,
+        runtime_mode=ISOLATED_ACTOR_RUNTIME_MODE,
+        run_runtime_func=run_isolated_actor_runtime,
+        critic_factory=CriticAgent,
+        gm_factory=GMAgent,
+        dual_loop_enabled_func=dual_loop_enabled,
+        alive_characters_func=_alive_characters,
+        actor_memory_query_func=_actor_memory_query,
+        build_actor_event_prompt_func=_build_actor_event_prompt,
+        load_prompt_template_func=load_prompt_template,
+        chat_completion_func=chat_completion_with_profile,
+        metadata_func=get_last_llm_call_metadata,
+        llm_telemetry_fields_func=_llm_telemetry_fields,
+        run_actor_runtime_bridge_func=_run_actor_runtime_bridge,
     )
-
-    candidate = chat_completion_with_profile("actor_event", actor_prompt.messages)
-    llm_fields = _llm_telemetry_fields(get_last_llm_call_metadata())
-    _emit_telemetry(
-        state,
-        tick=world.tick,
-        agent="actor",
-        stage="proposal_generated",
-        message="生成了新的候选事件",
-        payload={
-            "preview": candidate.strip()[:80],
-            "pacing": actor_prompt.pacing,
-            "scene_id": scene_plan.scene_id if scene_plan else None,
-            "spotlight_count": actor_prompt.spotlight_count,
-        },
-        **llm_fields,
-    )
-    return {
-        "candidate_event": candidate.strip(),
-        "action_intents": [],
-        "intent_critiques": [],
-        "prompt_traces": [],
-        "scene_script": None,
-    }
+    for event in result.telemetry_events:
+        _emit_telemetry(
+            state,
+            tick=world.tick,
+            agent=event.agent,
+            stage=event.stage,
+            level=event.level,
+            message=event.message,
+            payload=event.payload,
+            **event.llm_fields,
+        )
+    return result.state_update
 
 
 def gate_keeper_node(state: SimulationState) -> Dict[str, Any]:
