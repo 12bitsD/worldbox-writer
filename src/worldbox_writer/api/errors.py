@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -10,7 +11,7 @@ class ApiError(Exception):
     """Error with HTTP-compatible semantics, without importing FastAPI in services."""
 
     status_code: int
-    detail: str
+    detail: Any
 
     def __str__(self) -> str:
-        return self.detail
+        return str(self.detail)

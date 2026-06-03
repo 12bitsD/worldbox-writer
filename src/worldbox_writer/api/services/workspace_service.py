@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Sequence
 
-from fastapi import HTTPException
-
 from worldbox_writer.api.core.serialization import serialize_node, serialize_world
+from worldbox_writer.api.errors import ApiError
 from worldbox_writer.api.schemas import (
     AddConstraintRequest,
     SaveWikiRequest,
@@ -37,7 +36,7 @@ from worldbox_writer.core.models import (
 def ensure_workspace_mutable(session: SimulationSession, action_label: str) -> None:
     if session.status not in _WORKSPACE_MUTABLE_STATUSES:
         allowed = ", ".join(sorted(_WORKSPACE_MUTABLE_STATUSES))
-        raise HTTPException(
+        raise ApiError(
             status_code=400,
             detail=(
                 f"当前状态为 {session.status}，只能在干预暂停或已完成等创作阶段（{allowed}）"
@@ -143,7 +142,7 @@ def materialize_character(
     try:
         status = CharacterStatus(payload.status)
     except ValueError as exc:
-        raise HTTPException(
+        raise ApiError(
             status_code=400, detail=f"无效的角色状态: {payload.status}"
         ) from exc
 
@@ -204,10 +203,10 @@ class WorkspaceService:
     ) -> SimulationSession:
         session = load_session_into_memory(sim_id)
         if not session:
-            raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
+            raise ApiError(status_code=404, detail=f"推演 {sim_id} 不存在")
         ensure_workspace_mutable(session, action_label)
         if not session.world:
-            raise HTTPException(status_code=400, detail="世界尚未初始化")
+            raise ApiError(status_code=400, detail="世界尚未初始化")
         return session
 
     def update_character(
@@ -218,7 +217,7 @@ class WorkspaceService:
 
         char = session.world.get_character(character_id)
         if not char:
-            raise HTTPException(status_code=404, detail=f"角色 {character_id} 不存在")
+            raise ApiError(status_code=404, detail=f"角色 {character_id} 不存在")
 
         if request.name is not None:
             char.name = request.name
@@ -232,7 +231,7 @@ class WorkspaceService:
             try:
                 char.status = CharacterStatus(request.status)
             except ValueError:
-                raise HTTPException(
+                raise ApiError(
                     status_code=400, detail=f"无效的角色状态: {request.status}"
                 )
 
@@ -259,14 +258,14 @@ class WorkspaceService:
         source = session.world.get_character(request.source_character_id)
         target = session.world.get_character(request.target_character_id)
         if not source or not target:
-            raise HTTPException(status_code=404, detail="关系两端角色不存在")
+            raise ApiError(status_code=404, detail="关系两端角色不存在")
         if source.id == target.id:
-            raise HTTPException(status_code=400, detail="不能给同一个角色建立自关系")
+            raise ApiError(status_code=400, detail="不能给同一个角色建立自关系")
 
         try:
             label = RelationshipLabel(request.label)
         except ValueError:
-            raise HTTPException(
+            raise ApiError(
                 status_code=400,
                 detail=(
                     f"无效的关系标签: {request.label}，允许值为 "
@@ -336,13 +335,13 @@ class WorkspaceService:
         try:
             constraint_type = ConstraintType(request.constraint_type)
         except ValueError:
-            raise HTTPException(
+            raise ApiError(
                 status_code=400, detail=f"无效的约束类型: {request.constraint_type}"
             )
         try:
             severity = ConstraintSeverity(request.severity)
         except ValueError:
-            raise HTTPException(
+            raise ApiError(
                 status_code=400, detail=f"无效的严重级别: {request.severity}"
             )
 
@@ -374,7 +373,7 @@ class WorkspaceService:
         issues = validate_wiki_request(session, request)
         blocking_errors = [issue for issue in issues if issue["level"] == "error"]
         if blocking_errors:
-            raise HTTPException(
+            raise ApiError(
                 status_code=400,
                 detail={
                     "message": "Wiki 校验失败，请先修正错误项。",
@@ -414,7 +413,7 @@ class WorkspaceService:
 
         node = session.world.get_node(node_id)
         if not node:
-            raise HTTPException(status_code=404, detail=f"节点 {node_id} 不存在")
+            raise ApiError(status_code=404, detail=f"节点 {node_id} 不存在")
 
         node.rendered_text = request.rendered_text
         node.is_rendered = True

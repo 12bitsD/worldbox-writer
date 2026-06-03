@@ -6,14 +6,13 @@ import uuid
 from concurrent.futures import Executor
 from typing import Any, Callable, Dict, List, Optional
 
-from fastapi import HTTPException
-
 from worldbox_writer.api.core.branching import (
     compare_summary,
     default_branch_meta,
     filter_nodes_for_branch,
     normalize_branch_registry,
 )
+from worldbox_writer.api.errors import ApiError
 from worldbox_writer.api.schemas import (
     CreateBranchRequest,
     SwitchBranchRequest,
@@ -40,7 +39,7 @@ RunSimulationSync = Callable[[SimulationSession], None]
 def coerce_pacing(value: Optional[str]) -> str:
     pacing = (value or "balanced").strip().lower()
     if pacing not in _VALID_PACING_VALUES:
-        raise HTTPException(
+        raise ApiError(
             status_code=400,
             detail=f"无效的节奏档位: {value}，允许值为 calm / balanced / intense",
         )
@@ -49,7 +48,7 @@ def coerce_pacing(value: Optional[str]) -> str:
 
 def ensure_branching_enabled() -> None:
     if not branching_enabled():
-        raise HTTPException(
+        raise ApiError(
             status_code=403,
             detail=(
                 "分支功能当前已关闭。请设置 FEATURE_BRANCHING_ENABLED=1 后再试，"
@@ -78,19 +77,19 @@ class BranchService:
         ensure_branching_enabled()
         session = load_session_into_memory(sim_id)
         if not session:
-            raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
+            raise ApiError(status_code=404, detail=f"推演 {sim_id} 不存在")
         if session.status in ("running", "initializing"):
-            raise HTTPException(
+            raise ApiError(
                 status_code=409,
                 detail="推演仍在运行中，暂时不能创建或切换分支",
             )
         if not session.world:
-            raise HTTPException(status_code=400, detail="世界尚未初始化")
+            raise ApiError(status_code=400, detail="世界尚未初始化")
 
         pacing = coerce_pacing(request.pacing)
         source_node = find_rendered_node(session.nodes_rendered, request.source_node_id)
         if not source_node:
-            raise HTTPException(
+            raise ApiError(
                 status_code=404, detail=f"历史节点 {request.source_node_id} 不存在"
             )
 
@@ -100,7 +99,7 @@ class BranchService:
                 sim_id, request.source_node_id, source_branch_id
             )
         except BranchSeedNotFoundError as exc:
-            raise HTTPException(status_code=409, detail=str(exc))
+            raise ApiError(status_code=409, detail=str(exc))
         restored_world.branches = normalize_branch_registry(session.world.branches)
 
         branch_id = f"branch_{uuid.uuid4().hex[:8]}"
@@ -184,14 +183,14 @@ class BranchService:
         ensure_branching_enabled()
         session = load_session_into_memory(sim_id)
         if not session:
-            raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
+            raise ApiError(status_code=404, detail=f"推演 {sim_id} 不存在")
         if session.status in ("running", "initializing"):
-            raise HTTPException(
+            raise ApiError(
                 status_code=409,
                 detail="推演仍在运行中，暂时不能切换分支",
             )
         if not session.world:
-            raise HTTPException(status_code=400, detail="世界尚未初始化")
+            raise ApiError(status_code=400, detail="世界尚未初始化")
 
         branch_world = restore_branch_world(sim_id, session.world, request.branch_id)
         session.world = branch_world
@@ -224,7 +223,7 @@ class BranchService:
         else:
             data = db_load_session(sim_id)
             if not data or not data["world"]:
-                raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
+                raise ApiError(status_code=404, detail=f"推演 {sim_id} 不存在")
             world = data["world"]
             nodes_rendered = data["nodes_rendered"]
 
@@ -238,16 +237,14 @@ class BranchService:
         ensure_branching_enabled()
         session = load_session_into_memory(sim_id)
         if not session:
-            raise HTTPException(status_code=404, detail=f"推演 {sim_id} 不存在")
+            raise ApiError(status_code=404, detail=f"推演 {sim_id} 不存在")
         if not session.world:
-            raise HTTPException(status_code=400, detail="世界尚未初始化")
+            raise ApiError(status_code=400, detail="世界尚未初始化")
 
         pacing = coerce_pacing(request.pacing)
         session.world.branches = normalize_branch_registry(session.world.branches)
         if request.branch_id not in session.world.branches:
-            raise HTTPException(
-                status_code=404, detail=f"分支 {request.branch_id} 不存在"
-            )
+            raise ApiError(status_code=404, detail=f"分支 {request.branch_id} 不存在")
 
         session.world.branches[request.branch_id]["pacing"] = pacing
         append_telemetry_event(
