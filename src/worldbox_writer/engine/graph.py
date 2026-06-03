@@ -23,7 +23,7 @@ WorldBox Writer — Simulation Engine (LangGraph StateGraph).
 
 from __future__ import annotations
 
-from typing import Any, Dict, Literal, Optional, cast
+from typing import Any, Dict, Literal, Optional
 
 from langgraph.graph import END, START, StateGraph
 
@@ -39,7 +39,7 @@ from worldbox_writer.core.dual_loop import (
     PromptTrace,
     ScenePlan,
 )
-from worldbox_writer.core.models import StoryNode, WorldState
+from worldbox_writer.core.models import WorldState
 from worldbox_writer.engine.dual_loop import (
     ISOLATED_ACTOR_RUNTIME_MODE,
     dual_loop_enabled,
@@ -57,6 +57,9 @@ from worldbox_writer.engine.services import narration_service as _narration
 from worldbox_writer.engine.services import node_commit_service as _node_commit
 from worldbox_writer.engine.services import node_lifecycle_service as _node_lifecycle
 from worldbox_writer.engine.services import relationship_service as _relationships
+from worldbox_writer.engine.services import (
+    simulation_runner_service as _simulation_runner,
+)
 from worldbox_writer.engine.services import telemetry_service as _telemetry
 from worldbox_writer.engine.state import SimulationState
 from worldbox_writer.evals.llm_judge import judge_ai_prose_ticks
@@ -101,6 +104,7 @@ _node_importance = _node_commit.node_importance
 _story_node_title = _node_commit.story_node_title
 _story_node_type = _node_commit.story_node_type
 _run_node_lifecycle = _node_lifecycle.run_node_lifecycle
+_run_simulation_service = _simulation_runner.run_simulation_service
 _actor_memory_query = _actor_event.actor_memory_query
 _alive_characters = _actor_event.alive_characters
 _build_actor_event_prompt = _actor_event.build_actor_event_prompt
@@ -575,79 +579,21 @@ def run_simulation(
     Returns:
         Final WorldState with all story nodes.
     """
-    if initial_world is not None:
-        world = initial_world.model_copy(deep=True)
-        memory = initial_memory or rebuild_memory_from_world(world, sim_id=sim_id)
-        world_builder_completed = bool(world.metadata.get("world_builder_completed"))
-    else:
-        world = WorldState(premise=premise, title=derive_title_from_premise(premise))
-        memory = MemoryManager(short_term_limit=15, sim_id=sim_id or None)
-        world_builder_completed = False
-
-    if world.pending_intervention and intervention_callback:
-        user_input = intervention_callback(world.intervention_context)
-        world.resolve_intervention(user_input)
-
-    initial_state: SimulationState = {
-        "world": world,
-        "memory": memory,
-        "scene_plan": None,
-        "action_intents": [],
-        "intent_critiques": [],
-        "prompt_traces": [],
-        "scene_script": None,
-        "candidate_event": "",
-        "validation_passed": False,
-        "needs_intervention": False,
-        "initialized": initial_world is not None,
-        "world_built": world_builder_completed,
-        "max_ticks": max_ticks,
-        "error": "",
-        "sim_id": sim_id,
-        "trace_id": trace_id,
-        "streaming_callbacks": (
-            {
-                "on_token": on_streaming_token,
-                "on_start": on_streaming_start,
-                "on_end": on_streaming_end,
-                "on_node_rendered": on_node_rendered,
-                "on_telemetry": on_telemetry,
-            }
-            if any(
-                callback is not None
-                for callback in (
-                    on_node_rendered,
-                    on_streaming_token,
-                    on_streaming_start,
-                    on_streaming_end,
-                    on_telemetry,
-                )
-            )
-            else None
-        ),
-    }
-
-    app = build_simulation_graph()
-    state = initial_state
-
-    while True:
-        result = cast(SimulationState, app.invoke(state))
-        final_world = result["world"]
-
-        if final_world.pending_intervention and intervention_callback:
-            user_input = intervention_callback(final_world.intervention_context)
-            final_world.resolve_intervention(user_input)
-            state = cast(
-                SimulationState,
-                {**result, "world": final_world, "needs_intervention": False},
-            )
-        else:
-            break
-
-    final_world = cast(WorldState, result["world"])
-    if not final_world.factions and not final_world.locations:
-        final_world = WorldBuilderAgent().expand_world(final_world)
-        final_world.metadata["world_builder_completed"] = True
-        result = cast(SimulationState, {**result, "world": final_world})
-
-    return cast(WorldState, result["world"])
+    return _run_simulation_service(
+        premise=premise,
+        max_ticks=max_ticks,
+        sim_id=sim_id,
+        trace_id=trace_id,
+        initial_world=initial_world,
+        initial_memory=initial_memory,
+        intervention_callback=intervention_callback,
+        on_node_rendered=on_node_rendered,
+        on_streaming_token=on_streaming_token,
+        on_streaming_start=on_streaming_start,
+        on_streaming_end=on_streaming_end,
+        on_telemetry=on_telemetry,
+        build_graph_func=build_simulation_graph,
+        derive_title_func=derive_title_from_premise,
+        rebuild_memory_func=rebuild_memory_from_world,
+        world_builder_factory=WorldBuilderAgent,
+    )
