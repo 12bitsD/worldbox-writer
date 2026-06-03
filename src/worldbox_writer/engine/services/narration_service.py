@@ -11,13 +11,10 @@ from worldbox_writer.evals.llm_judge import (
     COMMITTEE_TOXIC_VETO_THRESHOLD,
     judge_ai_prose_ticks,
 )
+from worldbox_writer.llm.gateway import CompletionGateway, DefaultCompletionGateway
 from worldbox_writer.memory.memory_manager import MemoryManager
 from worldbox_writer.prompting.registry import load_prompt_template
 from worldbox_writer.utils.json_parsing import parse_json_object_or_raise
-from worldbox_writer.utils.llm import (
-    chat_completion_with_profile,
-    get_last_llm_call_metadata,
-)
 
 AI_PROSE_TICKS_BANNED_MARKERS = ("像", "仿佛", "宛如", "好似", "如同")
 
@@ -191,17 +188,27 @@ class NarrationService:
     def __init__(
         self,
         *,
-        chat_completion_func: ChatCompletionFunc = chat_completion_with_profile,
+        completion_gateway: Optional[CompletionGateway] = None,
+        chat_completion_func: Optional[ChatCompletionFunc] = None,
         judge_ai_prose_ticks_func: JudgeAiProseTicksFunc = judge_ai_prose_ticks,
-        get_last_metadata_func: GetLastMetadataFunc = get_last_llm_call_metadata,
+        get_last_metadata_func: Optional[GetLastMetadataFunc] = None,
         load_prompt_template_func: LoadPromptTemplateFunc = load_prompt_template,
         emit_telemetry_func: EmitTelemetryFunc = _noop_emit_telemetry,
         llm_telemetry_fields_func: LlmTelemetryFieldsFunc = _empty_llm_telemetry_fields,
         load_scene_script_func: LoadSceneScriptFunc = load_scene_script_for_node,
     ) -> None:
-        self.chat_completion_func = chat_completion_func
+        if completion_gateway is not None and (
+            chat_completion_func is not None or get_last_metadata_func is not None
+        ):
+            raise ValueError(
+                "Pass either completion_gateway or raw LLM functions, not both"
+            )
+
+        self.completion_gateway = completion_gateway or DefaultCompletionGateway(
+            complete_func=chat_completion_func,
+            metadata_func=get_last_metadata_func,
+        )
         self.judge_ai_prose_ticks_func = judge_ai_prose_ticks_func
-        self.get_last_metadata_func = get_last_metadata_func
         self.load_prompt_template_func = load_prompt_template_func
         self.emit_telemetry_func = emit_telemetry_func
         self.llm_telemetry_fields_func = llm_telemetry_fields_func
@@ -381,7 +388,7 @@ class NarrationService:
         messages: list[dict[str, str]],
         on_token: Optional[Callable[[str], None]],
     ) -> tuple[str, Optional[Dict[str, Any]], dict[str, Any]]:
-        raw_output = self.chat_completion_func(
+        raw_output = self.completion_gateway.complete(
             "narrator_render",
             messages,
             on_token=on_token,
@@ -389,13 +396,13 @@ class NarrationService:
         try:
             prose = parse_narrator_prose(raw_output)
         except ValueError:
-            raw_output = self.chat_completion_func(
+            raw_output = self.completion_gateway.complete(
                 "narrator_render",
                 json_retry_narrator_messages(messages),
                 on_token=on_token,
             )
             prose = parse_narrator_prose(raw_output)
-        render_metadata = self.get_last_metadata_func()
+        render_metadata = self.completion_gateway.last_metadata()
 
         ai_check_started = self.judge_ai_prose_ticks_func(prose)
         ai_hit = ai_prose_ticks_hit(ai_check_started)
@@ -411,19 +418,19 @@ class NarrationService:
                 messages,
                 load_template_func=self.load_prompt_template_func,
             )
-            strict_raw_output = self.chat_completion_func(
+            strict_raw_output = self.completion_gateway.complete(
                 "narrator_render",
                 strict_messages,
             )
             try:
                 prose = parse_narrator_prose(strict_raw_output)
             except ValueError:
-                strict_raw_output = self.chat_completion_func(
+                strict_raw_output = self.completion_gateway.complete(
                     "narrator_render",
                     json_retry_narrator_messages(strict_messages),
                 )
                 prose = parse_narrator_prose(strict_raw_output)
-            render_metadata = self.get_last_metadata_func()
+            render_metadata = self.completion_gateway.last_metadata()
             ai_check_final = self.judge_ai_prose_ticks_func(prose)
             final_marker_hit = has_banned_ai_prose_marker(prose)
             ai_check_report.update(

@@ -53,6 +53,7 @@ from worldbox_writer.engine.dual_loop import (
 from worldbox_writer.engine.services import narration_service as _narration
 from worldbox_writer.engine.state import SimulationState
 from worldbox_writer.evals.llm_judge import judge_ai_prose_ticks
+from worldbox_writer.llm.gateway import DefaultCompletionGateway
 from worldbox_writer.memory.memory_manager import MemoryManager
 from worldbox_writer.prompting.registry import load_prompt_template
 from worldbox_writer.utils.llm import (
@@ -1004,9 +1005,11 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
 
 def _narration_service() -> NarrationService:
     return NarrationService(
-        chat_completion_func=chat_completion_with_profile,
+        completion_gateway=DefaultCompletionGateway(
+            complete_func=chat_completion_with_profile,
+            metadata_func=get_last_llm_call_metadata,
+        ),
         judge_ai_prose_ticks_func=judge_ai_prose_ticks,
-        get_last_metadata_func=get_last_llm_call_metadata,
         load_prompt_template_func=load_prompt_template,
         emit_telemetry_func=_emit_telemetry,
         llm_telemetry_fields_func=_llm_telemetry_fields,
