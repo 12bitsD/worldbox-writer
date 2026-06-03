@@ -27,6 +27,7 @@ from worldbox_writer.core.models import (
     StoryNode,
     WorldState,
 )
+from worldbox_writer.core.pacing import pacing_or_default, pacing_scene_title_label
 from worldbox_writer.prompting.registry import load_prompt_template
 from worldbox_writer.utils.json_parsing import parse_json_object
 from worldbox_writer.utils.llm import (
@@ -417,10 +418,7 @@ class DirectorAgent:
 
     def _resolve_narrative_pressure(self, world: WorldState) -> str:
         branch_meta = world.branches.get(world.active_branch_id or "main", {})
-        pacing = str(branch_meta.get("pacing", "balanced")).strip().lower()
-        if pacing in {"calm", "balanced", "intense"}:
-            return pacing
-        return "balanced"
+        return pacing_or_default(str(branch_meta.get("pacing", "")))
 
     def _derive_scene_title(
         self,
@@ -433,11 +431,7 @@ class DirectorAgent:
     ) -> str:
         spotlight_names = self._spotlight_names(world, spotlight_character_ids)
         focus = "、".join(spotlight_names[:2]) if spotlight_names else "局势"
-        pressure_label = {
-            "calm": "余波铺陈",
-            "balanced": "局势推进",
-            "intense": "高压对峙",
-        }.get(narrative_pressure, "局势推进")
+        pressure_label = pacing_scene_title_label(narrative_pressure)
         fallback_title = (
             f"第{world.tick + 1}幕：{focus}的{pressure_label}"
             if current_node and current_node.title

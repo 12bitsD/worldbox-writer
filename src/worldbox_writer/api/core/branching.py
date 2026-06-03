@@ -6,6 +6,7 @@ import copy
 from typing import Any, Dict, List, Optional
 
 from worldbox_writer.core.models import TelemetryEvent, WorldState
+from worldbox_writer.core.pacing import DEFAULT_PACING
 
 
 def default_branch_meta() -> Dict[str, Any]:
@@ -20,7 +21,7 @@ def default_branch_meta() -> Dict[str, Any]:
         "last_node_summary": None,
         "nodes_count": 0,
         "status": "complete",
-        "pacing": "balanced",
+        "pacing": DEFAULT_PACING,
     }
 
 
@@ -149,7 +150,7 @@ def compare_summary(
                 latest_node.get("description") if latest_node else None,
             ),
             "status": meta.get("status", "complete"),
-            "pacing": meta.get("pacing", "balanced"),
+            "pacing": meta.get("pacing", DEFAULT_PACING),
             "is_active": branch_id == world.active_branch_id,
         }
     return summary

@@ -44,6 +44,7 @@ from worldbox_writer.core.models import (
     StoryNode,
     WorldState,
 )
+from worldbox_writer.core.pacing import pacing_or_default, pacing_prompt_hint
 from worldbox_writer.engine.dual_loop import (
     ISOLATED_ACTOR_RUNTIME_MODE,
     dual_loop_enabled,
@@ -176,35 +177,7 @@ def _resolve_branch_context(world: Optional[WorldState]) -> Dict[str, Optional[s
 
 def _resolve_branch_pacing(world: WorldState) -> str:
     branch_meta = world.branches.get(world.active_branch_id, {})
-    return str(branch_meta.get("pacing", "balanced"))
-
-
-def _pacing_prompt_hint(pacing: str) -> str:
-    if pacing == "calm":
-        return "当前分支节奏偏好：calm。优先生成更克制、日常、铺垫型推进，避免无准备的高压冲突。"
-    if pacing == "intense":
-        return "当前分支节奏偏好：intense。优先生成更强的冲突、压力、风险和局势转折，但仍需符合角色与约束。"
-    return "当前分支节奏偏好：balanced。在日常铺垫和冲突推进之间保持均衡。"
-
-
-def _ordered_lineage_nodes(world: WorldState) -> list[StoryNode]:
-    if not world.current_node_id:
-        return []
-
-    ordered: list[StoryNode] = []
-    seen: set[str] = set()
-    cursor: Optional[str] = world.current_node_id
-
-    while cursor and cursor not in seen:
-        seen.add(cursor)
-        node = world.get_node(cursor)
-        if not node:
-            break
-        ordered.append(node)
-        cursor = node.parent_ids[0] if node.parent_ids else None
-
-    ordered.reverse()
-    return ordered
+    return pacing_or_default(str(branch_meta.get("pacing", "")))
 
 
 def rebuild_memory_from_world(
@@ -550,7 +523,7 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
                 f"当前角色状态：\n{chars_summary}\n\n"
                 f"故事记忆（按时间排序）：\n{memory_context}\n\n"
                 f"世界约束：\n{constraints_text}\n\n"
-                f"{_pacing_prompt_hint(pacing)}\n\n"
+                f"{pacing_prompt_hint(pacing)}\n\n"
                 f"当前推演步数：{world.tick}\n\n"
                 "请生成下一个故事事件："
             ),

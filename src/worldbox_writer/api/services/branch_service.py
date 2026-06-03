@@ -29,7 +29,12 @@ from worldbox_writer.api.session_store import (
     persist_session,
     restore_world_at_node,
 )
-from worldbox_writer.api.state import _VALID_PACING_VALUES, _executor, branching_enabled
+from worldbox_writer.api.state import _executor, branching_enabled
+from worldbox_writer.core.pacing import (
+    PACING_DISPLAY_VALUES,
+    is_valid_pacing,
+    normalize_pacing,
+)
 from worldbox_writer.storage.db import BranchSeedNotFoundError
 from worldbox_writer.storage.db import load_session as db_load_session
 
@@ -37,11 +42,11 @@ RunSimulationSync = Callable[[SimulationSession], None]
 
 
 def coerce_pacing(value: Optional[str]) -> str:
-    pacing = (value or "balanced").strip().lower()
-    if pacing not in _VALID_PACING_VALUES:
+    pacing = normalize_pacing(value)
+    if not is_valid_pacing(pacing):
         raise ApiError(
             status_code=400,
-            detail=f"无效的节奏档位: {value}，允许值为 calm / balanced / intense",
+            detail=f"无效的节奏档位: {value}，允许值为 {PACING_DISPLAY_VALUES}",
         )
     return pacing
 
