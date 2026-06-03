@@ -54,6 +54,7 @@ from worldbox_writer.engine.services import (
     boundary_revision_service as _boundary_revision,
 )
 from worldbox_writer.engine.services import narration_service as _narration
+from worldbox_writer.engine.services import node_commit_service as _node_commit
 from worldbox_writer.engine.services import relationship_service as _relationships
 from worldbox_writer.engine.services import telemetry_service as _telemetry
 from worldbox_writer.engine.state import SimulationState
@@ -93,6 +94,10 @@ _emit_telemetry = _telemetry.emit_telemetry
 _llm_telemetry_fields = _telemetry.llm_telemetry_fields
 _resolve_branch_context = _telemetry.resolve_branch_context
 _revise_candidate_event = _boundary_revision.revise_candidate_event
+_commit_story_node = _node_commit.commit_story_node
+_node_importance = _node_commit.node_importance
+_story_node_title = _node_commit.story_node_title
+_story_node_type = _node_commit.story_node_type
 
 
 def _resolve_branch_pacing(world: WorldState) -> str:
@@ -582,78 +587,21 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
         )
         return {"world": world, "needs_intervention": False}
 
-    # Determine node type
-    node_type = NodeType.DEVELOPMENT
-    if world.tick == 0:
-        node_type = NodeType.SETUP
-    elif any(
-        kw in candidate for kw in ["死亡", "决战", "最终", "终于", "结局", "覆灭"]
-    ):
-        node_type = NodeType.CLIMAX
-    elif any(
-        kw in candidate for kw in ["选择", "决定", "分歧", "命运", "转折", "岔路"]
-    ):
-        node_type = NodeType.BRANCH
-
-    parent_ids = [world.current_node_id] if world.current_node_id else []
-    involved_character_ids = _select_character_ids_for_event(world, candidate)
-    if scene_script and scene_script.participating_character_ids:
-        involved_character_ids = list(scene_script.participating_character_ids)
-    relationship_character_ids = _select_character_ids_for_event(
+    commit_result = _commit_story_node(
         world,
         candidate,
-        allow_alive_fallback=False,
+        scene_plan=scene_plan,
+        scene_script=scene_script,
+        action_intents=action_intents,
+        intent_critiques=intent_critiques,
+        prompt_traces=prompt_traces,
+        select_character_ids_func=_select_character_ids_for_event,
+        apply_relationship_updates_func=_apply_relationship_updates,
     )
-    node_title = f"第{world.tick + 1}幕"
-    if scene_plan is not None and scene_plan.title:
-        node_title = scene_plan.title
-    if scene_script is not None and scene_script.title:
-        node_title = scene_script.title
-
-    new_node = StoryNode(
-        title=node_title,
-        description=candidate,
-        node_type=node_type,
-        parent_ids=parent_ids,
-        character_ids=involved_character_ids,
-        branch_id=world.active_branch_id,
-    )
-
-    if parent_ids:
-        parent = world.get_node(parent_ids[0])
-        if parent and str(new_node.id) not in parent.child_ids:
-            parent.child_ids.append(str(new_node.id))
-
-    world.add_node(new_node)
-    world.current_node_id = str(new_node.id)
-    world.advance_tick()
-    new_node.metadata["tick"] = world.tick
-    if scene_plan is not None:
-        scene_plan_payload = scene_plan.model_dump(mode="json")
-        new_node.metadata["scene_plan"] = scene_plan_payload
-        world.metadata["last_committed_scene_plan"] = scene_plan_payload
-    if scene_script is not None:
-        scene_script_payload = scene_script.model_dump(mode="json")
-        new_node.metadata["scene_script"] = scene_script_payload
-        world.metadata["last_committed_scene_script"] = scene_script_payload
-    if action_intents:
-        new_node.metadata["action_intents"] = [
-            intent.model_dump(mode="json") for intent in action_intents
-        ]
-    if intent_critiques:
-        new_node.metadata["intent_critiques"] = [
-            critique.model_dump(mode="json") for critique in intent_critiques
-        ]
-    if prompt_traces:
-        new_node.metadata["prompt_traces"] = [
-            trace.model_dump(mode="json") for trace in prompt_traces
-        ]
-    relationships_changed = _apply_relationship_updates(
-        world,
-        relationship_character_ids,
-        candidate,
-        tick=world.tick,
-    )
+    new_node = commit_result.node
+    node_type = new_node.node_type
+    involved_character_ids = commit_result.involved_character_ids
+    relationships_changed = commit_result.relationships_changed
     _emit_telemetry(
         state,
         tick=world.tick,
@@ -683,12 +631,7 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
         )
 
     # Record to memory
-    importance = 0.5
-    if node_type in (NodeType.CLIMAX, NodeType.BRANCH):
-        importance = 0.9
-    elif node_type == NodeType.SETUP:
-        importance = 0.8
-    memory.record_event(new_node, world, importance=importance)
+    memory.record_event(new_node, world, importance=_node_importance(node_type))
     reflection_entries = []
     if scene_script is not None:
         reflection_entries = memory.write_reflections_from_scene_script(
