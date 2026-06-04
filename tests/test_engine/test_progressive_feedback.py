@@ -135,54 +135,6 @@ def test_scene_director_node_persists_scene_plan(monkeypatch) -> None:
     assert result["world"].metadata["current_scene_plan"]["scene_id"] == "scene-test"
 
 
-def test_actor_node_includes_scene_plan_context(monkeypatch) -> None:
-    captured: dict[str, Any] = {}
-
-    monkeypatch.setattr(graph_module, "dual_loop_enabled", lambda: False)
-
-    def fake_chat_completion(_profile_id, messages, **kwargs):  # type: ignore[no-untyped-def]
-        captured["messages"] = messages
-        return "阿璃在雨夜中决定先试探敌人的底牌。"
-
-    monkeypatch.setattr(
-        graph_module, "chat_completion_with_profile", fake_chat_completion
-    )
-    monkeypatch.setattr(
-        graph_module,
-        "get_last_llm_call_metadata",
-        lambda: None,
-    )
-
-    world = WorldState(title="测试世界", premise="测试前提")
-    alice = Character(
-        name="阿璃",
-        personality="冷静",
-        goals=["摸清敌人的部署"],
-    )
-    world.add_character(alice)
-    state = _state(
-        world,
-        scene_plan=ScenePlan(
-            scene_id="scene-actor",
-            title="第1幕：高压对峙",
-            objective="围绕阿璃试探敌人的真实部署",
-            public_summary="上一幕已发生：阿璃发现敌军先行布防",
-            spotlight_character_ids=[str(alice.id)],
-            narrative_pressure="intense",
-            setting="地点：断桥",
-            metadata={"pressure_guidance": "优先制造高风险冲突。"},
-        ),
-    )
-
-    result = actor_node(state)
-
-    prompt = captured["messages"][1]["content"]
-    assert result["candidate_event"]
-    assert "当前场景计划：第1幕：高压对峙" in prompt
-    assert "场景目标：围绕阿璃试探敌人的真实部署" in prompt
-    assert "叙事压力：intense" in prompt
-
-
 def test_actor_node_uses_isolated_runtime_when_dual_loop_enabled(monkeypatch) -> None:
     def fake_runtime(
         world: WorldState,

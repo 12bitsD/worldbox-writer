@@ -8,15 +8,6 @@ from worldbox_writer.engine.services.telemetry_service import (
 )
 
 
-def test_resolve_branch_context_defaults_to_main_without_world() -> None:
-    assert resolve_branch_context(None) == {
-        "branch_id": "main",
-        "forked_from_node_id": None,
-        "source_branch_id": None,
-        "source_sim_id": None,
-    }
-
-
 def test_resolve_branch_context_uses_active_branch_metadata() -> None:
     world = WorldState(title="测试世界")
     world.branches["branch_a"] = {

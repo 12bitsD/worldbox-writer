@@ -8,15 +8,7 @@ from worldbox_writer.core.models import WorldState
 from worldbox_writer.engine.state import SimulationState
 
 
-def resolve_branch_context(world: Optional[WorldState]) -> Dict[str, Optional[str]]:
-    if world is None:
-        return {
-            "branch_id": "main",
-            "forked_from_node_id": None,
-            "source_branch_id": None,
-            "source_sim_id": None,
-        }
-
+def resolve_branch_context(world: WorldState) -> Dict[str, Optional[str]]:
     branch_id = world.active_branch_id or "main"
     branch_meta = world.branches.get(branch_id, {})
     return {
@@ -74,7 +66,7 @@ def emit_telemetry(
     if not on_telemetry:
         return
 
-    branch_context = resolve_branch_context(state.get("world"))
+    branch_context = resolve_branch_context(state["world"])
     merged_payload = {**(payload or {}), **(llm_payload or {})}
     on_telemetry(
         {

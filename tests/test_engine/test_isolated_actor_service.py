@@ -16,8 +16,10 @@ def test_isolated_actor_runtime_uses_injected_dependencies() -> None:
     world = WorldState(title="测试世界", premise="测试前提")
     alice = Character(name="阿璃", personality="谨慎", goals=["调查断桥"])
     bob = Character(name="白夜", personality="隐忍", goals=["守住秘密"])
+    hidden = Character(name="黑潮祭司", personality="危险", goals=["暗中布局"])
     world.add_character(alice)
     world.add_character(bob)
+    world.add_character(hidden)
     scene_plan = ScenePlan(
         scene_id="scene-service-runtime",
         branch_id="branch-service",
@@ -76,9 +78,65 @@ def test_isolated_actor_runtime_uses_injected_dependencies() -> None:
     assert (
         result.action_intents[0].metadata["runtime_mode"] == ISOLATED_ACTOR_RUNTIME_MODE
     )
+    assert result.action_intents[0].metadata["branch_id"] == "branch-service"
+    assert str(hidden.id) not in result.prompt_traces[0].visible_character_ids
     assert [trace.system_prompt for trace in result.prompt_traces] == [
         "ACTOR SYSTEM",
         "ACTOR SYSTEM",
     ]
     assert len(samples) == 2
     assert {sample[1]["metadata"]["model"] for sample in samples} == {"unit-test-model"}
+
+
+def test_isolated_actor_runtime_salvages_plain_text_intent() -> None:
+    world = WorldState(title="测试世界", premise="测试前提")
+    alice = Character(name="阿璃", personality="谨慎", goals=["调查断桥"])
+    world.add_character(alice)
+    scene_plan = ScenePlan(
+        scene_id="scene-plain",
+        title="断桥试探",
+        objective="让阿璃逼近伏击真相",
+        spotlight_character_ids=[str(alice.id)],
+    )
+
+    result = run_isolated_actor_runtime(
+        world,
+        MemoryManager(),
+        scene_plan=scene_plan,
+        chat_completion_func=lambda _profile_id, _messages: (
+            "阿璃拔出断桥上的旧符钉，逼迫白夜解释昨夜的伏击。"
+        ),
+        metadata_func=lambda: {},
+        collect_sample_func=lambda *_args, **_kwargs: None,
+        load_prompt_template_func=lambda *_args, **_kwargs: "ACTOR SYSTEM",
+    )
+
+    assert result.action_intents[0].metadata["synthetic"] is False
+    assert "旧符钉" in result.action_intents[0].summary
+
+
+def test_isolated_actor_runtime_empty_completion_uses_story_forward_fallback() -> None:
+    world = WorldState(title="测试世界", premise="测试前提")
+    alice = Character(name="阿璃", personality="谨慎", goals=["调查断桥"])
+    world.add_character(alice)
+    scene_plan = ScenePlan(
+        scene_id="scene-empty",
+        title="断桥试探",
+        objective="让阿璃逼近伏击真相",
+        spotlight_character_ids=[str(alice.id)],
+    )
+
+    result = run_isolated_actor_runtime(
+        world,
+        MemoryManager(),
+        scene_plan=scene_plan,
+        chat_completion_func=lambda _profile_id, _messages: "",
+        metadata_func=lambda: {},
+        collect_sample_func=lambda *_args, **_kwargs: None,
+        load_prompt_template_func=lambda *_args, **_kwargs: "ACTOR SYSTEM",
+    )
+
+    intent = result.action_intents[0]
+    assert intent.metadata["synthetic"] is True
+    assert "调查断桥" in intent.summary
+    assert "让阿璃逼近伏击真相" in intent.summary

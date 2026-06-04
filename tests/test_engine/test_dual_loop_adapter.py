@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-
 from worldbox_writer.core.dual_loop import (
     ActionIntent,
     IntentCritique,
@@ -10,13 +8,11 @@ from worldbox_writer.core.dual_loop import (
 )
 from worldbox_writer.core.models import Character, StoryNode, WorldState
 from worldbox_writer.engine.dual_loop import (
-    ISOLATED_ACTOR_RUNTIME_MODE,
     build_dual_loop_snapshot,
     build_prompt_trace,
     build_scene_plan,
     build_scene_script,
     dual_loop_enabled,
-    run_isolated_actor_runtime,
     synthesize_candidate_event_from_intents,
 )
 from worldbox_writer.memory.memory_manager import MemoryManager
@@ -215,116 +211,29 @@ def test_prompt_trace_separates_episodic_and_reflective_memory_layers() -> None:
     assert trace.memory_trace.metadata["layer_counts"]["reflective"] == 1
 
 
-def test_isolated_actor_runtime_generates_branch_aware_intents(monkeypatch) -> None:
-    calls: list[list[dict]] = []
-
-    def fake_chat_completion(_profile_id, messages, **kwargs):  # type: ignore[no-untyped-def]
-        calls.append(messages)
-        prompt = messages[1]["content"]
-        if "你的身份：阿璃" in prompt:
-            return json.dumps(
-                {
-                    "action_type": "decision",
-                    "summary": "阿璃决定逼问白夜昨夜的行踪",
-                    "rationale": "她的目标是找出断桥伏击者",
-                    "target_character_names": ["白夜"],
-                    "confidence": 0.82,
-                },
-                ensure_ascii=False,
-            )
-        return json.dumps(
-            {
-                "action_type": "reaction",
-                "summary": "白夜选择用半真半假的回答拖延时间",
-                "rationale": "他需要守住王城密钥",
-                "target_character_names": ["阿璃"],
-                "confidence": 0.74,
-            },
-            ensure_ascii=False,
-        )
-
-    monkeypatch.setattr(
-        "worldbox_writer.engine.dual_loop.chat_completion_with_profile",
-        fake_chat_completion,
-    )
-
-    world = WorldState(title="测试世界", premise="测试前提")
-    alice = Character(name="阿璃", personality="谨慎", goals=["调查断桥"])
-    bob = Character(name="白夜", personality="隐忍", goals=["守住秘密"])
-    hidden = Character(name="黑潮祭司", personality="危险", goals=["暗中布局"])
-    for character in (alice, bob, hidden):
-        world.add_character(character)
-    world.active_branch_id = "branch-a"
-    memory = MemoryManager()
+def test_synthesize_candidate_event_from_intents_joins_scene_summaries() -> None:
     scene_plan = ScenePlan(
         scene_id="scene-runtime",
         branch_id="branch-a",
         title="断桥试探",
-        objective="让聚光灯角色试探彼此底牌",
-        public_summary="断桥上只剩阿璃与白夜公开对峙。",
-        spotlight_character_ids=[str(alice.id), str(bob.id)],
     )
-
-    result = run_isolated_actor_runtime(world, memory, scene_plan=scene_plan)
     candidate = synthesize_candidate_event_from_intents(
-        result.action_intents,
+        [
+            ActionIntent(
+                scene_id=scene_plan.scene_id,
+                actor_id="char-1",
+                actor_name="阿璃",
+                summary="阿璃决定逼问白夜昨夜的行踪。",
+            ),
+            ActionIntent(
+                scene_id=scene_plan.scene_id,
+                actor_id="char-2",
+                actor_name="白夜",
+                summary="白夜选择用半真半假的回答拖延时间。",
+            ),
+        ],
         scene_plan=scene_plan,
     )
 
-    assert len(calls) == 2
-    assert [intent.actor_name for intent in result.action_intents] == ["阿璃", "白夜"]
-    assert result.action_intents[0].metadata["synthetic"] is False
-    assert (
-        result.action_intents[0].metadata["runtime_mode"] == ISOLATED_ACTOR_RUNTIME_MODE
-    )
-    assert result.action_intents[0].metadata["branch_id"] == "branch-a"
-    assert str(hidden.id) not in result.prompt_traces[0].visible_character_ids
     assert "阿璃决定逼问白夜昨夜的行踪" in candidate
-
-
-def test_isolated_actor_runtime_salvages_plain_text_intent(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "worldbox_writer.engine.dual_loop.chat_completion_with_profile",
-        lambda _profile_id, messages, **kwargs: "阿璃拔出断桥上的旧符钉，逼迫白夜解释昨夜的伏击。",
-    )
-
-    world = WorldState(title="测试世界", premise="测试前提")
-    alice = Character(name="阿璃", personality="谨慎", goals=["调查断桥"])
-    world.add_character(alice)
-    scene_plan = ScenePlan(
-        scene_id="scene-plain",
-        title="断桥试探",
-        objective="让阿璃逼近伏击真相",
-        spotlight_character_ids=[str(alice.id)],
-    )
-
-    result = run_isolated_actor_runtime(world, MemoryManager(), scene_plan=scene_plan)
-
-    assert result.action_intents[0].metadata["synthetic"] is False
-    assert "旧符钉" in result.action_intents[0].summary
-
-
-def test_isolated_actor_runtime_empty_completion_uses_story_forward_fallback(
-    monkeypatch,
-) -> None:
-    monkeypatch.setattr(
-        "worldbox_writer.engine.dual_loop.chat_completion_with_profile",
-        lambda _profile_id, messages, **kwargs: "",
-    )
-
-    world = WorldState(title="测试世界", premise="测试前提")
-    alice = Character(name="阿璃", personality="谨慎", goals=["调查断桥"])
-    world.add_character(alice)
-    scene_plan = ScenePlan(
-        scene_id="scene-empty",
-        title="断桥试探",
-        objective="让阿璃逼近伏击真相",
-        spotlight_character_ids=[str(alice.id)],
-    )
-
-    result = run_isolated_actor_runtime(world, MemoryManager(), scene_plan=scene_plan)
-
-    intent = result.action_intents[0]
-    assert intent.metadata["synthetic"] is True
-    assert "调查断桥" in intent.summary
-    assert "让阿璃逼近伏击真相" in intent.summary
+    assert "白夜选择用半真半假的回答拖延时间" in candidate
