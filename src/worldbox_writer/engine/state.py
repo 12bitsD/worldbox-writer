@@ -23,9 +23,9 @@ class SimulationState(TypedDict):
     world: WorldState
     memory: MemoryManager
     scene_plan: Optional[ScenePlan]
-    action_intents: NotRequired[list[ActionIntent]]
-    intent_critiques: NotRequired[list[IntentCritique]]
-    prompt_traces: NotRequired[list[PromptTrace]]
+    action_intents: list[ActionIntent]
+    intent_critiques: list[IntentCritique]
+    prompt_traces: list[PromptTrace]
     scene_script: NotRequired[Optional[SceneScript]]
     candidate_event: str
     validation_passed: bool

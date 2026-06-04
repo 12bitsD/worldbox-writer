@@ -66,6 +66,9 @@ def test_initial_simulation_state_resolves_pending_intervention_on_copy() -> Non
     assert state["memory"] is initial_memory
     assert state["initialized"] is True
     assert state["world_built"] is True
+    assert state["action_intents"] == []
+    assert state["intent_critiques"] == []
+    assert state["prompt_traces"] == []
     assert state["streaming_callbacks"] is None
 
 

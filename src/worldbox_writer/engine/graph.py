@@ -275,9 +275,9 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
     world = state["world"]
     memory: MemoryManager = state["memory"]
     scene_plan = state["scene_plan"]
-    action_intents = state.get("action_intents", [])
-    intent_critiques = state.get("intent_critiques", [])
-    prompt_traces = state.get("prompt_traces", [])
+    action_intents = state["action_intents"]
+    intent_critiques = state["intent_critiques"]
+    prompt_traces = state["prompt_traces"]
     scene_script = state.get("scene_script")
     candidate = state["candidate_event"]
     validation_passed = state["validation_passed"]
