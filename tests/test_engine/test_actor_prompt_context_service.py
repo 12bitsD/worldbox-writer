@@ -10,6 +10,10 @@ from worldbox_writer.engine.services.actor_prompt_context_service import (
 from worldbox_writer.memory.memory_manager import MemoryManager
 
 
+def _template_name_and_variant(name: str, *, variant: str | None = None) -> str:
+    return f"{name}:{variant}"
+
+
 def test_prompt_context_uses_injected_template_and_actor_visible_scope() -> None:
     world = WorldState(title="测试世界", premise="测试前提")
     alice = Character(name="阿璃", personality="谨慎", goals=["调查断桥"])
@@ -33,9 +37,7 @@ def test_prompt_context_uses_injected_template_and_actor_visible_scope() -> None
         alice,
         world,
         scene_plan=scene_plan,
-        load_prompt_template_func=lambda name, **kwargs: (
-            f"{name}:{kwargs['variant']}"
-        ),
+        load_prompt_template_func=_template_name_and_variant,
     )
 
     assert trace.system_prompt == "actor_system:dual_loop"

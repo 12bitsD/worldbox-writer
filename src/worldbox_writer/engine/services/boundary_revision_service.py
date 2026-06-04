@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, Protocol
 
 from worldbox_writer.core.models import WorldState
 from worldbox_writer.prompting.registry import load_prompt_template
 from worldbox_writer.utils.llm import chat_completion_with_profile
 
 CompletionFunc = Callable[[str, list[dict[str, str]]], str]
-PromptLoaderFunc = Callable[..., str]
+
+
+class PromptLoaderFunc(Protocol):
+    def __call__(
+        self,
+        name: str,
+        *,
+        variant: str | None = None,
+    ) -> str: ...
 
 
 def boundary_revision_messages(

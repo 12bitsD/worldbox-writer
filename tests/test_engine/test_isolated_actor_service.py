@@ -12,6 +12,10 @@ from worldbox_writer.engine.services.isolated_actor_service import (
 from worldbox_writer.memory.memory_manager import MemoryManager
 
 
+def _actor_system_prompt(_name: str, *, variant: str | None = None) -> str:
+    return "ACTOR SYSTEM"
+
+
 def test_isolated_actor_runtime_uses_injected_dependencies() -> None:
     world = WorldState(title="测试世界", premise="测试前提")
     alice = Character(name="阿璃", personality="谨慎", goals=["调查断桥"])
@@ -68,7 +72,7 @@ def test_isolated_actor_runtime_uses_injected_dependencies() -> None:
         chat_completion_func=fake_chat_completion,
         metadata_func=lambda: {"model": "unit-test-model"},
         collect_sample_func=fake_collect_sample,
-        load_prompt_template_func=lambda *_args, **_kwargs: "ACTOR SYSTEM",
+        load_prompt_template_func=_actor_system_prompt,
         max_actors=2,
     )
 
@@ -112,7 +116,7 @@ def test_isolated_actor_runtime_salvages_plain_text_intent() -> None:
         ),
         metadata_func=lambda: {},
         collect_sample_func=collect_sample,
-        load_prompt_template_func=lambda *_args, **_kwargs: "ACTOR SYSTEM",
+        load_prompt_template_func=_actor_system_prompt,
     )
 
     assert result.action_intents[0].metadata["synthetic"] is False
@@ -143,7 +147,7 @@ def test_isolated_actor_runtime_empty_completion_uses_story_forward_fallback() -
         chat_completion_func=lambda _profile_id, _messages: "",
         metadata_func=lambda: {},
         collect_sample_func=collect_sample,
-        load_prompt_template_func=lambda *_args, **_kwargs: "ACTOR SYSTEM",
+        load_prompt_template_func=_actor_system_prompt,
     )
 
     intent = result.action_intents[0]

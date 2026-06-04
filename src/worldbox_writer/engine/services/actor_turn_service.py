@@ -35,7 +35,17 @@ AliveCharactersFunc = Callable[[WorldState], list[Character]]
 DualLoopEnabledFunc = Callable[[], bool]
 ActorMemoryQueryFunc = Callable[[WorldState, Optional[ScenePlan]], str]
 BuildActorEventPromptFunc = Callable[..., ActorEventPrompt]
-LoadPromptTemplateFunc = Callable[..., str]
+
+
+class LoadPromptTemplateFunc(Protocol):
+    def __call__(
+        self,
+        name: str,
+        *,
+        variant: str | None = None,
+    ) -> str: ...
+
+
 ChatCompletionFunc = Callable[..., str]
 MetadataFunc = Callable[[], Optional[dict[str, Any]]]
 LlmTelemetryFieldsFunc = Callable[[Optional[dict[str, Any]]], dict[str, Any]]

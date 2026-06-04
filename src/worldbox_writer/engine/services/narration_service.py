@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Protocol
 
 from worldbox_writer.core.dual_loop import NarratorInput, SceneScript
 from worldbox_writer.core.models import StoryNode
@@ -22,7 +22,17 @@ AI_PROSE_TICKS_BANNED_MARKERS = ("像", "仿佛", "宛如", "好似", "如同")
 ChatCompletionFunc = Callable[..., str]
 JudgeAiProseTicksFunc = Callable[[str], dict[str, Any]]
 GetLastMetadataFunc = Callable[[], Optional[Dict[str, Any]]]
-LoadPromptTemplateFunc = Callable[..., str]
+
+
+class LoadPromptTemplateFunc(Protocol):
+    def __call__(
+        self,
+        name: str,
+        *,
+        variant: str | None = None,
+    ) -> str: ...
+
+
 EmitTelemetryFunc = Callable[..., None]
 LlmTelemetryFieldsFunc = Callable[[Optional[Dict[str, Any]]], Dict[str, Any]]
 LoadSceneScriptFunc = Callable[[StoryNode], Optional[SceneScript]]

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Optional, Protocol
 
 from worldbox_writer.core.dual_loop import (
     DUAL_LOOP_ADAPTER_MODE,
@@ -19,7 +19,14 @@ from worldbox_writer.memory.memory_manager import (
 )
 from worldbox_writer.prompting.registry import load_prompt_template
 
-LoadPromptTemplateFunc = Callable[..., str]
+
+class LoadPromptTemplateFunc(Protocol):
+    def __call__(
+        self,
+        name: str,
+        *,
+        variant: str | None = None,
+    ) -> str: ...
 
 
 def build_prompt_trace(

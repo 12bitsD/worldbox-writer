@@ -47,6 +47,10 @@ def _unexpected_chat_completion(*_args: Any, **_kwargs: Any) -> str:
     raise AssertionError("actor event completion should not be called")
 
 
+def _actor_event_system_prompt(_name: str, *, variant: str | None = None) -> str:
+    return "ACTOR EVENT SYSTEM"
+
+
 def test_run_actor_turn_returns_quiet_event_when_no_alive_characters() -> None:
     result = run_actor_turn(
         WorldState(title="测试世界", premise="测试前提"),
@@ -98,7 +102,7 @@ def test_run_actor_turn_uses_legacy_actor_event_path() -> None:
         llm_telemetry_fields_func=_llm_fields,
         actor_memory_query_func=lambda _world, _scene_plan: "memory query",
         build_actor_event_prompt_func=fake_build_prompt,
-        load_prompt_template_func=lambda *_args, **_kwargs: "ACTOR EVENT SYSTEM",
+        load_prompt_template_func=_actor_event_system_prompt,
     )
 
     assert captured["scene_plan"] is scene_plan
