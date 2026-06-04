@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-import pytest
-
 import worldbox_writer.engine.graph as graph_module
 from worldbox_writer.agents.node_detector import InterventionSignal
 from worldbox_writer.core.dual_loop import (
@@ -11,9 +9,8 @@ from worldbox_writer.core.dual_loop import (
     IntentCritique,
     PromptTrace,
     ScenePlan,
-    SceneScript,
 )
-from worldbox_writer.core.models import Character, StoryNode, WorldState
+from worldbox_writer.core.models import Character, WorldState
 from worldbox_writer.engine.dual_loop import (
     ISOLATED_ACTOR_RUNTIME_MODE,
     IsolatedActorRuntimeResult,
@@ -22,7 +19,6 @@ from worldbox_writer.engine.graph import (
     actor_node,
     after_narrator,
     after_world_builder,
-    narrator_node,
     node_detector_node,
     scene_director_node,
     world_builder_node,
@@ -353,263 +349,6 @@ def test_actor_node_excludes_rejected_intents_from_candidate(monkeypatch) -> Non
     assert result["world"].metadata["last_actor_accepted_intent_ids"] == [
         "intent-accepted"
     ]
-
-
-def test_narrator_consumes_scene_script_input_v2(monkeypatch) -> None:
-    captured: Dict[str, Any] = {}
-
-    def fake_chat_completion(_profile_id, messages, **kwargs):  # type: ignore[no-untyped-def]
-        captured["messages"] = messages
-        captured["kwargs"] = kwargs
-        return (
-            '{"prose": "阿璃按下桥闸，潮雾吞没了追兵的火把。", "style_notes": "克制"}'
-        )
-
-    monkeypatch.setattr(
-        graph_module, "chat_completion_with_profile", fake_chat_completion
-    )
-    monkeypatch.setattr(graph_module, "get_last_llm_call_metadata", lambda: None)
-    monkeypatch.setattr(
-        graph_module,
-        "judge_ai_prose_ticks",
-        lambda prose: {
-            "parse_status": "ok",
-            "error": None,
-            "applicable": True,
-            "score": 2.0,
-            "evidence_quote": "",
-            "rule_hit": "",
-            "reasoning": "",
-        },
-    )
-
-    world = WorldState(title="测试世界", premise="断桥守卫战")
-    alice = Character(name="阿璃", personality="冷静", goals=["守住断桥"])
-    world.add_character(alice)
-    scene_script = SceneScript(
-        script_id="script-render",
-        scene_id="scene-render",
-        title="第1幕：断桥落闸",
-        summary="阿璃按下断桥闸机，阻断追兵。",
-        public_facts=["断桥入口已经起雾。"],
-        participating_character_ids=[str(alice.id)],
-        accepted_intent_ids=["intent-accepted"],
-        rejected_intent_ids=["intent-rejected"],
-        beats=[
-            {
-                "actor_id": str(alice.id),
-                "actor_name": "阿璃",
-                "summary": "阿璃按下桥闸",
-                "outcome": "追兵被挡在桥外",
-                "source_intent_id": "intent-accepted",
-            }
-        ],
-    )
-    node = StoryNode(
-        title="第1幕：断桥落闸",
-        description="旧事件描述不再作为 SceneScript 渲染主输入。",
-        character_ids=[str(alice.id)],
-    )
-    node.metadata["scene_script"] = scene_script.model_dump(mode="json")
-    world.add_node(node)
-    world.current_node_id = str(node.id)
-    world.tick = 1
-
-    result = narrator_node(_state(world))
-
-    rendered = result["world"].get_node(str(node.id))
-    prompt = "\n".join(message["content"] for message in captured["messages"])
-    system_prompt = captured["messages"][0]["content"]
-    assert rendered is not None
-    assert "SceneScript（唯一客观事实源）" in prompt
-    assert "断桥入口已经起雾" in prompt
-    assert "阿璃按下桥闸" in prompt
-    assert "intent-rejected" in prompt
-    assert "rejected intent ids" in system_prompt
-    assert rendered.rendered_text == "阿璃按下桥闸，潮雾吞没了追兵的火把。"
-    assert rendered.metadata["narrator_input_v2"]["source"] == "scene_script"
-    assert rendered.metadata["narrator_input_v2"]["scene_id"] == "scene-render"
-
-
-def test_narrator_empty_completion_raises(monkeypatch) -> None:
-    monkeypatch.setattr(
-        graph_module,
-        "chat_completion_with_profile",
-        lambda _profile_id, messages, **kwargs: "",
-    )
-    monkeypatch.setattr(graph_module, "get_last_llm_call_metadata", lambda: None)
-
-    world = WorldState(title="测试世界", premise="断桥守卫战")
-    alice = Character(name="阿璃", personality="冷静", goals=["守住断桥"])
-    world.add_character(alice)
-    node = StoryNode(
-        title="第1幕：断桥落闸",
-        description="阿璃按下断桥闸机，阻断追兵。",
-        character_ids=[str(alice.id)],
-    )
-    world.add_node(node)
-    world.current_node_id = str(node.id)
-    world.tick = 1
-
-    with pytest.raises(ValueError, match="empty completion"):
-        narrator_node(_state(world))
-
-
-def test_narrator_notifies_rendered_node_callback(monkeypatch) -> None:
-    monkeypatch.setattr(
-        graph_module,
-        "chat_completion_with_profile",
-        lambda _profile_id, messages, **kwargs: '{"prose": "阿璃按下桥闸，追兵被阻断。", "style_notes": "克制"}',
-    )
-    monkeypatch.setattr(graph_module, "get_last_llm_call_metadata", lambda: None)
-    monkeypatch.setattr(
-        graph_module,
-        "judge_ai_prose_ticks",
-        lambda prose: {
-            "parse_status": "ok",
-            "error": None,
-            "applicable": True,
-            "score": 2.0,
-            "evidence_quote": "",
-            "rule_hit": "",
-            "reasoning": "",
-        },
-    )
-
-    world = WorldState(title="测试世界", premise="断桥守卫战")
-    alice = Character(name="阿璃", personality="冷静", goals=["守住断桥"])
-    world.add_character(alice)
-    node = StoryNode(
-        title="断桥落闸",
-        description="阿璃按下断桥闸机。",
-        character_ids=[str(alice.id)],
-    )
-    world.add_node(node)
-    world.current_node_id = str(node.id)
-    world.tick = 1
-    observed: list[tuple[str, int, str | None]] = []
-
-    narrator_node(
-        _state(
-            world,
-            streaming_callbacks={
-                "on_node_rendered": lambda rendered_node, rendered_world: observed.append(
-                    (
-                        str(rendered_node.id),
-                        rendered_world.tick,
-                        rendered_node.rendered_text,
-                    )
-                )
-            },
-        )
-    )
-
-    assert observed == [(str(node.id), 1, "阿璃按下桥闸，追兵被阻断。")]
-
-
-def test_narrator_rerenders_once_on_ai_prose_ticks(monkeypatch) -> None:
-    outputs = [
-        '{"prose": "宛如一座雕像，仿佛永不倒下的旗帜。", "style_notes": "bad"}',
-        '{"prose": "阿璃扣住铁链，桥闸落下。追兵的火把停在雾外。", "style_notes": "strict"}',
-    ]
-
-    def fake_chat_completion(_profile_id, messages, **kwargs):  # type: ignore[no-untyped-def]
-        return outputs.pop(0)
-
-    checks = [
-        {
-            "parse_status": "ok",
-            "error": None,
-            "applicable": True,
-            "score": 8.5,
-            "evidence_quote": "宛如一座雕像",
-            "rule_hit": "ai_prose_ticks.over_metaphor",
-            "reasoning": "过度比喻",
-        },
-        {
-            "parse_status": "ok",
-            "error": None,
-            "applicable": True,
-            "score": 2.0,
-            "evidence_quote": "",
-            "rule_hit": "",
-            "reasoning": "",
-        },
-    ]
-
-    monkeypatch.setattr(
-        graph_module, "chat_completion_with_profile", fake_chat_completion
-    )
-    monkeypatch.setattr(graph_module, "get_last_llm_call_metadata", lambda: None)
-    monkeypatch.setattr(
-        graph_module, "judge_ai_prose_ticks", lambda prose: checks.pop(0)
-    )
-
-    world = WorldState(title="测试世界", premise="断桥守卫战")
-    alice = Character(name="阿璃", personality="冷静", goals=["守住断桥"])
-    world.add_character(alice)
-    node = StoryNode(
-        title="断桥落闸",
-        description="阿璃按下断桥闸机。",
-        character_ids=[str(alice.id)],
-    )
-    world.add_node(node)
-    world.current_node_id = str(node.id)
-    world.tick = 1
-
-    result = narrator_node(_state(world))
-
-    rendered = result["world"].get_node(str(node.id))
-    assert rendered is not None
-    assert rendered.rendered_text == "阿璃扣住铁链，桥闸落下。追兵的火把停在雾外。"
-    check = rendered.metadata["narrator_ai_prose_ticks_check"]
-    assert check["initial_hit"] is True
-    assert check["rerendered"] is True
-    assert check["final_hit"] is False
-
-
-def test_narrator_keeps_render_when_ai_prose_judge_fails(monkeypatch) -> None:
-    monkeypatch.setattr(
-        graph_module,
-        "chat_completion_with_profile",
-        lambda _profile_id, messages, **kwargs: '{"prose": "阿璃扣住铁链，桥闸落下。", "style_notes": "clean"}',
-    )
-    monkeypatch.setattr(graph_module, "get_last_llm_call_metadata", lambda: None)
-    monkeypatch.setattr(
-        graph_module,
-        "judge_ai_prose_ticks",
-        lambda prose: {
-            "parse_status": "parse_failed",
-            "error": "RuntimeError: judge unavailable",
-            "applicable": None,
-            "score": None,
-            "evidence_quote": "",
-            "rule_hit": "",
-            "reasoning": "",
-        },
-    )
-
-    world = WorldState(title="测试世界", premise="断桥守卫战")
-    alice = Character(name="阿璃", personality="冷静", goals=["守住断桥"])
-    world.add_character(alice)
-    node = StoryNode(
-        title="断桥落闸",
-        description="阿璃按下断桥闸机。",
-        character_ids=[str(alice.id)],
-    )
-    world.add_node(node)
-    world.current_node_id = str(node.id)
-    world.tick = 1
-
-    result = narrator_node(_state(world))
-
-    rendered = result["world"].get_node(str(node.id))
-    assert rendered is not None
-    assert rendered.rendered_text == "阿璃扣住铁链，桥闸落下。"
-    check = rendered.metadata["narrator_ai_prose_ticks_check"]
-    assert check["initial_hit"] is False
-    assert check["rerendered"] is False
-    assert check["initial"]["error"] == "RuntimeError: judge unavailable"
 
 
 def test_intervention_frequency_every_third_tick(monkeypatch) -> None:
