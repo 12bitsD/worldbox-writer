@@ -98,6 +98,10 @@ def test_isolated_actor_runtime_salvages_plain_text_intent() -> None:
         objective="让阿璃逼近伏击真相",
         spotlight_character_ids=[str(alice.id)],
     )
+    samples: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+
+    def collect_sample(*args: Any, **kwargs: Any) -> None:
+        samples.append((args, kwargs))
 
     result = run_isolated_actor_runtime(
         world,
@@ -107,12 +111,14 @@ def test_isolated_actor_runtime_salvages_plain_text_intent() -> None:
             "阿璃拔出断桥上的旧符钉，逼迫白夜解释昨夜的伏击。"
         ),
         metadata_func=lambda: {},
-        collect_sample_func=lambda *_args, **_kwargs: None,
+        collect_sample_func=collect_sample,
         load_prompt_template_func=lambda *_args, **_kwargs: "ACTOR SYSTEM",
     )
 
     assert result.action_intents[0].metadata["synthetic"] is False
     assert "旧符钉" in result.action_intents[0].summary
+    assert len(samples) == 1
+    assert "旧符钉" in samples[0][1]["raw_output"]
 
 
 def test_isolated_actor_runtime_empty_completion_uses_story_forward_fallback() -> None:
@@ -125,6 +131,10 @@ def test_isolated_actor_runtime_empty_completion_uses_story_forward_fallback() -
         objective="让阿璃逼近伏击真相",
         spotlight_character_ids=[str(alice.id)],
     )
+    samples: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+
+    def collect_sample(*args: Any, **kwargs: Any) -> None:
+        samples.append((args, kwargs))
 
     result = run_isolated_actor_runtime(
         world,
@@ -132,7 +142,7 @@ def test_isolated_actor_runtime_empty_completion_uses_story_forward_fallback() -
         scene_plan=scene_plan,
         chat_completion_func=lambda _profile_id, _messages: "",
         metadata_func=lambda: {},
-        collect_sample_func=lambda *_args, **_kwargs: None,
+        collect_sample_func=collect_sample,
         load_prompt_template_func=lambda *_args, **_kwargs: "ACTOR SYSTEM",
     )
 
@@ -140,3 +150,4 @@ def test_isolated_actor_runtime_empty_completion_uses_story_forward_fallback() -
     assert intent.metadata["synthetic"] is True
     assert "调查断桥" in intent.summary
     assert "让阿璃逼近伏击真相" in intent.summary
+    assert samples == []

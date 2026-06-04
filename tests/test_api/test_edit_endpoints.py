@@ -4,17 +4,20 @@ Uses FastAPI TestClient, no LLM required.
 """
 
 import time
+from typing import Any, Callable
 
 import pytest
 from fastapi.testclient import TestClient
 
 import worldbox_writer.api.server as server_module
+from worldbox_writer.api.schemas import CreateBranchRequest
 from worldbox_writer.api.server import (
     SimulationSession,
     _restore_world_at_node,
     _sessions,
     app,
 )
+from worldbox_writer.api.services.branch_service import BranchService
 from worldbox_writer.api.services.simulation_service import SimulationService
 from worldbox_writer.core.dual_loop import SceneScript
 from worldbox_writer.core.models import Character, StoryNode, WorldState
@@ -1115,12 +1118,19 @@ class TestBranchingAPI:
         assert [node["id"] for node in body["nodes"]] == [source_node_id]
 
     def test_create_branch_can_continue_without_polluting_main(
-        self, client, branchable_session, monkeypatch
+        self, branchable_session
     ):
         sim_id, source_node_id, main_latest_node_id = branchable_session
 
-        def fake_run_simulation(**kwargs):
-            world = kwargs["initial_world"].model_copy(deep=True)
+        class ImmediateLoop:
+            def run_in_executor(
+                self, executor: object, func: Callable[..., Any], *args: Any
+            ) -> Any:
+                return func(*args)
+
+        def fake_run_simulation_sync(session: SimulationSession) -> None:
+            assert session.world is not None
+            world = session.world.model_copy(deep=True)
             new_node = StoryNode(
                 title="分支续跑",
                 description="支线已经继续推进",
@@ -1133,31 +1143,25 @@ class TestBranchingAPI:
             world.current_node_id = str(new_node.id)
             world.advance_tick()
             new_node.metadata["tick"] = world.tick
-            kwargs["on_node_rendered"](new_node, world)
-            kwargs["on_telemetry"](
-                {
-                    "tick": world.tick,
-                    "agent": "simulation",
-                    "stage": "branch_progressed",
-                    "message": "支线已继续推进",
-                    "payload": {"node_id": str(new_node.id)},
-                }
+            session.nodes_rendered.append(
+                _rendered_node_payload(new_node, world.tick, new_node.rendered_text)
             )
             world.is_complete = True
-            return world
+            session.world = world
+            session.status = "complete"
 
-        monkeypatch.setattr(server_module, "run_simulation", fake_run_simulation)
-
-        res = client.post(
-            f"/api/simulate/{sim_id}/branch",
-            json={
-                "source_node_id": source_node_id,
-                "continue_simulation": True,
-            },
+        response = BranchService(
+            run_simulation_sync=fake_run_simulation_sync
+        ).create_branch(
+            sim_id,
+            CreateBranchRequest(
+                source_node_id=source_node_id,
+                continue_simulation=True,
+            ),
+            ImmediateLoop(),
         )
 
-        assert res.status_code == 200
-        branch_id = res.json()["world"]["active_branch_id"]
+        branch_id = response["world"]["active_branch_id"]
 
         for _ in range(20):
             session = _sessions[sim_id]
