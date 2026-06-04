@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, NoReturn, Optional
 
 from worldbox_writer.core.dual_loop import (
     ActionIntent,
@@ -27,18 +27,38 @@ def _llm_fields(metadata: Optional[dict[str, Any]]) -> dict[str, Any]:
     return {"request_id": metadata["request_id"]} if metadata else {}
 
 
+def _no_llm_metadata() -> None:
+    return None
+
+
+def _unexpected_runtime(*_args: Any, **_kwargs: Any) -> IsolatedActorRuntimeResult:
+    raise AssertionError("isolated actor runtime should not be called")
+
+
+def _unexpected_critic_factory() -> NoReturn:
+    raise AssertionError("critic factory should not be called")
+
+
+def _unexpected_gm_factory() -> NoReturn:
+    raise AssertionError("GM factory should not be called")
+
+
+def _unexpected_chat_completion(*_args: Any, **_kwargs: Any) -> str:
+    raise AssertionError("actor event completion should not be called")
+
+
 def test_run_actor_turn_returns_quiet_event_when_no_alive_characters() -> None:
     result = run_actor_turn(
         WorldState(title="测试世界", premise="测试前提"),
         MemoryManager(),
         scene_plan=None,
         runtime_mode="runtime-test",
-        run_runtime_func=lambda *_args, **_kwargs: None,
-        critic_factory=lambda: None,
-        gm_factory=lambda: None,
+        run_runtime_func=_unexpected_runtime,
+        critic_factory=_unexpected_critic_factory,
+        gm_factory=_unexpected_gm_factory,
         dual_loop_enabled_func=lambda: False,
-        chat_completion_func=lambda *_args, **_kwargs: "unused",
-        metadata_func=lambda: None,
+        chat_completion_func=_unexpected_chat_completion,
+        metadata_func=_no_llm_metadata,
         llm_telemetry_fields_func=_llm_fields,
         alive_characters_func=lambda _world: [],
     )
@@ -69,9 +89,9 @@ def test_run_actor_turn_uses_legacy_actor_event_path() -> None:
         MemoryManager(),
         scene_plan=scene_plan,
         runtime_mode="runtime-test",
-        run_runtime_func=lambda *_args, **_kwargs: None,
-        critic_factory=lambda: None,
-        gm_factory=lambda: None,
+        run_runtime_func=_unexpected_runtime,
+        critic_factory=_unexpected_critic_factory,
+        gm_factory=_unexpected_gm_factory,
         dual_loop_enabled_func=lambda: False,
         chat_completion_func=lambda profile_id, messages: " 阿璃观察断桥。 ",
         metadata_func=lambda: {"request_id": "legacy-1"},
@@ -131,6 +151,9 @@ def test_run_actor_turn_uses_runtime_bridge_path() -> None:
     def fake_bridge(**kwargs: Any) -> ActorRuntimeBridgeResult:
         assert kwargs["scene_plan"] is scene_plan
         assert kwargs["runtime_mode"] == "runtime-test"
+        assert kwargs["run_runtime_func"] is _unexpected_runtime
+        assert kwargs["critic_factory"] is _unexpected_critic_factory
+        assert kwargs["gm_factory"] is _unexpected_gm_factory
         return ActorRuntimeBridgeResult(
             runtime_result=IsolatedActorRuntimeResult(
                 action_intents=[intent],
@@ -148,12 +171,12 @@ def test_run_actor_turn_uses_runtime_bridge_path() -> None:
         MemoryManager(),
         scene_plan=scene_plan,
         runtime_mode="runtime-test",
-        run_runtime_func=lambda *_args, **_kwargs: None,
-        critic_factory=lambda: None,
-        gm_factory=lambda: None,
+        run_runtime_func=_unexpected_runtime,
+        critic_factory=_unexpected_critic_factory,
+        gm_factory=_unexpected_gm_factory,
         dual_loop_enabled_func=lambda: True,
-        chat_completion_func=lambda *_args, **_kwargs: "unused",
-        metadata_func=lambda: None,
+        chat_completion_func=_unexpected_chat_completion,
+        metadata_func=_no_llm_metadata,
         llm_telemetry_fields_func=_llm_fields,
         run_actor_runtime_bridge_func=lambda *_args, **kwargs: fake_bridge(**kwargs),
     )

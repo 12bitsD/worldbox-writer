@@ -43,7 +43,7 @@ __all__ = [
 
 ChatCompletionFunc = Callable[..., str]
 MetadataFunc = Callable[[], Optional[dict[str, Any]]]
-CollectSampleFunc = Callable[..., None]
+CollectSampleFunc = Callable[..., Any]
 InvokeActorIntentFunc = Callable[..., tuple[ActionIntent, PromptTrace]]
 
 

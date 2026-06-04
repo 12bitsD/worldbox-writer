@@ -97,9 +97,9 @@ def run_node_lifecycle(
     max_ticks: int,
     scene_plan: Optional[ScenePlan] = None,
     scene_script: Optional[SceneScript] = None,
-    action_intents: Optional[Iterable[ActionIntent]] = None,
-    intent_critiques: Optional[Iterable[IntentCritique]] = None,
-    prompt_traces: Optional[Iterable[PromptTrace]] = None,
+    action_intents: Iterable[ActionIntent] = (),
+    intent_critiques: Iterable[IntentCritique] = (),
+    prompt_traces: Iterable[PromptTrace] = (),
     detector_factory: DetectorFactory,
     llm_telemetry_fields_func: LlmTelemetryFieldsFunc,
     commit_story_node_func: CommitStoryNodeFunc = commit_story_node,
@@ -129,9 +129,9 @@ def run_node_lifecycle(
             telemetry_events=telemetry_events,
         )
 
-    action_intents_list = list(action_intents or [])
-    intent_critiques_list = list(intent_critiques or [])
-    prompt_traces_list = list(prompt_traces or [])
+    action_intents_list = list(action_intents)
+    intent_critiques_list = list(intent_critiques)
+    prompt_traces_list = list(prompt_traces)
     commit_result = commit_story_node_func(
         world,
         candidate,

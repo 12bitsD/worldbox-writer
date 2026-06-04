@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional
 
+import pytest
+
 from worldbox_writer.core.dual_loop import SceneBeat, ScenePlan, SceneScript
 from worldbox_writer.core.models import Character, WorldState
 from worldbox_writer.engine.services.node_lifecycle_service import (
@@ -32,13 +34,24 @@ class FakeDetector:
         return self.signal
 
 
-def test_signal_requires_intervention_respects_frequency_gate() -> None:
-    signal = FakeSignal(urgency="high")
-
-    assert signal_requires_intervention(signal, tick=1) is True
-    assert signal_requires_intervention(signal, tick=2) is False
-    assert signal_requires_intervention(FakeSignal(urgency="low"), tick=1) is False
-    assert signal_requires_intervention(None, tick=1) is False
+@pytest.mark.parametrize(
+    ("signal", "tick", "expected"),
+    [
+        (FakeSignal(urgency="high"), 1, True),
+        (FakeSignal(urgency="high"), 2, False),
+        (FakeSignal(urgency="high"), 3, False),
+        (FakeSignal(urgency="critical"), 4, True),
+        (FakeSignal(urgency="critical"), 5, False),
+        (FakeSignal(urgency="low"), 1, False),
+        (None, 1, False),
+    ],
+)
+def test_signal_requires_intervention_respects_frequency_gate(
+    signal: Optional[FakeSignal],
+    tick: int,
+    expected: bool,
+) -> None:
+    assert signal_requires_intervention(signal, tick=tick) is expected
 
 
 def test_run_node_lifecycle_skips_unvalidated_candidate() -> None:

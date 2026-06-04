@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 
 
 def parse_json_object(
@@ -25,7 +25,7 @@ def parse_json_object_or_raise(content: Any, *, message: str) -> dict[str, Any]:
     parsed = _parse_json_object_or_sentinel(content, sentinel=sentinel)
     if parsed is sentinel:
         raise ValueError(message)
-    return parsed
+    return cast(dict[str, Any], parsed)
 
 
 def _parse_json_object_or_sentinel(content: Any, *, sentinel: object) -> Any:

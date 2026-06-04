@@ -87,9 +87,7 @@ def initial_simulation_state(
         initialized = False
         world_builder_completed = False
 
-    if world.pending_intervention and intervention_callback:
-        user_input = intervention_callback(world.intervention_context)
-        world.resolve_intervention(user_input)
+    resolve_pending_intervention(world, intervention_callback)
 
     return {
         "world": world,
@@ -116,6 +114,20 @@ def initial_simulation_state(
             on_telemetry=on_telemetry,
         ),
     }
+
+
+def resolve_pending_intervention(
+    world: WorldState,
+    intervention_callback: Optional[InterventionCallback],
+) -> bool:
+    if not world.pending_intervention or intervention_callback is None:
+        return False
+    if world.intervention_context is None:
+        raise ValueError("Pending intervention is missing intervention_context")
+
+    user_input = intervention_callback(world.intervention_context)
+    world.resolve_intervention(user_input)
+    return True
 
 
 def ensure_world_details(
@@ -172,9 +184,7 @@ def run_simulation_service(
         result = cast(SimulationState, app.invoke(state))
         final_world = result["world"]
 
-        if final_world.pending_intervention and intervention_callback:
-            user_input = intervention_callback(final_world.intervention_context)
-            final_world.resolve_intervention(user_input)
+        if resolve_pending_intervention(final_world, intervention_callback):
             state = cast(
                 SimulationState,
                 {**result, "world": final_world, "needs_intervention": False},

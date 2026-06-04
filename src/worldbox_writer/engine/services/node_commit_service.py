@@ -88,9 +88,9 @@ def commit_story_node(
     *,
     scene_plan: Optional[ScenePlan] = None,
     scene_script: Optional[SceneScript] = None,
-    action_intents: Optional[Iterable[ActionIntent]] = None,
-    intent_critiques: Optional[Iterable[IntentCritique]] = None,
-    prompt_traces: Optional[Iterable[PromptTrace]] = None,
+    action_intents: Iterable[ActionIntent] = (),
+    intent_critiques: Iterable[IntentCritique] = (),
+    prompt_traces: Iterable[PromptTrace] = (),
     select_character_ids_func: SelectCharacterIdsFunc = select_character_ids_for_event,
     apply_relationship_updates_func: ApplyRelationshipUpdatesFunc = (
         apply_relationship_updates
@@ -139,19 +139,19 @@ def commit_story_node(
         new_node.metadata["scene_script"] = scene_script_payload
         world.metadata["last_committed_scene_script"] = scene_script_payload
 
-    action_intent_items = list(action_intents or [])
+    action_intent_items = list(action_intents)
     if action_intent_items:
         new_node.metadata["action_intents"] = [
             intent.model_dump(mode="json") for intent in action_intent_items
         ]
 
-    intent_critique_items = list(intent_critiques or [])
+    intent_critique_items = list(intent_critiques)
     if intent_critique_items:
         new_node.metadata["intent_critiques"] = [
             critique.model_dump(mode="json") for critique in intent_critique_items
         ]
 
-    prompt_trace_items = list(prompt_traces or [])
+    prompt_trace_items = list(prompt_traces)
     if prompt_trace_items:
         new_node.metadata["prompt_traces"] = [
             trace.model_dump(mode="json") for trace in prompt_trace_items
