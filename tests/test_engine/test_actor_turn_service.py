@@ -147,13 +147,25 @@ def test_run_actor_turn_uses_runtime_bridge_path() -> None:
         accepted_intent_ids=[intent.intent_id],
         participating_character_ids=[str(alice.id)],
     )
+    expected_scene_plan = scene_plan
 
-    def fake_bridge(**kwargs: Any) -> ActorRuntimeBridgeResult:
-        assert kwargs["scene_plan"] is scene_plan
-        assert kwargs["runtime_mode"] == "runtime-test"
-        assert kwargs["run_runtime_func"] is _unexpected_runtime
-        assert kwargs["critic_factory"] is _unexpected_critic_factory
-        assert kwargs["gm_factory"] is _unexpected_gm_factory
+    def fake_bridge(
+        bridge_world: WorldState,
+        bridge_memory: MemoryManager,
+        *,
+        scene_plan: ScenePlan,
+        runtime_mode: str,
+        run_runtime_func: Any,
+        critic_factory: Any,
+        gm_factory: Any,
+    ) -> ActorRuntimeBridgeResult:
+        assert bridge_world is world
+        assert isinstance(bridge_memory, MemoryManager)
+        assert scene_plan is expected_scene_plan
+        assert runtime_mode == "runtime-test"
+        assert run_runtime_func is _unexpected_runtime
+        assert critic_factory is _unexpected_critic_factory
+        assert gm_factory is _unexpected_gm_factory
         return ActorRuntimeBridgeResult(
             runtime_result=IsolatedActorRuntimeResult(
                 action_intents=[intent],
@@ -178,7 +190,7 @@ def test_run_actor_turn_uses_runtime_bridge_path() -> None:
         chat_completion_func=_unexpected_chat_completion,
         metadata_func=_no_llm_metadata,
         llm_telemetry_fields_func=_llm_fields,
-        run_actor_runtime_bridge_func=lambda *_args, **kwargs: fake_bridge(**kwargs),
+        run_actor_runtime_bridge_func=fake_bridge,
     )
 
     assert result.state_update["candidate_event"] == "阿璃决定守住断桥入口"
