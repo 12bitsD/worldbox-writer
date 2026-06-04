@@ -21,8 +21,11 @@ def setup_db(tmp_path, monkeypatch):
 
 
 def test_simulation_service_raises_framework_independent_api_error() -> None:
+    def unexpected_run_simulation(**_kwargs):
+        raise AssertionError("run_simulation should not be called")
+
     service = SimulationService(
-        run_simulation_func=lambda **_kwargs: None,
+        run_simulation_func=unexpected_run_simulation,
         sessions={},
     )
 

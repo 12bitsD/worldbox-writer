@@ -61,7 +61,7 @@ def emit_telemetry(
     duration_ms: Optional[int] = None,
 ) -> None:
     """Emit a user-visible telemetry event when a callback is configured."""
-    callbacks = state.get("streaming_callbacks") or {}
+    callbacks = state["streaming_callbacks"] or {}
     on_telemetry = callbacks.get("on_telemetry")
     if not on_telemetry:
         return
@@ -76,7 +76,7 @@ def emit_telemetry(
             "level": level,
             "message": message,
             "payload": merged_payload,
-            "trace_id": trace_id or state.get("trace_id", ""),
+            "trace_id": trace_id or state["trace_id"],
             "request_id": request_id,
             "parent_event_id": parent_event_id,
             "span_kind": span_kind,

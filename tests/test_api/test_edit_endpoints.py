@@ -12,10 +12,10 @@ import worldbox_writer.api.server as server_module
 from worldbox_writer.api.server import (
     SimulationSession,
     _restore_world_at_node,
-    _run_simulation_sync,
     _sessions,
     app,
 )
+from worldbox_writer.api.services.simulation_service import SimulationService
 from worldbox_writer.core.dual_loop import SceneScript
 from worldbox_writer.core.models import Character, StoryNode, WorldState
 from worldbox_writer.storage.db import (
@@ -966,7 +966,7 @@ class TestIntervene:
 
 
 class TestTelemetryPipeline:
-    def test_run_simulation_sync_records_telemetry_events(self, monkeypatch):
+    def test_run_sync_records_telemetry_events(self):
         """Runner should convert emitted telemetry into persisted session events."""
 
         def fake_run_simulation(**kwargs):
@@ -986,10 +986,8 @@ class TestTelemetryPipeline:
             world = WorldState(title="测试世界", premise="测试前提")
             return world
 
-        monkeypatch.setattr(server_module, "run_simulation", fake_run_simulation)
-
         session = SimulationSession(sim_id="telemetry", premise="测试前提", max_ticks=1)
-        _run_simulation_sync(session)
+        SimulationService(run_simulation_func=fake_run_simulation).run_sync(session)
 
         assert session.status == "complete"
         assert len(session.telemetry_events) >= 2
