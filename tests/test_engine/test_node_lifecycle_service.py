@@ -121,6 +121,54 @@ def test_run_node_lifecycle_commits_reflections_and_completion() -> None:
     ]
 
 
+def test_run_node_lifecycle_commits_named_character_ids_and_relationships() -> None:
+    world = WorldState(title="测试世界", premise="测试前提")
+    alice = Character(name="阿璃", personality="冷静")
+    bob = Character(name="白夜", personality="执拗")
+    carol = Character(name="赤霄", personality="沉默")
+    for character in (alice, bob, carol):
+        world.add_character(character)
+
+    result = run_node_lifecycle(
+        world,
+        MemoryManager(),
+        candidate="阿璃与白夜在断桥边和解，并决定联手前行。",
+        validation_passed=True,
+        max_ticks=3,
+        detector_factory=lambda: FakeDetector(),
+        llm_telemetry_fields_func=lambda metadata: {},
+    )
+
+    committed = result.world.get_node(result.world.current_node_id)
+    assert committed is not None
+    assert committed.character_ids == [str(alice.id), str(bob.id)]
+    rel = result.world.characters[str(alice.id)].relationships[str(bob.id)]
+    assert rel.affinity > 0
+
+
+def test_run_node_lifecycle_skips_relationships_without_named_participants() -> None:
+    world = WorldState(title="测试世界", premise="测试前提")
+    alice = Character(name="阿璃", personality="冷静")
+    bob = Character(name="白夜", personality="执拗")
+    carol = Character(name="赤霄", personality="沉默")
+    for character in (alice, bob, carol):
+        world.add_character(character)
+
+    result = run_node_lifecycle(
+        world,
+        MemoryManager(),
+        candidate="他们在雨夜中和解，但谁也没有说出名字。",
+        validation_passed=True,
+        max_ticks=3,
+        detector_factory=lambda: FakeDetector(),
+        llm_telemetry_fields_func=lambda metadata: {},
+    )
+
+    assert result.world.characters[str(alice.id)].relationships == {}
+    assert result.world.characters[str(bob.id)].relationships == {}
+    assert result.world.characters[str(carol.id)].relationships == {}
+
+
 def test_run_node_lifecycle_requests_intervention_on_allowed_tick() -> None:
     world = WorldState(title="测试世界", premise="测试前提")
     alice = Character(name="阿璃", personality="冷静")
