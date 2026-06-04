@@ -32,8 +32,8 @@ class FakeWorldBuilder:
         return world
 
 
-def test_streaming_callbacks_payload_is_none_without_callbacks() -> None:
-    assert streaming_callbacks_payload() is None
+def test_streaming_callbacks_payload_is_empty_without_callbacks() -> None:
+    assert streaming_callbacks_payload() == {}
 
 
 def test_initial_simulation_state_resolves_pending_intervention_on_copy() -> None:
@@ -69,7 +69,7 @@ def test_initial_simulation_state_resolves_pending_intervention_on_copy() -> Non
     assert state["action_intents"] == []
     assert state["intent_critiques"] == []
     assert state["prompt_traces"] == []
-    assert state["streaming_callbacks"] is None
+    assert state["streaming_callbacks"] == {}
 
 
 def test_run_simulation_service_resumes_after_intervention_and_enriches_world() -> None:

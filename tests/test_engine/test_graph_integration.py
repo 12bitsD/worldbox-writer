@@ -45,7 +45,7 @@ class TestBuildGraph:
             "error": "",
             "sim_id": "sim-integration",
             "trace_id": "trace-integration",
-            "streaming_callbacks": None,
+            "streaming_callbacks": {},
         }
         result = app.invoke(initial_state)
         assert result is not None

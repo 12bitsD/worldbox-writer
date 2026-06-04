@@ -21,7 +21,7 @@ def _state(world: WorldState, **overrides: Any) -> Dict[str, Any]:
         "error": "",
         "sim_id": "sim-progress",
         "trace_id": "trace-progress",
-        "streaming_callbacks": None,
+        "streaming_callbacks": {},
     }
     state.update(overrides)
     return state

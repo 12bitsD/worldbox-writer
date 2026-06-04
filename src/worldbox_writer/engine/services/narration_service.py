@@ -261,7 +261,7 @@ class NarrationService:
 
         messages = self._build_messages(world.premise, narrator_input)
 
-        callbacks = state["streaming_callbacks"] or {}
+        callbacks = state["streaming_callbacks"]
         on_start_cb = callbacks.get("on_start")
         on_end_cb = callbacks.get("on_end")
 

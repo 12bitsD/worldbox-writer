@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from typing_extensions import NotRequired, TypedDict
 
@@ -36,4 +36,4 @@ class SimulationState(TypedDict):
     error: str
     sim_id: str
     trace_id: str
-    streaming_callbacks: Optional[Dict]
+    streaming_callbacks: Dict[str, Any]

@@ -61,7 +61,7 @@ def emit_telemetry(
     duration_ms: Optional[int] = None,
 ) -> None:
     """Emit a user-visible telemetry event when a callback is configured."""
-    callbacks = state["streaming_callbacks"] or {}
+    callbacks = state["streaming_callbacks"]
     on_telemetry = callbacks.get("on_telemetry")
     if not on_telemetry:
         return

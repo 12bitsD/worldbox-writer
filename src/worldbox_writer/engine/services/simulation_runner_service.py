@@ -37,7 +37,7 @@ def streaming_callbacks_payload(
     on_streaming_start: Optional[StreamingStartCallback] = None,
     on_streaming_end: Optional[StreamingEndCallback] = None,
     on_telemetry: Optional[TelemetryCallback] = None,
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any]:
     if not any(
         callback is not None
         for callback in (
@@ -48,7 +48,7 @@ def streaming_callbacks_payload(
             on_telemetry,
         )
     ):
-        return None
+        return {}
 
     return {
         "on_token": on_streaming_token,
