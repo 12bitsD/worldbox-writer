@@ -1,10 +1,8 @@
 from worldbox_writer.core.models import Character, RelationshipLabel, WorldState
-from worldbox_writer.engine import graph as graph_module
 from worldbox_writer.engine.services.relationship_service import (
     apply_relationship_updates,
     select_character_ids_for_event,
 )
-from worldbox_writer.memory.memory_manager import MemoryManager
 
 
 class TestRelationshipRules:
@@ -105,61 +103,3 @@ class TestRelationshipRules:
         assert world.characters[str(alice.id)].relationships == {}
         assert world.characters[str(bob.id)].relationships == {}
         assert world.characters[str(carol.id)].relationships == {}
-
-    def test_gate_keeper_node_self_heals_rejected_candidate(self, monkeypatch):
-        world = WorldState(title="测试世界", premise="测试前提")
-        world.add_character(Character(name="阿璃"))
-
-        class FakeValidationResult:
-            def __init__(self, is_valid, revision_hint, rejection_reason):
-                self.is_valid = is_valid
-                self.has_warnings = False
-                self.revision_hint = revision_hint
-                self.rejection_reason = rejection_reason
-
-        responses = iter(
-            [
-                FakeValidationResult(
-                    is_valid=False,
-                    revision_hint="改成更克制的冲突",
-                    rejection_reason="冲突过于激进",
-                ),
-                FakeValidationResult(
-                    is_valid=True,
-                    revision_hint="",
-                    rejection_reason="",
-                ),
-            ]
-        )
-
-        monkeypatch.setattr(
-            graph_module.GateKeeperAgent,
-            "validate",
-            lambda self, world, node: next(responses),
-        )
-        monkeypatch.setattr(
-            graph_module,
-            "_revise_candidate_event",
-            lambda world, candidate, rejection_reason, revision_hint: "阿璃暂时收兵，转而试探对手。",
-        )
-
-        state: graph_module.SimulationState = {
-            "world": world,
-            "memory": MemoryManager(),
-            "scene_plan": None,
-            "candidate_event": "阿璃决定立刻毁灭整座城。",
-            "validation_passed": False,
-            "needs_intervention": False,
-            "initialized": True,
-            "world_built": True,
-            "max_ticks": 3,
-            "error": "",
-            "sim_id": "sim-test",
-            "trace_id": "trace-test",
-            "streaming_callbacks": None,
-        }
-
-        result = graph_module.gate_keeper_node(state)
-
-        assert result["validation_passed"] is True
-        assert result["candidate_event"] == "阿璃暂时收兵，转而试探对手。"

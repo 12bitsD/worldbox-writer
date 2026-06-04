@@ -8,7 +8,7 @@ the candidate event to a settled SceneScript instead of raw intent concatenation
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from worldbox_writer.core.dual_loop import (
     ActionIntent,
@@ -78,10 +78,10 @@ class GMAgent:
         world: WorldState,
         scene_plan: ScenePlan,
         action_intents: List[ActionIntent],
-        intent_critiques: Optional[List[IntentCritique]] = None,
+        intent_critiques: List[IntentCritique],
     ) -> SceneScript:
         critique_lookup = {
-            critique.intent_id: critique for critique in intent_critiques or []
+            critique.intent_id: critique for critique in intent_critiques
         }
         accepted_intents = [
             intent

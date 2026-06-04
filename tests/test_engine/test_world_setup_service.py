@@ -83,19 +83,25 @@ def test_plan_next_scene_uses_current_node_description_for_memory_query() -> Non
         ) -> ScenePlan:
             assert plan_world is world
             assert memory_context == "memory context"
-            return ScenePlan(
+            plan = ScenePlan(
                 scene_id="scene-1",
                 title="第二幕",
                 objective="推进断桥调查",
                 narrative_pressure="intense",
                 spotlight_character_ids=["char-1"],
             )
+            plan_world.metadata["current_scene_plan"] = plan.model_dump(mode="json")
+            return plan
 
     result = plan_next_scene(world, memory, director_factory=FakeDirector)
 
     assert scene_planning_query(world) == "断桥旧事"
     assert captured == {"query": "断桥旧事", "max_entries": 6}
     assert result.state_update["scene_plan"].scene_id == "scene-1"
+    assert (
+        result.state_update["world"].metadata["current_scene_plan"]["scene_id"]
+        == "scene-1"
+    )
     assert result.telemetry_events[0].payload["spotlight_character_ids"] == ["char-1"]
 
 

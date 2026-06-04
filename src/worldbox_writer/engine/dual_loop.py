@@ -238,16 +238,14 @@ def build_scene_script(
     scene_plan: ScenePlan,
     action_intents: List[ActionIntent],
     *,
-    intent_critiques: Optional[List[IntentCritique]] = None,
+    intent_critiques: List[IntentCritique],
 ) -> SceneScript:
     current_node = (
         world.get_node(world.current_node_id) if world.current_node_id else None
     )
     summary = current_node.description if current_node else scene_plan.public_summary
     title = current_node.title if current_node else scene_plan.title
-    critique_lookup = {
-        critique.intent_id: critique for critique in intent_critiques or []
-    }
+    critique_lookup = {critique.intent_id: critique for critique in intent_critiques}
     accepted_intents = [
         intent
         for intent in action_intents

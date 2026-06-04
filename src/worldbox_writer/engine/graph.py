@@ -136,7 +136,7 @@ def director_node(state: SimulationState) -> Dict[str, Any]:
     world = state["world"]
     result = _initialize_world_skeleton(
         world,
-        initialized=state.get("initialized", False),
+        initialized=state["initialized"],
         director_factory=DirectorAgent,
         llm_telemetry_fields_func=_llm_telemetry_fields,
     )
@@ -182,7 +182,7 @@ def world_builder_node(state: SimulationState) -> Dict[str, Any]:
     world = state["world"]
     result = _enrich_world_settings(
         world,
-        world_built=state.get("world_built", False),
+        world_built=state["world_built"],
         world_builder_factory=WorldBuilderAgent,
         llm_telemetry_fields_func=_llm_telemetry_fields,
     )
@@ -204,7 +204,7 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
     """Actor Agent: generate next candidate story event based on world state."""
     world = state["world"]
     memory: MemoryManager = state["memory"]
-    scene_plan = state.get("scene_plan")
+    scene_plan = state["scene_plan"]
 
     result = _run_actor_turn(
         world,
@@ -241,7 +241,7 @@ def actor_node(state: SimulationState) -> Dict[str, Any]:
 def gate_keeper_node(state: SimulationState) -> Dict[str, Any]:
     """Gate Keeper: validate candidate event against active constraints."""
     world = state["world"]
-    candidate = state.get("candidate_event", "")
+    candidate = state["candidate_event"]
 
     result = _validate_candidate_event(
         world,
@@ -274,20 +274,20 @@ def node_detector_node(state: SimulationState) -> Dict[str, Any]:
     """Node Detector: commit candidate event as StoryNode, detect intervention need."""
     world = state["world"]
     memory: MemoryManager = state["memory"]
-    scene_plan = state.get("scene_plan")
+    scene_plan = state["scene_plan"]
     action_intents = state.get("action_intents", [])
     intent_critiques = state.get("intent_critiques", [])
     prompt_traces = state.get("prompt_traces", [])
     scene_script = state.get("scene_script")
-    candidate = state.get("candidate_event", "")
-    validation_passed = state.get("validation_passed", False)
+    candidate = state["candidate_event"]
+    validation_passed = state["validation_passed"]
 
     result = _run_node_lifecycle(
         world,
         memory,
         candidate=candidate,
         validation_passed=validation_passed,
-        max_ticks=state.get("max_ticks", 10),
+        max_ticks=state["max_ticks"],
         scene_plan=scene_plan,
         scene_script=scene_script,
         action_intents=action_intents,
@@ -356,12 +356,12 @@ def after_narrator(
 ) -> Literal["world_builder_node", "scene_director_node", "__end__"]:
     """After narrator: optionally enrich the world, then continue or end."""
     world = state["world"]
-    needs_intervention = state.get("needs_intervention", False)
+    needs_intervention = state["needs_intervention"]
 
     if needs_intervention:
         return "__end__"
 
-    if not state.get("world_built"):
+    if not state["world_built"]:
         return "world_builder_node"
 
     if world.is_complete:
@@ -375,7 +375,7 @@ def after_world_builder(
 ) -> Literal["scene_director_node", "__end__"]:
     """After deferred world enrichment: continue or finish."""
     world = state["world"]
-    needs_intervention = state.get("needs_intervention", False)
+    needs_intervention = state["needs_intervention"]
 
     if needs_intervention or world.is_complete:
         return "__end__"
