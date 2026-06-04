@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 import pytest
@@ -18,11 +18,7 @@ from worldbox_writer.memory.memory_manager import MemoryManager
 class FakeSignal:
     urgency: str
     context: str = "关键分歧点"
-    suggested_options: list[str] | None = None
-
-    def __post_init__(self) -> None:
-        if self.suggested_options is None:
-            self.suggested_options = ["选项A", "选项B"]
+    suggested_options: list[str] = field(default_factory=lambda: ["选项A", "选项B"])
 
 
 class FakeDetector:

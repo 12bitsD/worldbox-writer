@@ -328,7 +328,6 @@ def _narration_service() -> NarrationService:
         ),
         judge_ai_prose_ticks_func=judge_ai_prose_ticks,
         load_prompt_template_func=load_prompt_template,
-        emit_telemetry_func=_emit_telemetry,
         llm_telemetry_fields_func=_llm_telemetry_fields,
         load_scene_script_func=_load_scene_script_for_node,
     )

@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, Optional
 
 from worldbox_writer.core.dual_loop import NarratorInput, SceneScript
 from worldbox_writer.core.models import StoryNode
+from worldbox_writer.engine.services.telemetry_service import emit_telemetry
 from worldbox_writer.engine.state import SimulationState
 from worldbox_writer.evals.llm_judge import (
     COMMITTEE_TOXIC_VETO_THRESHOLD,
@@ -172,10 +173,6 @@ def build_narrator_input_v2(
     )
 
 
-def _noop_emit_telemetry(*_args: Any, **_kwargs: Any) -> None:
-    return None
-
-
 def _empty_llm_telemetry_fields(
     _metadata: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
@@ -193,7 +190,7 @@ class NarrationService:
         judge_ai_prose_ticks_func: JudgeAiProseTicksFunc = judge_ai_prose_ticks,
         get_last_metadata_func: Optional[GetLastMetadataFunc] = None,
         load_prompt_template_func: LoadPromptTemplateFunc = load_prompt_template,
-        emit_telemetry_func: EmitTelemetryFunc = _noop_emit_telemetry,
+        emit_telemetry_func: EmitTelemetryFunc = emit_telemetry,
         llm_telemetry_fields_func: LlmTelemetryFieldsFunc = _empty_llm_telemetry_fields,
         load_scene_script_func: LoadSceneScriptFunc = load_scene_script_for_node,
     ) -> None:
