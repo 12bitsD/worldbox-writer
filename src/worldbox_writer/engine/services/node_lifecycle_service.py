@@ -49,8 +49,23 @@ class InterventionDetector(Protocol):
 
 DetectorFactory = Callable[[], InterventionDetector]
 LlmTelemetryFieldsFunc = Callable[[Optional[dict[str, Any]]], dict[str, Any]]
-CommitStoryNodeFunc = Callable[..., CommitStoryNodeResult]
 NodeImportanceFunc = Callable[[NodeType], float]
+
+
+class CommitStoryNodeFunc(Protocol):
+    def __call__(
+        self,
+        world: WorldState,
+        candidate: str,
+        *,
+        scene_plan: Optional[ScenePlan],
+        scene_script: Optional[SceneScript],
+        action_intents: Iterable[ActionIntent],
+        intent_critiques: Iterable[IntentCritique],
+        prompt_traces: Iterable[PromptTrace],
+        select_character_ids_func: SelectCharacterIdsFunc,
+        apply_relationship_updates_func: ApplyRelationshipUpdatesFunc,
+    ) -> CommitStoryNodeResult: ...
 
 
 @dataclass(frozen=True)

@@ -39,7 +39,16 @@ class SceneSettler(Protocol):
     ) -> SceneScript: ...
 
 
-RunRuntimeFunc = Callable[..., IsolatedActorRuntimeResult]
+class RunRuntimeFunc(Protocol):
+    def __call__(
+        self,
+        world: WorldState,
+        memory: MemoryManager,
+        *,
+        scene_plan: ScenePlan,
+    ) -> IsolatedActorRuntimeResult: ...
+
+
 CriticFactory = Callable[[], CriticReviewer]
 GmFactory = Callable[[], SceneSettler]
 
