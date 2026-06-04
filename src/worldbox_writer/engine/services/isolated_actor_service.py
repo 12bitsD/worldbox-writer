@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Protocol
 
 from worldbox_writer.core.dual_loop import (
     ActionIntent,
@@ -44,7 +44,21 @@ __all__ = [
 ChatCompletionFunc = Callable[..., str]
 MetadataFunc = Callable[[], Optional[dict[str, Any]]]
 CollectSampleFunc = Callable[..., Any]
-InvokeActorIntentFunc = Callable[..., tuple[ActionIntent, PromptTrace]]
+
+
+class InvokeActorIntentFunc(Protocol):
+    def __call__(
+        self,
+        character: Character,
+        world: WorldState,
+        *,
+        scene_plan: ScenePlan,
+        chat_completion_func: ChatCompletionFunc,
+        metadata_func: MetadataFunc,
+        memory: Optional[MemoryManager],
+        collect_sample_func: CollectSampleFunc,
+        load_prompt_template_func: LoadPromptTemplateFunc,
+    ) -> tuple[ActionIntent, PromptTrace]: ...
 
 
 @dataclass(frozen=True)
@@ -53,6 +67,29 @@ class IsolatedActorRuntimeResult:
 
     action_intents: list[ActionIntent]
     prompt_traces: list[PromptTrace]
+
+
+def _default_invoke_actor_intent(
+    character: Character,
+    world: WorldState,
+    *,
+    scene_plan: ScenePlan,
+    chat_completion_func: ChatCompletionFunc,
+    metadata_func: MetadataFunc,
+    memory: Optional[MemoryManager],
+    collect_sample_func: CollectSampleFunc,
+    load_prompt_template_func: LoadPromptTemplateFunc,
+) -> tuple[ActionIntent, PromptTrace]:
+    return invoke_isolated_actor_intent(
+        character,
+        world,
+        scene_plan=scene_plan,
+        chat_completion_func=chat_completion_func,
+        metadata_func=metadata_func,
+        memory=memory,
+        collect_sample_func=collect_sample_func,
+        load_prompt_template_func=load_prompt_template_func,
+    )
 
 
 def run_isolated_actor_runtime(
@@ -64,7 +101,7 @@ def run_isolated_actor_runtime(
     metadata_func: MetadataFunc,
     collect_sample_func: CollectSampleFunc = collect_sample,
     load_prompt_template_func: LoadPromptTemplateFunc = load_prompt_template,
-    invoke_intent_func: Optional[InvokeActorIntentFunc] = None,
+    invoke_intent_func: InvokeActorIntentFunc = _default_invoke_actor_intent,
     max_actors: int = 3,
 ) -> IsolatedActorRuntimeResult:
     """Run spotlight actors independently and collect structured intents."""
@@ -83,26 +120,17 @@ def run_isolated_actor_runtime(
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_index = {}
         for index, character in enumerate(selected_characters):
-            if invoke_intent_func is None:
-                future = executor.submit(
-                    invoke_isolated_actor_intent,
-                    character,
-                    world,
-                    scene_plan=scene_plan,
-                    memory=memory,
-                    chat_completion_func=chat_completion_func,
-                    metadata_func=metadata_func,
-                    collect_sample_func=collect_sample_func,
-                    load_prompt_template_func=load_prompt_template_func,
-                )
-            else:
-                future = executor.submit(
-                    invoke_intent_func,
-                    character,
-                    world,
-                    scene_plan=scene_plan,
-                    memory=memory,
-                )
+            future = executor.submit(
+                invoke_intent_func,
+                character,
+                world,
+                scene_plan=scene_plan,
+                memory=memory,
+                chat_completion_func=chat_completion_func,
+                metadata_func=metadata_func,
+                collect_sample_func=collect_sample_func,
+                load_prompt_template_func=load_prompt_template_func,
+            )
             future_to_index[future] = index
         for future in as_completed(future_to_index):
             index = future_to_index[future]

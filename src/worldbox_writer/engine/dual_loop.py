@@ -159,7 +159,6 @@ def run_isolated_actor_runtime(
         metadata_func=get_last_llm_call_metadata,
         collect_sample_func=collect_sample,
         load_prompt_template_func=load_prompt_template,
-        invoke_intent_func=invoke_isolated_actor_intent,
         max_actors=max_actors,
     )
 
