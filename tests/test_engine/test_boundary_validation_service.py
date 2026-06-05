@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from worldbox_writer.core.models import WorldState
+from worldbox_writer.core.models import StoryNode, WorldState
 from worldbox_writer.engine.services.boundary_validation_service import (
     REJECTED_CANDIDATE_PREFIX,
     validate_candidate_event,
@@ -23,7 +23,7 @@ class FakeValidator:
         self.last_call_metadata: Optional[dict[str, Any]] = None
         self.seen_descriptions: list[str] = []
 
-    def validate(self, world: WorldState, node):  # type: ignore[no-untyped-def]
+    def validate(self, _world: WorldState, node: StoryNode) -> FakeValidation:
         self.seen_descriptions.append(node.description)
         index = len(self.seen_descriptions)
         self.last_call_metadata = {"request_id": f"validation-{index}"}
@@ -34,6 +34,15 @@ def _llm_fields(metadata: Optional[dict[str, Any]]) -> dict[str, Any]:
     return {"request_id": metadata["request_id"]} if metadata else {}
 
 
+def _unexpected_revision(
+    _world: WorldState,
+    _candidate: str,
+    _rejection_reason: str,
+    _revision_hint: str,
+) -> str:
+    raise AssertionError("revision should not be generated")
+
+
 def test_validate_candidate_event_passes_without_candidate_update() -> None:
     validator = FakeValidator([FakeValidation(is_valid=True)])
 
@@ -41,7 +50,7 @@ def test_validate_candidate_event_passes_without_candidate_update() -> None:
         WorldState(title="测试世界", premise="测试前提"),
         "阿璃暂时观察局势。",
         validator_factory=lambda: validator,
-        revise_candidate_func=lambda *_args: "unused",
+        revise_candidate_func=_unexpected_revision,
         llm_telemetry_fields_func=_llm_fields,
         metadata_func=lambda: None,
     )
@@ -64,11 +73,19 @@ def test_validate_candidate_event_self_heals_rejected_candidate() -> None:
         ]
     )
 
+    def revise_candidate(
+        _world: WorldState,
+        _candidate: str,
+        _rejection_reason: str,
+        _revision_hint: str,
+    ) -> str:
+        return "阿璃暂时收兵，转而试探对手。"
+
     result = validate_candidate_event(
         WorldState(title="测试世界", premise="测试前提"),
         "阿璃决定毁掉整座城。",
         validator_factory=lambda: validator,
-        revise_candidate_func=lambda *_args: "阿璃暂时收兵，转而试探对手。",
+        revise_candidate_func=revise_candidate,
         llm_telemetry_fields_func=_llm_fields,
         metadata_func=lambda: {"request_id": "revision-1"},
     )
@@ -103,11 +120,19 @@ def test_validate_candidate_event_returns_rejected_candidate_after_attempts() ->
         ]
     )
 
+    def revise_candidate(
+        _world: WorldState,
+        _candidate: str,
+        _rejection_reason: str,
+        _revision_hint: str,
+    ) -> str:
+        return "阿璃改为摧毁整座城门。"
+
     result = validate_candidate_event(
         WorldState(title="测试世界", premise="测试前提"),
         "阿璃决定毁掉整座城。",
         validator_factory=lambda: validator,
-        revise_candidate_func=lambda *_args: "阿璃改为摧毁整座城门。",
+        revise_candidate_func=revise_candidate,
         llm_telemetry_fields_func=_llm_fields,
         metadata_func=lambda: {"request_id": "revision-1"},
         max_self_heal_attempts=1,

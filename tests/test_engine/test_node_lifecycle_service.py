@@ -6,7 +6,7 @@ from typing import Any, Optional
 import pytest
 
 from worldbox_writer.core.dual_loop import SceneBeat, ScenePlan, SceneScript
-from worldbox_writer.core.models import Character, WorldState
+from worldbox_writer.core.models import Character, StoryNode, WorldState
 from worldbox_writer.engine.services.node_lifecycle_service import (
     run_node_lifecycle,
     signal_requires_intervention,
@@ -26,7 +26,7 @@ class FakeDetector:
         self.signal = signal
         self.last_call_metadata = {"request_id": "detect-1"}
 
-    def detect(self, node, world):  # type: ignore[no-untyped-def]
+    def detect(self, _node: StoryNode, _world: WorldState) -> Optional[FakeSignal]:
         return self.signal
 
 
@@ -92,6 +92,24 @@ def test_run_node_lifecycle_commits_reflections_and_completion() -> None:
         ],
     )
 
+    def select_alice_character_ids(
+        _world: WorldState,
+        _event_description: str,
+        max_chars: int = 3,
+        *,
+        allow_alive_fallback: bool = True,
+    ) -> list[str]:
+        return [str(alice.id)]
+
+    def skip_relationship_updates(
+        _world: WorldState,
+        _character_ids: list[str],
+        _event_description: str,
+        *,
+        tick: int,
+    ) -> bool:
+        return False
+
     result = run_node_lifecycle(
         world,
         MemoryManager(),
@@ -102,8 +120,8 @@ def test_run_node_lifecycle_commits_reflections_and_completion() -> None:
         scene_script=scene_script,
         detector_factory=lambda: FakeDetector(),
         llm_telemetry_fields_func=lambda metadata: {},
-        select_character_ids_func=lambda *_args, **_kwargs: [str(alice.id)],
-        apply_relationship_updates_func=lambda *_args, **_kwargs: False,
+        select_character_ids_func=select_alice_character_ids,
+        apply_relationship_updates_func=skip_relationship_updates,
     )
 
     committed = result.world.get_node(result.world.current_node_id)
@@ -170,6 +188,24 @@ def test_run_node_lifecycle_requests_intervention_on_allowed_tick() -> None:
     alice = Character(name="阿璃", personality="冷静")
     world.add_character(alice)
 
+    def select_alice_character_ids(
+        _world: WorldState,
+        _event_description: str,
+        max_chars: int = 3,
+        *,
+        allow_alive_fallback: bool = True,
+    ) -> list[str]:
+        return [str(alice.id)]
+
+    def skip_relationship_updates(
+        _world: WorldState,
+        _character_ids: list[str],
+        _event_description: str,
+        *,
+        tick: int,
+    ) -> bool:
+        return False
+
     result = run_node_lifecycle(
         world,
         MemoryManager(),
@@ -180,8 +216,8 @@ def test_run_node_lifecycle_requests_intervention_on_allowed_tick() -> None:
         llm_telemetry_fields_func=lambda metadata: (
             {"request_id": metadata["request_id"]} if metadata else {}
         ),
-        select_character_ids_func=lambda *_args, **_kwargs: [str(alice.id)],
-        apply_relationship_updates_func=lambda *_args, **_kwargs: False,
+        select_character_ids_func=select_alice_character_ids,
+        apply_relationship_updates_func=skip_relationship_updates,
     )
 
     committed = result.world.get_node(result.world.current_node_id)
