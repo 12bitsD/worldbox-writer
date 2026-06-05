@@ -42,7 +42,28 @@ class LoadPromptTemplateFunc(Protocol):
     ) -> str: ...
 
 
-EmitTelemetryFunc = Callable[..., None]
+class EmitTelemetryFunc(Protocol):
+    def __call__(
+        self,
+        state: SimulationState,
+        *,
+        tick: int,
+        agent: str,
+        stage: str,
+        message: str,
+        level: str = "info",
+        payload: Optional[Dict[str, Any]] = None,
+        llm_payload: Optional[Dict[str, Any]] = None,
+        trace_id: Optional[str] = None,
+        request_id: Optional[str] = None,
+        parent_event_id: Optional[str] = None,
+        span_kind: str = "event",
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        duration_ms: Optional[int] = None,
+    ) -> None: ...
+
+
 LlmTelemetryFieldsFunc = Callable[[Optional[Dict[str, Any]]], Dict[str, Any]]
 LoadSceneScriptFunc = Callable[[StoryNode], Optional[SceneScript]]
 
@@ -329,7 +350,12 @@ class NarrationService:
                 "ai_prose_ticks_initial_hit": ai_check_report["initial_hit"],
                 "ai_prose_ticks_rerendered": ai_check_report["rerendered"],
             },
-            **llm_fields,
+            request_id=llm_fields.get("request_id"),
+            span_kind=str(llm_fields.get("span_kind") or "event"),
+            provider=llm_fields.get("provider"),
+            model=llm_fields.get("model"),
+            duration_ms=llm_fields.get("duration_ms"),
+            llm_payload=llm_fields.get("llm_payload"),
         )
 
         current_node.rendered_text = prose.strip()
