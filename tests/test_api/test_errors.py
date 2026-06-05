@@ -4,9 +4,18 @@ from fastapi.testclient import TestClient
 from worldbox_writer.api.errors import ApiError
 from worldbox_writer.api.server import _sessions, app
 from worldbox_writer.api.services.branch_service import coerce_pacing
-from worldbox_writer.api.services.simulation_service import SimulationService
+from worldbox_writer.api.services.simulation_service import (
+    InterventionCallback,
+    NodeRenderedCallback,
+    SimulationService,
+    StreamingEndCallback,
+    StreamingStartCallback,
+    StreamingTokenCallback,
+    TelemetryCallback,
+)
 from worldbox_writer.api.services.workspace_service import ensure_workspace_mutable
 from worldbox_writer.api.session import SimulationSession
+from worldbox_writer.core.models import WorldState
 from worldbox_writer.storage.db import init_db
 
 
@@ -21,7 +30,20 @@ def setup_db(tmp_path, monkeypatch):
 
 
 def test_simulation_service_raises_framework_independent_api_error() -> None:
-    def unexpected_run_simulation(**_kwargs):
+    def unexpected_run_simulation(
+        *,
+        premise: str,
+        max_ticks: int,
+        sim_id: str,
+        trace_id: str,
+        initial_world: WorldState | None,
+        intervention_callback: InterventionCallback,
+        on_node_rendered: NodeRenderedCallback,
+        on_streaming_token: StreamingTokenCallback,
+        on_streaming_start: StreamingStartCallback,
+        on_streaming_end: StreamingEndCallback,
+        on_telemetry: TelemetryCallback,
+    ) -> WorldState:
         raise AssertionError("run_simulation should not be called")
 
     service = SimulationService(

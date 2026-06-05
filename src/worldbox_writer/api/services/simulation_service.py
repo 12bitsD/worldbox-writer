@@ -11,7 +11,7 @@ import os
 import time
 import uuid
 from concurrent.futures import Executor
-from typing import Any, Callable, Dict, MutableMapping, Optional
+from typing import Any, Callable, Dict, MutableMapping, Optional, Protocol
 
 from worldbox_writer.api.core.branching import normalize_branch_registry
 from worldbox_writer.api.core.serialization import serialize_node, serialize_world
@@ -29,6 +29,7 @@ from worldbox_writer.api.session_store import (
 )
 from worldbox_writer.api.state import _executor, _sessions
 from worldbox_writer.core.models import (
+    StoryNode,
     TelemetryEvent,
     TelemetryLevel,
     TelemetrySpanKind,
@@ -37,7 +38,41 @@ from worldbox_writer.core.models import (
 from worldbox_writer.storage.db import BranchSeedNotFoundError
 from worldbox_writer.storage.db import load_session as db_load_session
 
-RunSimulation = Callable[..., WorldState]
+InterventionCallback = Callable[[str], str]
+NodeRenderedCallback = Callable[[StoryNode, WorldState], None]
+StreamingTokenCallback = Callable[[str], None]
+StreamingEndCallback = Callable[[], None]
+TelemetryCallback = Callable[[Dict[str, Any]], None]
+
+
+class StreamingStartCallback(Protocol):
+    def __call__(
+        self,
+        *,
+        node_id: str,
+        title: str,
+        description: str,
+        tick: int,
+        node_type: str,
+    ) -> None: ...
+
+
+class RunSimulation(Protocol):
+    def __call__(
+        self,
+        *,
+        premise: str,
+        max_ticks: int,
+        sim_id: str,
+        trace_id: str,
+        initial_world: Optional[WorldState],
+        intervention_callback: InterventionCallback,
+        on_node_rendered: NodeRenderedCallback,
+        on_streaming_token: StreamingTokenCallback,
+        on_streaming_start: StreamingStartCallback,
+        on_streaming_end: StreamingEndCallback,
+        on_telemetry: TelemetryCallback,
+    ) -> WorldState: ...
 
 
 def append_telemetry_event(
@@ -235,7 +270,7 @@ class SimulationService:
                 session, {"type": "status", "status": session.status, "error": None}
             )
 
-            def on_node_rendered(node, world):
+            def on_node_rendered(node: StoryNode, world: WorldState) -> None:
                 session.world = world
                 node_dict = serialize_node(node, world)
                 upsert_rendered_node(session, node_dict)
@@ -277,7 +312,7 @@ class SimulationService:
                 )
                 return result
 
-            def on_streaming_token(token: str):
+            def on_streaming_token(token: str) -> None:
                 queue_event(
                     session,
                     {
@@ -288,12 +323,13 @@ class SimulationService:
                 )
 
             def on_streaming_start(
+                *,
                 node_id: str,
                 title: str,
                 description: str,
                 tick: int,
                 node_type: str,
-            ):
+            ) -> None:
                 session.active_stream_node_id = node_id
                 queue_event(
                     session,
@@ -311,7 +347,7 @@ class SimulationService:
                     },
                 )
 
-            def on_streaming_end():
+            def on_streaming_end() -> None:
                 queue_event(
                     session,
                     {

@@ -18,7 +18,15 @@ from worldbox_writer.api.server import (
     app,
 )
 from worldbox_writer.api.services.branch_service import BranchService
-from worldbox_writer.api.services.simulation_service import SimulationService
+from worldbox_writer.api.services.simulation_service import (
+    InterventionCallback,
+    NodeRenderedCallback,
+    SimulationService,
+    StreamingEndCallback,
+    StreamingStartCallback,
+    StreamingTokenCallback,
+    TelemetryCallback,
+)
 from worldbox_writer.core.dual_loop import SceneScript
 from worldbox_writer.core.models import Character, StoryNode, WorldState
 from worldbox_writer.storage.db import (
@@ -972,8 +980,21 @@ class TestTelemetryPipeline:
     def test_run_sync_records_telemetry_events(self):
         """Runner should convert emitted telemetry into persisted session events."""
 
-        def fake_run_simulation(**kwargs):
-            kwargs["on_telemetry"](
+        def fake_run_simulation(
+            *,
+            premise: str,
+            max_ticks: int,
+            sim_id: str,
+            trace_id: str,
+            initial_world: WorldState | None,
+            intervention_callback: InterventionCallback,
+            on_node_rendered: NodeRenderedCallback,
+            on_streaming_token: StreamingTokenCallback,
+            on_streaming_start: StreamingStartCallback,
+            on_streaming_end: StreamingEndCallback,
+            on_telemetry: TelemetryCallback,
+        ) -> WorldState:
+            on_telemetry(
                 {
                     "tick": 0,
                     "agent": "director",
