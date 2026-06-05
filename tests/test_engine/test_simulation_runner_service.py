@@ -1,22 +1,21 @@
 from __future__ import annotations
 
-from typing import Any
-
 from worldbox_writer.core.models import WorldState
 from worldbox_writer.engine.services.simulation_runner_service import (
     initial_simulation_state,
     run_simulation_service,
     streaming_callbacks_payload,
 )
+from worldbox_writer.engine.state import SimulationState
 from worldbox_writer.memory.memory_manager import MemoryManager
 
 
 class FakeGraphApp:
     def __init__(self) -> None:
         self.invoke_count = 0
-        self.states: list[dict[str, Any]] = []
+        self.states: list[SimulationState] = []
 
-    def invoke(self, state):  # type: ignore[no-untyped-def]
+    def invoke(self, state: SimulationState) -> SimulationState:
         self.invoke_count += 1
         self.states.append(state)
         world = state["world"]

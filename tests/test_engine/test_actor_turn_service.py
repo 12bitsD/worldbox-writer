@@ -31,7 +31,12 @@ def _no_llm_metadata() -> None:
     return None
 
 
-def _unexpected_runtime(*_args: Any, **_kwargs: Any) -> IsolatedActorRuntimeResult:
+def _unexpected_runtime(
+    _world: WorldState,
+    _memory: MemoryManager,
+    *,
+    scene_plan: ScenePlan,
+) -> IsolatedActorRuntimeResult:
     raise AssertionError("isolated actor runtime should not be called")
 
 
@@ -43,7 +48,10 @@ def _unexpected_gm_factory() -> NoReturn:
     raise AssertionError("GM factory should not be called")
 
 
-def _unexpected_chat_completion(*_args: Any, **_kwargs: Any) -> str:
+def _unexpected_chat_completion(
+    _profile_id: str,
+    _messages: list[dict[str, str]],
+) -> str:
     raise AssertionError("actor event completion should not be called")
 
 
