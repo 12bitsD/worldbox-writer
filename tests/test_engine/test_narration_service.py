@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Callable, Dict, Optional
 
 import pytest
 
@@ -8,6 +8,8 @@ from worldbox_writer.core.dual_loop import SceneScript
 from worldbox_writer.core.models import Character, StoryNode, WorldState
 from worldbox_writer.engine.services.narration_service import NarrationService
 from worldbox_writer.memory.memory_manager import MemoryManager
+
+CompletionMessages = list[dict[str, str]]
 
 
 def _state(world: WorldState, **overrides: Any) -> Dict[str, Any]:
@@ -46,6 +48,27 @@ def _prompt_template(prompt_name: str, *, variant: str) -> str:
     return f"{prompt_name}:{variant}"
 
 
+def _json_completion(prose: str):
+    def complete(
+        _profile_id: str,
+        _messages: CompletionMessages,
+        *,
+        on_token: Optional[Callable[[str], None]] = None,
+    ) -> str:
+        return f'{{"prose": "{prose}", "style_notes": "clean"}}'
+
+    return complete
+
+
+def _empty_completion(
+    _profile_id: str,
+    _messages: CompletionMessages,
+    *,
+    on_token: Optional[Callable[[str], None]] = None,
+) -> str:
+    return ""
+
+
 def _service(
     completion_func,
     *,
@@ -62,9 +85,14 @@ def _service(
 def test_narration_service_consumes_scene_script_input_v2() -> None:
     captured: Dict[str, Any] = {}
 
-    def complete(_profile_id, messages, **kwargs):  # type: ignore[no-untyped-def]
+    def complete(
+        _profile_id: str,
+        messages: CompletionMessages,
+        *,
+        on_token: Optional[Callable[[str], None]] = None,
+    ) -> str:
         captured["messages"] = messages
-        captured["kwargs"] = kwargs
+        captured["on_token"] = on_token
         return (
             '{"prose": "阿璃按下桥闸，潮雾吞没了追兵的火把。", "style_notes": "克制"}'
         )
@@ -129,9 +157,7 @@ def test_narration_service_empty_completion_raises() -> None:
     world.tick = 1
 
     with pytest.raises(ValueError, match="empty completion"):
-        _service(lambda _profile_id, messages, **kwargs: "").render_current_node(
-            _state(world)
-        )
+        _service(_empty_completion).render_current_node(_state(world))
 
 
 def test_narration_service_notifies_rendered_node_callback() -> None:
@@ -148,9 +174,7 @@ def test_narration_service_notifies_rendered_node_callback() -> None:
     world.tick = 1
     observed: list[tuple[str, int, str | None]] = []
 
-    _service(
-        lambda _profile_id, messages, **kwargs: '{"prose": "阿璃按下桥闸，追兵被阻断。", "style_notes": "克制"}'
-    ).render_current_node(
+    _service(_json_completion("阿璃按下桥闸，追兵被阻断。")).render_current_node(
         _state(
             world,
             streaming_callbacks={
@@ -199,7 +223,7 @@ def test_narration_service_rerenders_once_on_ai_prose_ticks() -> None:
     world.tick = 1
 
     result = _service(
-        lambda _profile_id, messages, **kwargs: outputs.pop(0),
+        lambda _profile_id, _messages, *, on_token=None: outputs.pop(0),
         judge_func=lambda prose: checks.pop(0),
     ).render_current_node(_state(world))
 
@@ -226,7 +250,7 @@ def test_narration_service_keeps_render_when_ai_prose_judge_fails() -> None:
     world.tick = 1
 
     result = _service(
-        lambda _profile_id, messages, **kwargs: '{"prose": "阿璃扣住铁链，桥闸落下。", "style_notes": "clean"}',
+        _json_completion("阿璃扣住铁链，桥闸落下。"),
         judge_func=lambda prose: {
             "parse_status": "parse_failed",
             "error": "RuntimeError: judge unavailable",

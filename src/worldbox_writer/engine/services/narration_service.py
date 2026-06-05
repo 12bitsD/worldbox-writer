@@ -19,9 +19,18 @@ from worldbox_writer.utils.json_parsing import parse_json_object_or_raise
 
 AI_PROSE_TICKS_BANNED_MARKERS = ("像", "仿佛", "宛如", "好似", "如同")
 
-ChatCompletionFunc = Callable[..., str]
 JudgeAiProseTicksFunc = Callable[[str], dict[str, Any]]
 GetLastMetadataFunc = Callable[[], Optional[Dict[str, Any]]]
+
+
+class ChatCompletionFunc(Protocol):
+    def __call__(
+        self,
+        profile_id: str,
+        messages: list[dict[str, str]],
+        *,
+        on_token: Optional[Callable[[str], None]] = None,
+    ) -> str: ...
 
 
 class LoadPromptTemplateFunc(Protocol):
