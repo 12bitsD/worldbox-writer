@@ -62,7 +62,6 @@ def test_isolated_actor_runtime_uses_injected_dependencies() -> None:
     def fake_chat_completion(
         profile_id: str,
         messages: list[dict[str, str]],
-        **_kwargs: Any,
     ) -> str:
         assert profile_id == "actor_intent"
         prompt = messages[1]["content"]

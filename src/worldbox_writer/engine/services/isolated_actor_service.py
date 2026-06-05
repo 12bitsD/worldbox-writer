@@ -42,7 +42,15 @@ __all__ = [
     "visible_character_ids_for_actor",
 ]
 
-ChatCompletionFunc = Callable[..., str]
+
+class ChatCompletionFunc(Protocol):
+    def __call__(
+        self,
+        profile_id: str,
+        messages: list[dict[str, str]],
+    ) -> str: ...
+
+
 MetadataFunc = Callable[[], Optional[dict[str, Any]]]
 
 

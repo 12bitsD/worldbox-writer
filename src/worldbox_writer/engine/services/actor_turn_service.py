@@ -57,7 +57,14 @@ class LoadPromptTemplateFunc(Protocol):
     ) -> str: ...
 
 
-ChatCompletionFunc = Callable[..., str]
+class ChatCompletionFunc(Protocol):
+    def __call__(
+        self,
+        profile_id: str,
+        messages: list[dict[str, str]],
+    ) -> str: ...
+
+
 MetadataFunc = Callable[[], Optional[dict[str, Any]]]
 LlmTelemetryFieldsFunc = Callable[[Optional[dict[str, Any]]], dict[str, Any]]
 
