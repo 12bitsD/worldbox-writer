@@ -34,7 +34,18 @@ NO_ALIVE_CANDIDATE_EVENT = "世界陷入了沉寂，没有角色继续行动。"
 AliveCharactersFunc = Callable[[WorldState], list[Character]]
 DualLoopEnabledFunc = Callable[[], bool]
 ActorMemoryQueryFunc = Callable[[WorldState, Optional[ScenePlan]], str]
-BuildActorEventPromptFunc = Callable[..., ActorEventPrompt]
+
+
+class BuildActorEventPromptFunc(Protocol):
+    def __call__(
+        self,
+        world: WorldState,
+        *,
+        scene_plan: Optional[ScenePlan],
+        memory_context: str,
+        system_prompt: str,
+        alive_chars: list[Character],
+    ) -> ActorEventPrompt: ...
 
 
 class LoadPromptTemplateFunc(Protocol):

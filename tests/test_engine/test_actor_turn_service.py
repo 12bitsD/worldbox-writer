@@ -79,9 +79,19 @@ def test_run_actor_turn_uses_legacy_actor_event_path() -> None:
     scene_plan = ScenePlan(scene_id="scene-legacy", objective="试探敌情")
     captured: dict[str, Any] = {}
 
-    def fake_build_prompt(prompt_world: WorldState, **kwargs: Any) -> ActorEventPrompt:
+    def fake_build_prompt(
+        prompt_world: WorldState,
+        *,
+        scene_plan: Optional[ScenePlan],
+        memory_context: str,
+        system_prompt: str,
+        alive_chars: list[Character],
+    ) -> ActorEventPrompt:
         assert prompt_world is world
-        captured.update(kwargs)
+        captured["scene_plan"] = scene_plan
+        captured["memory_context"] = memory_context
+        captured["system_prompt"] = system_prompt
+        captured["alive_chars"] = alive_chars
         return ActorEventPrompt(
             messages=[{"role": "user", "content": "legacy prompt"}],
             pacing="balanced",
@@ -106,7 +116,9 @@ def test_run_actor_turn_uses_legacy_actor_event_path() -> None:
     )
 
     assert captured["scene_plan"] is scene_plan
+    assert captured["memory_context"] == "（暂无记忆）"
     assert captured["system_prompt"] == "ACTOR EVENT SYSTEM"
+    assert captured["alive_chars"] == [alice]
     assert result.state_update["candidate_event"] == "阿璃观察断桥。"
     assert result.state_update["scene_script"] is None
     event = result.telemetry_events[0]
