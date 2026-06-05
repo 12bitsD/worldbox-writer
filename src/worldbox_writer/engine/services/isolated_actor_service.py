@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, Optional, Protocol
 
 from worldbox_writer.core.dual_loop import (
@@ -43,7 +44,19 @@ __all__ = [
 
 ChatCompletionFunc = Callable[..., str]
 MetadataFunc = Callable[[], Optional[dict[str, Any]]]
-CollectSampleFunc = Callable[..., Any]
+
+
+class CollectSampleFunc(Protocol):
+    def __call__(
+        self,
+        node_name: str,
+        input_ctx: dict[str, Any],
+        output: ActionIntent,
+        metadata: dict[str, Any] | None = None,
+        *,
+        raw_output: str | None = None,
+        parsed_output: ActionIntent | None = None,
+    ) -> Path | None: ...
 
 
 class InvokeActorIntentFunc(Protocol):
