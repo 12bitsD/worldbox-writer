@@ -32,6 +32,15 @@ class FakeWorldBuilder:
         return world
 
 
+def _unexpected_rebuild_memory(
+    _world: WorldState,
+    *,
+    sim_id: str = "",
+    short_term_limit: int = 15,
+) -> MemoryManager:
+    raise AssertionError("memory rebuild should not be called")
+
+
 def test_streaming_callbacks_payload_is_empty_without_callbacks() -> None:
     assert streaming_callbacks_payload() == {}
 
@@ -52,7 +61,7 @@ def test_initial_simulation_state_resolves_pending_intervention_on_copy() -> Non
         initial_memory=initial_memory,
         intervention_callback=lambda context: responses.append(context) or "继续",
         derive_title_func=lambda premise: f"《{premise}》",
-        rebuild_memory_func=lambda *_args, **_kwargs: MemoryManager(),
+        rebuild_memory_func=_unexpected_rebuild_memory,
         on_node_rendered=None,
         on_streaming_token=None,
         on_streaming_start=None,
@@ -92,7 +101,7 @@ def test_run_simulation_service_resumes_after_intervention_and_enriches_world() 
         on_telemetry=None,
         build_graph_func=lambda: app,
         derive_title_func=lambda premise: f"《{premise}》",
-        rebuild_memory_func=lambda *_args, **_kwargs: MemoryManager(),
+        rebuild_memory_func=_unexpected_rebuild_memory,
         world_builder_factory=FakeWorldBuilder,
     )
 

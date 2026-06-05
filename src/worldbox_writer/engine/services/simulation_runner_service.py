@@ -4,19 +4,39 @@ from __future__ import annotations
 
 from typing import Any, Callable, Optional, Protocol, cast
 
-from worldbox_writer.core.models import WorldState
+from worldbox_writer.core.models import StoryNode, WorldState
 from worldbox_writer.engine.state import SimulationState
 from worldbox_writer.memory.memory_manager import MemoryManager
 
 InterventionCallback = Callable[[str], str]
-NodeRenderedCallback = Callable[..., None]
+NodeRenderedCallback = Callable[[StoryNode, WorldState], None]
 StreamingTokenCallback = Callable[[str], None]
-StreamingStartCallback = Callable[..., None]
 StreamingEndCallback = Callable[[], None]
 TelemetryCallback = Callable[[dict[str, Any]], None]
 TitleFromPremiseFunc = Callable[[str], str]
 BuildGraphFunc = Callable[[], "SimulationGraphApp"]
-RebuildMemoryFunc = Callable[..., MemoryManager]
+
+
+class StreamingStartCallback(Protocol):
+    def __call__(
+        self,
+        *,
+        node_id: str,
+        title: str,
+        description: str,
+        tick: int,
+        node_type: str,
+    ) -> None: ...
+
+
+class RebuildMemoryFunc(Protocol):
+    def __call__(
+        self,
+        world: WorldState,
+        *,
+        sim_id: str = "",
+        short_term_limit: int = 15,
+    ) -> MemoryManager: ...
 
 
 class SimulationGraphApp(Protocol):
