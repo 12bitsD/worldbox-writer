@@ -261,6 +261,7 @@ def save_session(
     # Also save world if present
     if world:
         save_world(world, db_path)
+    telemetry_payload = [] if telemetry_events is None else telemetry_events
 
     conn = _get_conn(db_path)
     try:
@@ -282,7 +283,7 @@ def save_session(
                 status,
                 world_id,
                 json.dumps(nodes_json, ensure_ascii=False),
-                json.dumps(telemetry_events or [], ensure_ascii=False),
+                json.dumps(telemetry_payload, ensure_ascii=False),
                 json.dumps(branch_registry, ensure_ascii=False),
                 active_branch_id,
                 intervention_context,
@@ -449,6 +450,8 @@ def save_memory_entry(
 ) -> None:
     """Save a single memory entry."""
     now = _now()
+    source_ids_payload = [] if source_entry_ids is None else source_entry_ids
+    tags_payload = [] if tags is None else tags
     conn = _get_conn(db_path)
     try:
         conn.execute(
@@ -472,9 +475,9 @@ def save_memory_entry(
                 importance,
                 json.dumps(embedding) if embedding else None,
                 entry_kind,
-                json.dumps(source_entry_ids or [], ensure_ascii=False),
+                json.dumps(source_ids_payload, ensure_ascii=False),
                 1 if archived else 0,
-                json.dumps(tags or [], ensure_ascii=False),
+                json.dumps(tags_payload, ensure_ascii=False),
                 now,
             ),
         )

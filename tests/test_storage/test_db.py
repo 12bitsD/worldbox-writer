@@ -7,6 +7,7 @@ import os
 import sqlite3
 import tempfile
 import uuid
+from typing import Any
 
 import pytest
 
@@ -35,6 +36,11 @@ from worldbox_writer.storage.db import (
     save_session,
     save_world,
 )
+
+
+class FalseyList(list[Any]):
+    def __bool__(self) -> bool:
+        return False
 
 
 @pytest.fixture
@@ -223,6 +229,35 @@ class TestSessionCRUD:
         assert len(loaded["nodes_rendered"]) == 1
         assert loaded["telemetry_events"][0]["event_id"] == "evt-1"
         assert loaded["telemetry_events"][0]["trace_id"] == "trace-1"
+
+    def test_save_session_preserves_falsey_telemetry_events(
+        self, db_path, sample_world
+    ):
+        """Falsey list-like telemetry input should not be treated as missing."""
+        save_session(
+            sim_id="falsey-telemetry",
+            premise="测试前提",
+            max_ticks=5,
+            status="complete",
+            world=sample_world,
+            nodes_json=[],
+            telemetry_events=FalseyList(
+                [
+                    {
+                        "event_id": "evt-falsey",
+                        "trace_id": "trace-falsey",
+                    }
+                ]
+            ),
+            db_path=db_path,
+        )
+
+        loaded = load_session("falsey-telemetry", db_path)
+
+        assert loaded is not None
+        assert loaded["telemetry_events"] == [
+            {"event_id": "evt-falsey", "trace_id": "trace-falsey"}
+        ]
 
     def test_load_nonexistent_session(self, db_path):
         """Loading a nonexistent session should return None."""
@@ -415,6 +450,28 @@ class TestMemoryEntries:
         assert entries[0]["branch_id"] == "main"
         assert entries[0]["entry_kind"] == "event"
         assert entries[0]["archived"] is False
+
+    def test_save_memory_entry_preserves_falsey_source_ids_and_tags(self, db_path):
+        """Falsey list-like source ids and tags should persist unchanged."""
+        save_session(
+            "sim-falsey-memory", "premise", 3, "running", None, [], db_path=db_path
+        )
+        save_memory_entry(
+            sim_id="sim-falsey-memory",
+            entry_id="entry-falsey",
+            content="发生了事件B",
+            character_ids=["char1"],
+            tick=1,
+            importance=0.7,
+            source_entry_ids=FalseyList(["source-1"]),
+            tags=FalseyList(["关键"]),
+            db_path=db_path,
+        )
+
+        entries = load_memory_entries("sim-falsey-memory", db_path)
+
+        assert entries[0]["source_entry_ids"] == ["source-1"]
+        assert entries[0]["tags"] == ["关键"]
 
     def test_empty_memory(self, db_path):
         """Session with no memories should return empty list."""
