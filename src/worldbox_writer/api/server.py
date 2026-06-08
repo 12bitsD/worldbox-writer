@@ -295,8 +295,9 @@ def _build_export_bundle_for_session(
 
     selected_branch = branch or world.active_branch_id or "main"
     restored_world = _restore_branch_world(sim_id, world, selected_branch)
+    rendered_nodes = [] if nodes_rendered is None else nodes_rendered
     filtered_nodes = _filter_nodes_for_branch(
-        nodes_rendered or [],
+        rendered_nodes,
         restored_world.branches,
         selected_branch,
     )
