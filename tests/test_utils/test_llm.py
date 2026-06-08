@@ -12,6 +12,42 @@ from worldbox_writer.utils.llm import (
 )
 
 
+def _openai_completion_client(
+    response: object,
+    *,
+    captured: dict[str, object] | None = None,
+) -> SimpleNamespace:
+    def create(
+        *,
+        model: str,
+        messages: list[dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+        extra_body: dict[str, object] | None = None,
+        top_p: float | None = None,
+        stream: bool = False,
+    ) -> object:
+        if captured is not None:
+            captured.update(
+                {
+                    "model": model,
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "stream": stream,
+                }
+            )
+            if extra_body is not None:
+                captured["extra_body"] = extra_body
+            if top_p is not None:
+                captured["top_p"] = top_p
+        return response
+
+    return SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+
+
 def test_route_group_overrides_apply_by_role(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "openai")
     monkeypatch.setenv("LLM_MODEL", "gpt-4.1-mini")
@@ -187,15 +223,8 @@ def test_chat_completion_with_profile_applies_sampling(monkeypatch):
     response = SimpleNamespace(
         choices=[SimpleNamespace(message=SimpleNamespace(content="OK"))]
     )
-    captured = {}
-
-    def create(**kwargs):
-        captured.update(kwargs)
-        return response
-
-    client = SimpleNamespace(
-        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
-    )
+    captured: dict[str, object] = {}
+    client = _openai_completion_client(response, captured=captured)
     monkeypatch.setenv("LLM_PROVIDER", "openai")
     monkeypatch.setenv("LLM_MODEL", "gpt-4.1-mini")
     monkeypatch.setattr(llm_module, "get_llm_client", lambda route: client)
@@ -216,11 +245,7 @@ def test_chat_completion_old_entry_warns_deprecated(monkeypatch):
     response = SimpleNamespace(
         choices=[SimpleNamespace(message=SimpleNamespace(content="OK"))]
     )
-    client = SimpleNamespace(
-        chat=SimpleNamespace(
-            completions=SimpleNamespace(create=lambda **_kwargs: response)
-        )
-    )
+    client = _openai_completion_client(response)
     monkeypatch.setenv("LLM_PROVIDER", "openai")
     monkeypatch.setenv("LLM_MODEL", "gpt-4.1-mini")
     monkeypatch.setattr(llm_module, "get_llm_client", lambda route: client)
@@ -233,11 +258,7 @@ def test_chat_completion_treats_empty_provider_response_as_failure(monkeypatch):
     response = SimpleNamespace(
         choices=[SimpleNamespace(message=SimpleNamespace(content=""))]
     )
-    client = SimpleNamespace(
-        chat=SimpleNamespace(
-            completions=SimpleNamespace(create=lambda **kwargs: response)
-        )
-    )
+    client = _openai_completion_client(response)
     monkeypatch.setenv("LLM_PROVIDER", "openai")
     monkeypatch.setenv("LLM_MODEL", "gpt-4.1-mini")
     monkeypatch.setattr(llm_module, "get_llm_client", lambda route: client)

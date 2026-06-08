@@ -226,10 +226,16 @@ class TestMemoryManagerPureLogic:
         monkeypatch.setenv("MEMORY_VECTOR_BACKEND", "chromadb")
         real_import = __import__
 
-        def blocked_import(name, *args, **kwargs):
+        def blocked_import(
+            name: str,
+            globals: dict[str, object] | None = None,
+            locals: dict[str, object] | None = None,
+            fromlist: tuple[str, ...] = (),
+            level: int = 0,
+        ) -> object:
             if name == "chromadb":
                 raise ImportError("chromadb unavailable in test")
-            return real_import(name, *args, **kwargs)
+            return real_import(name, globals, locals, fromlist, level)
 
         monkeypatch.setattr("builtins.__import__", blocked_import)
         mm = MemoryManager()
