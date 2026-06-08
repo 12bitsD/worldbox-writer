@@ -58,24 +58,15 @@ def streaming_callbacks_payload(
     on_streaming_end: Optional[StreamingEndCallback] = None,
     on_telemetry: Optional[TelemetryCallback] = None,
 ) -> dict[str, Any]:
-    if not any(
-        callback is not None
-        for callback in (
-            on_node_rendered,
-            on_streaming_token,
-            on_streaming_start,
-            on_streaming_end,
-            on_telemetry,
-        )
-    ):
-        return {}
-
-    return {
+    callbacks = {
         "on_token": on_streaming_token,
         "on_start": on_streaming_start,
         "on_end": on_streaming_end,
         "on_node_rendered": on_node_rendered,
         "on_telemetry": on_telemetry,
+    }
+    return {
+        name: callback for name, callback in callbacks.items() if callback is not None
     }
 
 
@@ -98,7 +89,11 @@ def initial_simulation_state(
 ) -> SimulationState:
     if initial_world is not None:
         world = initial_world.model_copy(deep=True)
-        memory = initial_memory or rebuild_memory_func(world, sim_id=sim_id)
+        memory = (
+            initial_memory
+            if initial_memory is not None
+            else rebuild_memory_func(world, sim_id=sim_id)
+        )
         initialized = True
         world_builder_completed = bool(world.metadata.get("world_builder_completed"))
     else:

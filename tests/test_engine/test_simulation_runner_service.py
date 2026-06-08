@@ -31,6 +31,11 @@ class FakeWorldBuilder:
         return world
 
 
+class FalseyMemory(MemoryManager):
+    def __bool__(self) -> bool:
+        return False
+
+
 def _unexpected_rebuild_memory(
     _world: WorldState,
     *,
@@ -44,11 +49,20 @@ def test_streaming_callbacks_payload_is_empty_without_callbacks() -> None:
     assert streaming_callbacks_payload() == {}
 
 
+def test_streaming_callbacks_payload_omits_missing_callbacks() -> None:
+    def on_token(_token: str) -> None:
+        pass
+
+    payload = streaming_callbacks_payload(on_streaming_token=on_token)
+
+    assert payload == {"on_token": on_token}
+
+
 def test_initial_simulation_state_resolves_pending_intervention_on_copy() -> None:
     initial_world = WorldState(title="测试世界", premise="测试前提")
     initial_world.metadata["world_builder_completed"] = True
     initial_world.request_intervention("旧分歧")
-    initial_memory = MemoryManager()
+    initial_memory = FalseyMemory()
     responses: list[str] = []
 
     state = initial_simulation_state(
