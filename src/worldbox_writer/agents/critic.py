@@ -107,6 +107,7 @@ class CriticAgent:
         llm_metadata = (
             self.last_call_metadata if self.last_call_metadata is not None else {}
         )
+        model_value = llm_metadata.get("model")
         collect_sample(
             "critic_review",
             {
@@ -125,7 +126,7 @@ class CriticAgent:
             parsed,
             metadata={
                 "role": "critic",
-                "model": str(llm_metadata.get("model") or ""),
+                "model": "" if model_value is None else str(model_value),
                 "llm_metadata": llm_metadata,
             },
             raw_output=raw,

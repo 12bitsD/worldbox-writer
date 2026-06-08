@@ -270,6 +270,7 @@ def invoke_isolated_actor_intent(
             "visible_character_ids": list(prompt_trace.visible_character_ids),
         },
     )
+    model_value = llm_metadata.get("model")
     collect_sample_func(
         "actor_intent",
         {
@@ -280,7 +281,7 @@ def invoke_isolated_actor_intent(
         intent,
         metadata={
             "role": "actor",
-            "model": str(llm_metadata.get("model") or ""),
+            "model": "" if model_value is None else str(model_value),
             "llm_metadata": llm_metadata,
             "downstream_decision": {
                 "intent_id": intent.intent_id,

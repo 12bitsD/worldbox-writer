@@ -106,7 +106,7 @@ def test_isolated_actor_runtime_uses_injected_dependencies() -> None:
         MemoryManager(),
         scene_plan=scene_plan,
         chat_completion_func=fake_chat_completion,
-        metadata_func=lambda: FalseyMetadata(model="unit-test-model"),
+        metadata_func=lambda: FalseyMetadata(model=FalseyStr("unit-test-model")),
         collect_sample_func=sample_recorder,
         load_prompt_template_func=_actor_system_prompt,
         max_actors=2,

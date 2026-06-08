@@ -249,7 +249,7 @@ def test_critic_sample_preserves_falsey_llm_metadata(
     intent = _intent(scene_plan, alice, bob)
     llm_metadata = FalseyMetadata(
         {
-            "model": "critic-test-model",
+            "model": FalseyStr("critic-test-model"),
             "provider": "kimi",
         }
     )
