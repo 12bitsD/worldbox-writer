@@ -12,6 +12,11 @@ from worldbox_writer.engine.services.isolated_actor_service import (
 from worldbox_writer.memory.memory_manager import MemoryManager
 
 
+class FalseyMetadata(dict[str, Any]):
+    def __bool__(self) -> bool:
+        return False
+
+
 class _SampleRecorder:
     def __init__(self) -> None:
         self.samples: list[dict[str, Any]] = []
@@ -31,7 +36,7 @@ class _SampleRecorder:
                 "node_name": node_name,
                 "input_ctx": input_ctx,
                 "output": output,
-                "metadata": metadata or {},
+                "metadata": {} if metadata is None else metadata,
                 "raw_output": raw_output,
                 "parsed_output": parsed_output,
             }
@@ -92,7 +97,7 @@ def test_isolated_actor_runtime_uses_injected_dependencies() -> None:
         MemoryManager(),
         scene_plan=scene_plan,
         chat_completion_func=fake_chat_completion,
-        metadata_func=lambda: {"model": "unit-test-model"},
+        metadata_func=lambda: FalseyMetadata(model="unit-test-model"),
         collect_sample_func=sample_recorder,
         load_prompt_template_func=_actor_system_prompt,
         max_actors=2,
@@ -114,6 +119,9 @@ def test_isolated_actor_runtime_uses_injected_dependencies() -> None:
     assert len(samples) == 2
     assert {sample["node_name"] for sample in samples} == {"actor_intent"}
     assert {sample["metadata"]["model"] for sample in samples} == {"unit-test-model"}
+    assert {sample["metadata"]["llm_metadata"]["model"] for sample in samples} == {
+        "unit-test-model"
+    }
     assert {sample["output"].actor_name for sample in samples} == {"阿璃", "白夜"}
 
 

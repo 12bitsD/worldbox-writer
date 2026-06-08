@@ -228,7 +228,9 @@ def invoke_isolated_actor_intent(
         {"role": "user", "content": prompt_trace.assembled_prompt},
     ]
     raw = chat_completion_func("actor_intent", messages)
-    llm_metadata = metadata_func() or {}
+    llm_metadata = metadata_func()
+    if llm_metadata is None:
+        llm_metadata = {}
     if not raw.strip():
         raise ValueError("Actor returned an empty completion")
 
