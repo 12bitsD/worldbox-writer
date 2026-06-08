@@ -241,7 +241,7 @@ memory_trace, metadata
 ### 仿真核心 (`api/routes/simulations.py`)
 | 方法 | 路径 | 行 | 用途 |
 |---|---|---|---|
-| GET | `/health` | 42 | 健康检查 + LLM 配置信息 |
+| GET | `/api/health` | 42 | 健康检查 + LLM 配置信息 |
 | POST | `/api/simulate/start` | 50 | 启动新推演 |
 | GET | `/api/simulate/{id}` | 54 | 拉取当前推演状态 |
 | GET | `/api/simulate/{id}/diagnostics` | 58 | 内存/路由/成本摘要 |
