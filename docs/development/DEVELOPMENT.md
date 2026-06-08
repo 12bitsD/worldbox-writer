@@ -559,25 +559,19 @@ make integration
 make typecheck
 ```
 
-当前结果：
+当前结果（2026-06-08，post-Round 4 cleanup）：
 
 - `mypy 1.20.1`
-- `27` 个错误
-- 分布在 `9` 个文件
+- `6` 个错误
+- 分布在 `6` 个文件
+- 历史基线（Sprint 22）：27 个错误 / 9 个文件，含已删 `narrator.py` 的 3 个
 
 ### 11.2 文件分布
 
 | 文件 | 错误数 | 主要问题 |
 | :--- | ---: | :--- |
-| `src/worldbox_writer/core/models.py` | 1 | 结构化返回值不匹配 |
-| `src/worldbox_writer/utils/llm.py` | 3 | OpenAI SDK 调用签名与返回值类型 |
-| `src/worldbox_writer/agents/world_builder.py` | 3 | `Any` 返回值泄漏 |
-| `src/worldbox_writer/agents/node_detector.py` | 3 | `Any` 返回值泄漏 |
-| `src/worldbox_writer/agents/narrator.py` | 3 | `Any` 返回值泄漏 |
-| `src/worldbox_writer/agents/gate_keeper.py` | 3 | `Any` 返回值泄漏 |
-| `src/worldbox_writer/agents/director.py` | 5 | `Optional` 边界与 `Any` 返回值 |
-| `src/worldbox_writer/agents/actor.py` | 4 | `Any` 返回值与 `UUID`/`str` 不匹配 |
-| `src/worldbox_writer/engine/graph.py` | 2 | `TypedDict` 缺字段与返回值类型 |
+| （详见 `artifacts/reports/typecheck/*.txt` 最新报告） | | 详见 `make typecheck` 输出 |
+| 注：`agents/narrator.py` 已在 Sprint 26 删除 | — | — |
 
 ### 11.3 当前治理规则
 
