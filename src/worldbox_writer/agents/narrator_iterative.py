@@ -87,7 +87,8 @@ class NarratorIterativeAgent:
     ) -> None:
         self.llm = llm
         self.judge_llm = judge_llm
-        self.thresholds = {**self.DEFAULT_THRESHOLDS, **(thresholds or {})}
+        threshold_overrides = {} if thresholds is None else thresholds
+        self.thresholds = {**self.DEFAULT_THRESHOLDS, **threshold_overrides}
         self.last_call_metadata: Optional[dict[str, Any]] = None
         self.last_iteration_trace: list[IterativeNarratorStage] = []
         self.last_review_reasons: list[str] = []

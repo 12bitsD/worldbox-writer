@@ -21,6 +21,11 @@ class SequenceLLM:
         return SimpleNamespace(content=self.responses[index])
 
 
+class FalseyThresholds(dict[str, float]):
+    def __bool__(self) -> bool:
+        return False
+
+
 def _sample_world() -> WorldState:
     world = WorldState(
         title="断城",
@@ -154,6 +159,21 @@ def test_iterative_narrator_marks_review_without_blocking() -> None:
     assert output.review_required is True
     assert "final_judge_score_below_threshold" in output.review_reasons
     assert "needs_human_review" in output.style_notes
+
+
+def test_iterative_narrator_preserves_falsey_threshold_overrides() -> None:
+    world = _sample_world()
+    script = _sample_script(world)
+
+    output = NarratorIterativeAgent(
+        llm=SequenceLLM(_generation_responses()),
+        judge_llm=SequenceLLM(_judge_responses()),
+        thresholds=FalseyThresholds(polish=6.5),
+    ).render_scene_script(script, world)
+
+    assert output.iterations[-1].judge_score == 6.8
+    assert output.review_required is False
+    assert output.review_reasons == []
 
 
 def test_iterative_narrator_render_node_uses_scene_script_metadata() -> None:
