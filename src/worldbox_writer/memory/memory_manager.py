@@ -582,16 +582,20 @@ class MemoryManager:
         tags: Optional[Sequence[str]] = None,
     ) -> MemoryEntry:
         """Record one character-facing reflective memory."""
+        reflection_tags = [] if tags is None else list(tags)
+        reflection_source_entry_ids = (
+            [] if source_entry_ids is None else list(source_entry_ids)
+        )
         entry = MemoryEntry(
             entry_id=f"memref_{uuid4().hex[:12]}",
             content=content,
             character_ids=[character_id],
             tick=world.tick,
             importance=importance,
-            tags=list(dict.fromkeys([REFLECTION_TAG, *(tags or [])])),
+            tags=list(dict.fromkeys([REFLECTION_TAG, *reflection_tags])),
             branch_id=world.active_branch_id or "main",
             entry_kind=REFLECTION_ENTRY_KIND,
-            source_entry_ids=list(source_entry_ids or []),
+            source_entry_ids=reflection_source_entry_ids,
         )
         self._active_entries.append(entry)
         self._active_entries.sort(key=lambda item: (item.tick, item.entry_id))

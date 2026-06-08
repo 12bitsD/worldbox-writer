@@ -13,6 +13,7 @@ from worldbox_writer.core.dual_loop import SceneBeat, SceneScript
 from worldbox_writer.core.models import Character, NodeType, StoryNode, WorldState
 from worldbox_writer.memory.memory_manager import (
     REFLECTION_ENTRY_KIND,
+    REFLECTION_TAG,
     MemoryEntry,
     MemoryManager,
     SimpleVectorStore,
@@ -125,6 +126,11 @@ def memory_db(tmp_path, monkeypatch):
     return path
 
 
+class FalseyList(list[str]):
+    def __bool__(self) -> bool:
+        return False
+
+
 class TestMemoryManagerPureLogic:
     """Tests that do not require LLM calls."""
 
@@ -214,6 +220,23 @@ class TestMemoryManagerPureLogic:
         assert "李凌决定隐藏真实意图" in entries[0].content
         assert world.get_character(char_id).metadata["reflection_notes"]
         assert mm.get_stats()["reflection_entries"] == 1
+
+    def test_record_reflection_preserves_falsey_sequences(self, world):
+        """Falsey list-like tags and source ids should not be treated as missing."""
+        mm = MemoryManager()
+        char_id = list(world.characters.keys())[0]
+        world.tick = 3
+
+        entry = mm.record_reflection(
+            world,
+            character_id=char_id,
+            content="李凌意识到有人试探自己的真实意图。",
+            source_entry_ids=FalseyList(["intent-1"]),
+            tags=FalseyList(["scene_script", REFLECTION_TAG]),
+        )
+
+        assert entry.source_entry_ids == ["intent-1"]
+        assert entry.tags == [REFLECTION_TAG, "scene_script"]
 
     def test_get_character_arc_no_memory(self, world):
         mm = MemoryManager()
