@@ -215,7 +215,7 @@ def _collect_llm_diagnostics(events: List[TelemetryEvent]) -> Dict[str, Any]:
         if not event.provider and not event.model:
             continue
 
-        payload = event.payload or {}
+        payload = {} if event.payload is None else event.payload
         route_group = str(payload.get("route_group") or "default")
         provider = event.provider or "unknown"
         model = event.model or "unknown"
