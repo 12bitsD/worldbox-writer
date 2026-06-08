@@ -9,6 +9,11 @@ from worldbox_writer.core.models import (
 )
 
 
+class FalseyStr(str):
+    def __bool__(self) -> bool:
+        return False
+
+
 def test_plan_scene_prefers_current_node_characters_and_branch_pacing() -> None:
     director = DirectorAgent()
     world = WorldState(title="测试世界", premise="测试前提")
@@ -44,6 +49,20 @@ def test_plan_scene_prefers_current_node_characters_and_branch_pacing() -> None:
     assert "高风险冲突" in scene_plan.metadata["pressure_guidance"]
     assert scene_plan.setting == "地点：断桥；势力：黑潮会"
     assert world.metadata["current_scene_plan"]["scene_id"] == scene_plan.scene_id
+
+
+def test_plan_scene_preserves_falsey_location_name_in_objective() -> None:
+    director = DirectorAgent()
+    world = WorldState(title="测试世界", premise="测试前提")
+    alice = Character(name="阿璃", personality="冷静", goals=["守住断桥"])
+    bob = Character(name="白夜", personality="执拗", goals=["夺回密钥"])
+    world.add_character(alice)
+    world.add_character(bob)
+    world.locations = [{"name": FalseyStr("断桥")}]
+
+    scene_plan = director.plan_scene(world)
+
+    assert "第1幕，断桥" in scene_plan.objective
 
 
 def test_plan_scene_falls_back_to_alive_characters_when_no_scene_cast() -> None:

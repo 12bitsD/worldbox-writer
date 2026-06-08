@@ -564,7 +564,8 @@ class DirectorAgent:
     ) -> str:
         place = ""
         for location in world.locations:
-            place = str(location.get("name") or "").strip()
+            name = location.get("name")
+            place = "" if name is None else str(name).strip()
             if place:
                 break
         if not place and current_node and current_node.title:
