@@ -168,6 +168,8 @@ def execute_judge(
             score = float(raw_score)
 
     elapsed_ms = int((time.time() - started) * 1000)
+    evidence_quote_value = parsed.get("evidence_quote")
+    rule_hit_value = parsed.get("rule_hit")
     return RunResult(
         dim_id=dim.dim_id,
         sample_id=sample["id"],
@@ -176,8 +178,10 @@ def execute_judge(
         parsed=parsed,
         applicable=applicable,
         score=score,
-        evidence_quote=str(parsed.get("evidence_quote") or "")[:200],
-        rule_hit=str(parsed.get("rule_hit") or ""),
+        evidence_quote=(
+            "" if evidence_quote_value is None else str(evidence_quote_value)
+        )[:200],
+        rule_hit="" if rule_hit_value is None else str(rule_hit_value),
         parse_status=parse_status,
         error=error,
         elapsed_ms=elapsed_ms,
