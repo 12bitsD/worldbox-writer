@@ -11,6 +11,11 @@ class FalseyDict(dict[str, Any]):
         return False
 
 
+class FalseyStr(str):
+    def __bool__(self) -> bool:
+        return False
+
+
 def test_collect_sample_preserves_falsey_metadata_mapping(
     monkeypatch, tmp_path
 ) -> None:
@@ -24,8 +29,8 @@ def test_collect_sample_preserves_falsey_metadata_mapping(
         {"summary": "阿璃检查断桥符钉。"},
         metadata=FalseyDict(
             {
-                "role": "actor",
-                "model": "unit-test-model",
+                "role": FalseyStr("actor"),
+                "model": FalseyStr("unit-test-model"),
                 "sample_id": "sample-falsey",
                 "downstream_decision": FalseyDict(
                     {"intent_id": "intent-1", "accepted": False}

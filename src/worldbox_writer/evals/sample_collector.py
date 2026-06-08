@@ -65,6 +65,8 @@ def collect_sample(
 
     metadata = {} if metadata is None else metadata
     downstream_decision = metadata.get("downstream_decision")
+    role = metadata.get("role")
+    model = metadata.get("model")
     run_id = str(metadata.get("run_id") or _run_id())
     sample_id = str(metadata.get("sample_id") or f"sample_{uuid4().hex[:12]}")
     root = Path(get_settings().sample.sample_dir or str(DEFAULT_SAMPLE_DIR))
@@ -76,8 +78,8 @@ def collect_sample(
         "run_id": run_id,
         "sample_id": sample_id,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "role": str(metadata.get("role") or ""),
-        "model": str(metadata.get("model") or ""),
+        "role": "" if role is None else str(role),
+        "model": "" if model is None else str(model),
         "input_context": _jsonable(input_ctx),
         "raw_output": raw_output if raw_output is not None else _raw_text(output),
         "parsed_output": _jsonable(
