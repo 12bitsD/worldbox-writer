@@ -28,7 +28,8 @@ def default_branch_meta() -> Dict[str, Any]:
 def normalize_branch_registry(
     branches: Optional[Dict[str, Dict[str, Any]]],
 ) -> Dict[str, Dict[str, Any]]:
-    normalized = copy.deepcopy(branches or {})
+    branch_payload = {} if branches is None else branches
+    normalized = copy.deepcopy(branch_payload)
     main_meta = default_branch_meta()
     main_meta["label"] = "Main Timeline"
     normalized["main"] = {**main_meta, **normalized.get("main", {})}
@@ -55,8 +56,10 @@ def lineage_from_latest_node(
         if not node:
             break
         lineage.append(node)
-        parent_ids = node.get("parent_ids") or []
-        cursor = parent_ids[0] if parent_ids else None
+        parent_ids = node.get("parent_ids")
+        if parent_ids is None:
+            parent_ids = []
+        cursor = parent_ids[0] if len(parent_ids) > 0 else None
 
     lineage.reverse()
     return lineage
@@ -71,7 +74,9 @@ def branch_cutoffs(
     cutoffs: Dict[str, float] = {branch_id: float("inf")}
     cursor = branch_id
     while True:
-        branch_meta = branches.get(cursor) or {}
+        branch_meta = branches.get(cursor)
+        if branch_meta is None:
+            branch_meta = {}
         parent_id = branch_meta.get("source_branch_id")
         if not parent_id:
             break
@@ -86,7 +91,8 @@ def filter_nodes_for_branch(
     branches: Dict[str, Dict[str, Any]],
     branch_id: str,
 ) -> List[Dict[str, Any]]:
-    latest_node_id = (branches.get(branch_id) or {}).get("latest_node_id")
+    branch_meta = branches.get(branch_id)
+    latest_node_id = None if branch_meta is None else branch_meta.get("latest_node_id")
     lineage = lineage_from_latest_node(nodes, latest_node_id)
     if lineage:
         return lineage
