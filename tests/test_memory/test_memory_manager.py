@@ -26,6 +26,16 @@ from worldbox_writer.storage.db import init_db, save_session
 # ---------------------------------------------------------------------------
 
 
+class FalseyFloatList(list[float]):
+    def __bool__(self) -> bool:
+        return False
+
+
+class FalseyMemoryEntries(list[MemoryEntry]):
+    def __bool__(self) -> bool:
+        return False
+
+
 class TestSimpleVectorStore:
     def test_add_and_len(self):
         store = SimpleVectorStore()
@@ -48,6 +58,17 @@ class TestSimpleVectorStore:
         results = store.search("主角战胜敌人", top_k=1)
         assert len(results) == 1
         assert results[0].entry_id == "e1"
+
+    def test_search_preserves_falsey_embedding(self):
+        store = SimpleVectorStore()
+        store.add(MemoryEntry("e1", "alpha", [], 1, 0.5))
+        store.add(MemoryEntry("e2", "beta", [], 2, 0.5))
+        assert store._entries[1].embedding is not None
+        store._entries[1].embedding = FalseyFloatList(store._entries[1].embedding)
+
+        results = store.search("beta", top_k=1)
+
+        assert results[0].entry_id == "e2"
 
     def test_search_empty_store(self):
         store = SimpleVectorStore()
@@ -195,6 +216,26 @@ class TestMemoryManagerPureLogic:
         assert len(log) == 1
         assert "content" in log[0]
         assert "tick" in log[0]
+
+    def test_initial_entries_preserves_falsey_sequence_and_embedding(self):
+        entry = MemoryEntry(
+            entry_id="seed-1",
+            content="李凌记住了断桥上的暗号",
+            character_ids=["char-1"],
+            tick=4,
+            importance=0.6,
+            embedding=FalseyFloatList([0.25, 0.75]),
+            tags=["seed"],
+            source_entry_ids=["source-1"],
+        )
+
+        mm = MemoryManager(initial_entries=FalseyMemoryEntries([entry]))
+
+        log = mm.export_memory_log()
+        assert [item["id"] for item in log] == ["seed-1"]
+        assert mm._active_entries[0].embedding == [0.25, 0.75]
+        assert mm._active_entries[0].embedding is not entry.embedding
+        assert mm._active_entries[0].source_entry_ids == ["source-1"]
 
     def test_scene_script_writes_reflective_memory(self, world):
         mm = MemoryManager()

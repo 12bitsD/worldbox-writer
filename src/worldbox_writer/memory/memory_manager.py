@@ -188,8 +188,8 @@ def _clone_memory_entry(
         importance=entry.importance,
         embedding=(
             embedding[:]
-            if embedding
-            else (entry.embedding[:] if entry.embedding else None)
+            if embedding is not None
+            else (entry.embedding[:] if entry.embedding is not None else None)
         ),
         tags=list(entry.tags),
         branch_id=entry.branch_id,
@@ -250,7 +250,13 @@ class SimpleVectorStore:
 
         query_vec = self._text_to_vector(query)
         scored = [
-            (entry, self._cosine_similarity(query_vec, entry.embedding or []))
+            (
+                entry,
+                self._cosine_similarity(
+                    query_vec,
+                    [] if entry.embedding is None else entry.embedding,
+                ),
+            )
             for entry in self._entries
         ]
         scored.sort(key=lambda item: item[1], reverse=True)
@@ -293,7 +299,7 @@ class SimpleVectorStore:
         return _tokenize_text(text)
 
     def _cosine_similarity(self, a: List[float], b: List[float]) -> float:
-        if not a or not b:
+        if len(a) == 0 or len(b) == 0:
             return 0.0
 
         max_len = max(len(a), len(b))
@@ -472,6 +478,7 @@ class MemoryManager:
         )
         self.vector_backend = DEFAULT_VECTOR_BACKEND
         self.vector_backend_fallback_reason: Optional[str] = None
+        initial_entry_payload = [] if initial_entries is None else initial_entries
         self._active_entries: List[MemoryEntry] = sorted(
             [
                 MemoryEntry(
@@ -480,14 +487,16 @@ class MemoryManager:
                     character_ids=list(entry.character_ids),
                     tick=entry.tick,
                     importance=entry.importance,
-                    embedding=entry.embedding[:] if entry.embedding else None,
+                    embedding=(
+                        entry.embedding[:] if entry.embedding is not None else None
+                    ),
                     tags=list(entry.tags),
                     branch_id=entry.branch_id,
                     entry_kind=entry.entry_kind,
                     source_entry_ids=list(entry.source_entry_ids),
                     archived=entry.archived,
                 )
-                for entry in (initial_entries or [])
+                for entry in initial_entry_payload
                 if not entry.archived
             ],
             key=lambda entry: (entry.tick, entry.entry_id),
