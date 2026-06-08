@@ -10,8 +10,22 @@ from worldbox_writer.utils.llm import (
 )
 
 CompletionMessages = list[dict[str, str]]
-CompleteFunc = Callable[..., str]
 MetadataFunc = Callable[[], Optional[dict[str, Any]]]
+
+
+class CompleteFunc(Protocol):
+    def __call__(
+        self,
+        profile_id: str,
+        messages: CompletionMessages,
+        *,
+        stream: bool = False,
+        on_token: Optional[Callable[[str], None]] = None,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        top_p: Optional[float] = None,
+    ) -> str: ...
 
 
 class CompletionGateway(Protocol):
@@ -21,7 +35,13 @@ class CompletionGateway(Protocol):
         self,
         profile_id: str,
         messages: CompletionMessages,
-        **kwargs: Any,
+        *,
+        stream: bool = False,
+        on_token: Optional[Callable[[str], None]] = None,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        top_p: Optional[float] = None,
     ) -> str: ...
 
     def last_metadata(self) -> Optional[dict[str, Any]]: ...
@@ -43,9 +63,24 @@ class DefaultCompletionGateway:
         self,
         profile_id: str,
         messages: CompletionMessages,
-        **kwargs: Any,
+        *,
+        stream: bool = False,
+        on_token: Optional[Callable[[str], None]] = None,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        top_p: Optional[float] = None,
     ) -> str:
-        return self._complete_func(profile_id, messages, **kwargs)
+        return self._complete_func(
+            profile_id,
+            messages,
+            stream=stream,
+            on_token=on_token,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            top_p=top_p,
+        )
 
     def last_metadata(self) -> Optional[dict[str, Any]]:
         metadata = self._metadata_func()

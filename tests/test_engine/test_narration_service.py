@@ -53,7 +53,12 @@ def _json_completion(prose: str):
         _profile_id: str,
         _messages: CompletionMessages,
         *,
+        stream: bool = False,
         on_token: Optional[Callable[[str], None]] = None,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        top_p: Optional[float] = None,
     ) -> str:
         return f'{{"prose": "{prose}", "style_notes": "clean"}}'
 
@@ -64,7 +69,12 @@ def _empty_completion(
     _profile_id: str,
     _messages: CompletionMessages,
     *,
+    stream: bool = False,
     on_token: Optional[Callable[[str], None]] = None,
+    model: Optional[str] = None,
+    temperature: Optional[float] = None,
+    max_tokens: Optional[int] = None,
+    top_p: Optional[float] = None,
 ) -> str:
     return ""
 
@@ -89,7 +99,12 @@ def test_narration_service_consumes_scene_script_input_v2() -> None:
         _profile_id: str,
         messages: CompletionMessages,
         *,
+        stream: bool = False,
         on_token: Optional[Callable[[str], None]] = None,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        top_p: Optional[float] = None,
     ) -> str:
         captured["messages"] = messages
         captured["on_token"] = on_token
@@ -222,8 +237,21 @@ def test_narration_service_rerenders_once_on_ai_prose_ticks() -> None:
     world.current_node_id = str(node.id)
     world.tick = 1
 
+    def complete(
+        _profile_id: str,
+        _messages: CompletionMessages,
+        *,
+        stream: bool = False,
+        on_token: Optional[Callable[[str], None]] = None,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        top_p: Optional[float] = None,
+    ) -> str:
+        return outputs.pop(0)
+
     result = _service(
-        lambda _profile_id, _messages, *, on_token=None: outputs.pop(0),
+        complete,
         judge_func=lambda prose: checks.pop(0),
     ).render_current_node(_state(world))
 

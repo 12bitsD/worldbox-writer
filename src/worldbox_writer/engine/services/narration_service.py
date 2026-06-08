@@ -12,7 +12,11 @@ from worldbox_writer.evals.llm_judge import (
     COMMITTEE_TOXIC_VETO_THRESHOLD,
     judge_ai_prose_ticks,
 )
-from worldbox_writer.llm.gateway import CompletionGateway, DefaultCompletionGateway
+from worldbox_writer.llm.gateway import (
+    CompleteFunc,
+    CompletionGateway,
+    DefaultCompletionGateway,
+)
 from worldbox_writer.memory.memory_manager import MemoryManager
 from worldbox_writer.prompting.registry import load_prompt_template
 from worldbox_writer.utils.json_parsing import parse_json_object_or_raise
@@ -21,16 +25,6 @@ AI_PROSE_TICKS_BANNED_MARKERS = ("像", "仿佛", "宛如", "好似", "如同")
 
 JudgeAiProseTicksFunc = Callable[[str], dict[str, Any]]
 GetLastMetadataFunc = Callable[[], Optional[Dict[str, Any]]]
-
-
-class ChatCompletionFunc(Protocol):
-    def __call__(
-        self,
-        profile_id: str,
-        messages: list[dict[str, str]],
-        *,
-        on_token: Optional[Callable[[str], None]] = None,
-    ) -> str: ...
 
 
 class LoadPromptTemplateFunc(Protocol):
@@ -226,7 +220,7 @@ class NarrationService:
         self,
         *,
         completion_gateway: Optional[CompletionGateway] = None,
-        chat_completion_func: Optional[ChatCompletionFunc] = None,
+        chat_completion_func: Optional[CompleteFunc] = None,
         judge_ai_prose_ticks_func: JudgeAiProseTicksFunc = judge_ai_prose_ticks,
         get_last_metadata_func: Optional[GetLastMetadataFunc] = None,
         load_prompt_template_func: LoadPromptTemplateFunc = load_prompt_template,
