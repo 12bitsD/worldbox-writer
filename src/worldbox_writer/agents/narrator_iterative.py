@@ -297,7 +297,11 @@ class NarratorIterativeAgent:
             raw = self._invoke_judge(self._judge_messages(stage, text, metrics))
             parsed = self._parse_json_object(raw)
             score = self._coerce_score(parsed.get("score"), metrics, stage)
-            feedback = str(parsed.get("feedback") or parsed.get("reasoning") or "")
+            feedback_value = parsed.get("feedback")
+            feedback = "" if feedback_value is None else str(feedback_value)
+            if not feedback:
+                reasoning_value = parsed.get("reasoning")
+                feedback = "" if reasoning_value is None else str(reasoning_value)
         except Exception as exc:
             score = 0.0
             feedback = f"LLM judge unavailable; no heuristic quality score used: {exc}"

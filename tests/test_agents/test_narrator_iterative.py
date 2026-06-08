@@ -191,6 +191,28 @@ def test_iterative_narrator_preserves_falsey_threshold_overrides() -> None:
     assert output.review_reasons == []
 
 
+def test_iterative_narrator_preserves_falsey_judge_feedback() -> None:
+    class ParsedJudgeAgent(NarratorIterativeAgent):
+        def __init__(self, parsed: dict[str, Any]) -> None:
+            super().__init__(judge_llm=SequenceLLM(["raw"]))
+            self.parsed = parsed
+
+        def _parse_json_object(self, _raw: str) -> dict[str, Any]:
+            return self.parsed
+
+    agent = ParsedJudgeAgent(
+        {
+            "score": 6.8,
+            "feedback": FalseyStr("保留这条反馈"),
+            "reasoning": "不应该替换成 reasoning",
+        }
+    )
+
+    stage = agent._evaluate_stage("polish", "雨巷里，阿璃拦住白夜。")
+
+    assert stage.judge_feedback == "保留这条反馈"
+
+
 def test_iterative_narrator_render_node_uses_scene_script_metadata() -> None:
     world = _sample_world()
     script = _sample_script(world)
