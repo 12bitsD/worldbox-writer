@@ -26,6 +26,11 @@ class FalseyStr(str):
         return False
 
 
+class FalseyList(list[str]):
+    def __bool__(self) -> bool:
+        return False
+
+
 class _SampleRecorder:
     def __init__(self) -> None:
         self.samples: list[dict[str, Any]] = []
@@ -215,9 +220,10 @@ def test_invoke_isolated_actor_intent_preserves_falsey_string_fields(
         "parse_json_object",
         lambda _raw: {
             "action_type": FalseyStr("dialogue"),
-            "summary": "阿璃扣住断桥旧符钉，逼问白夜昨夜行踪。",
+            "summary": FalseyStr("阿璃扣住断桥旧符钉，逼问白夜昨夜行踪。"),
             "rationale": FalseyStr("她要确认伏击者。"),
-            "target_character_names": ["白夜"],
+            "target_character_names": FalseyList(["白夜"]),
+            "target_characters": ["阿璃"],
             "confidence": 0.82,
         },
     )
@@ -233,5 +239,7 @@ def test_invoke_isolated_actor_intent_preserves_falsey_string_fields(
     )
 
     assert intent.action_type == "dialogue"
+    assert intent.summary == "阿璃扣住断桥旧符钉，逼问白夜昨夜行踪。"
     assert intent.rationale == "她要确认伏击者。"
+    assert intent.target_ids == [str(bob.id)]
     assert sample_recorder.samples[0]["output"] is intent

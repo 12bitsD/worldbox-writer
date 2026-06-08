@@ -235,11 +235,12 @@ def invoke_isolated_actor_intent(
         raise ValueError("Actor returned an empty completion")
 
     data = parse_json_object(raw)
-    summary = str(
-        data.get("summary")
-        or data.get("description")
-        or fallback_actor_summary(character, scene_plan, raw=raw)
-    ).strip()
+    summary_value = data.get("summary")
+    if summary_value is None:
+        summary_value = data.get("description")
+    summary = "" if summary_value is None else str(summary_value).strip()
+    if not summary:
+        summary = fallback_actor_summary(character, scene_plan, raw=raw)
     action_type_value = data.get("action_type")
     action_type = (
         "action" if action_type_value is None else str(action_type_value).strip()
@@ -410,7 +411,9 @@ def target_ids_from_payload(
     if isinstance(raw_ids, list):
         return [str(item) for item in raw_ids if str(item) in visible_character_ids][:3]
 
-    raw_names = data.get("target_character_names") or data.get("target_characters")
+    raw_names = data.get("target_character_names")
+    if raw_names is None:
+        raw_names = data.get("target_characters")
     if isinstance(raw_names, str):
         candidate_names = [raw_names]
     elif isinstance(raw_names, list):
