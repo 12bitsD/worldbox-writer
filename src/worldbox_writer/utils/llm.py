@@ -568,7 +568,9 @@ def _chat_completion_anthropic_messages(
                     event = json.loads(raw)
                     if event.get("type") != "content_block_delta":
                         continue
-                    delta = event.get("delta") or {}
+                    delta = event.get("delta")
+                    if delta is None:
+                        delta = {}
                     token = delta.get("text")
                     if isinstance(token, str) and token:
                         collected.append(token)

@@ -175,6 +175,71 @@ def test_anthropic_message_conversion_extracts_system_prompt():
     ]
 
 
+def test_anthropic_streaming_preserves_falsey_delta(monkeypatch):
+    class StreamingResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return None
+
+        def raise_for_status(self):
+            return None
+
+        def iter_lines(self):
+            return iter(["data: ignored"])
+
+    class StreamingClient:
+        def __init__(self, *, timeout: float):
+            assert timeout == 120.0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return None
+
+        def stream(self, method, endpoint, *, headers, json):
+            assert method == "POST"
+            assert endpoint == "https://api.kimi.com/coding/v1/messages"
+            assert headers["x-api-key"] == "test-key"
+            assert json["stream"] is True
+            return StreamingResponse()
+
+    monkeypatch.setattr(llm_module.httpx, "Client", StreamingClient)
+    monkeypatch.setattr(
+        llm_module.json,
+        "loads",
+        lambda raw: {
+            "type": "content_block_delta",
+            "delta": FalseyDict({"text": "token-one"}),
+        },
+    )
+
+    tokens: list[str] = []
+    route = llm_module.ResolvedLLMRoute(
+        role="narrator",
+        route_group="creative",
+        provider="kimi",
+        model="kimi-k2.5",
+        api_key="test-key",
+        base_url="https://api.kimi.com/coding/",
+    )
+
+    output = llm_module._chat_completion_anthropic_messages(
+        [{"role": "user", "content": "Continue"}],
+        route=route,
+        temperature=0.7,
+        max_tokens=32,
+        stream=True,
+        on_token=tokens.append,
+        top_p=None,
+    )
+
+    assert output == "token-one"
+    assert tokens == ["token-one"]
+
+
 def test_eval_report_triggers_fallback(monkeypatch, tmp_path):
     report_path = tmp_path / "eval-report.json"
     report_path.write_text(
