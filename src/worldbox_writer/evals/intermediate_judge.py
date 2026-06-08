@@ -21,6 +21,7 @@ from worldbox_writer.evals.llm_judge import (
     DEFAULT_JUDGE_MODEL,
     _evidence_in_text,
     _resolve_judge_model,
+    _string_field,
     parse_judge_response,
 )
 from worldbox_writer.utils.llm import chat_completion_with_profile
@@ -308,8 +309,10 @@ def _judge_one_dimension(
     if isinstance(raw_score, (int, float)) and not isinstance(raw_score, bool):
         score = round(min(10.0, max(0.0, float(raw_score))), 2)
 
-    evidence_quote = str(parsed.get("evidence_quote") or "")[:240]
-    reasoning = str(parsed.get("reasoning") or parsed.get("reason") or "")[:240]
+    evidence_quote = _string_field(parsed, "evidence_quote", max_length=240)
+    reasoning = _string_field(parsed, "reasoning", max_length=240)
+    if not reasoning:
+        reasoning = _string_field(parsed, "reason", max_length=240)
     coercions: list[str] = []
     if retry_after_parse_error and parse_status == "ok":
         coercions.append("judge_retry_after_parse_error")
