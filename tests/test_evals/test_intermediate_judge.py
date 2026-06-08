@@ -7,6 +7,7 @@ from unittest.mock import patch
 from worldbox_writer.evals.intermediate_judge import (
     ACTOR_INTENT_DIMENSIONS,
     _judge_one_dimension,
+    judge_node_output,
 )
 
 
@@ -45,3 +46,15 @@ def test_judge_one_dimension_preserves_falsey_string_fields() -> None:
     assert record["evidence_quote"] == "原文证据"
     assert record["reasoning"] == "judge reasoning"
     assert "evidence_quote_not_in_source" not in record["coercions"]
+
+
+def test_judge_node_output_preserves_falsey_sample_id() -> None:
+    result = judge_node_output(
+        "unsupported_node",
+        {},
+        {},
+        sample_id=FalseyStr("sample-falsey"),
+        judge_model="judge-model",
+    )
+
+    assert result["sample_id"] == "sample-falsey"

@@ -341,7 +341,7 @@ def judge_node_output(
     input_context: dict[str, Any],
     output: Any,
     *,
-    sample_id: str = "",
+    sample_id: str | None = None,
     judge_model: str | None = None,
     runtime_model: str = "",
     temperature: float = 0.2,
@@ -351,13 +351,13 @@ def judge_node_output(
     started = _time.time()
     canonical = canonical_node_name(node_name)
     selected_model = _resolve_judge_model(judge_model)
-    sample_id = sample_id or "sample-unknown"
+    resolved_sample_id = "sample-unknown" if sample_id is None else str(sample_id)
 
     dimensions = DIMENSIONS_BY_NODE.get(canonical)
     if dimensions is None:
         return _empty_result(
             node_name=canonical,
-            sample_id=sample_id,
+            sample_id=resolved_sample_id,
             status="unsupported_node",
             judge_model=selected_model,
             runtime_model=runtime_model,
@@ -369,7 +369,7 @@ def judge_node_output(
         elapsed_ms = int((_time.time() - started) * 1000)
         return _empty_result(
             node_name=canonical,
-            sample_id=sample_id,
+            sample_id=resolved_sample_id,
             status="format_invalid",
             judge_model=selected_model,
             runtime_model=runtime_model,
@@ -407,7 +407,7 @@ def judge_node_output(
     return {
         "schema_version": INTERMEDIATE_SCHEMA_VERSION,
         "node_name": canonical,
-        "sample_id": sample_id,
+        "sample_id": resolved_sample_id,
         "status": "ok" if not errors else "partial_error",
         "dimensions": records,
         "overall": overall,

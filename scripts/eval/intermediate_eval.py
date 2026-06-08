@@ -109,9 +109,12 @@ def _score_samples(
     started = time.time()
     results = []
     for index, sample in enumerate(samples, start=1):
-        sample_id = str(
-            sample.get("sample_id") or sample.get("id") or f"{node_name}-{index}"
-        )
+        sample_id_value = sample.get("sample_id")
+        if sample_id_value is None:
+            sample_id_value = sample.get("id")
+        if sample_id_value is None:
+            sample_id_value = f"{node_name}-{index}"
+        sample_id = str(sample_id_value)
         input_context = sample.get("input_context") or sample.get("input") or {}
         result = judge_node_output(
             node_name,
@@ -306,7 +309,7 @@ def _critic_decision_eval(
             "critic_review",
             input_context,
             verdict_payload,
-            sample_id=str(row.get("id") or ""),
+            sample_id=None if row.get("id") is None else str(row["id"]),
             judge_model=judge_model,
             runtime_model="critic-runtime",
             temperature=temperature,
