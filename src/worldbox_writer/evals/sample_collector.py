@@ -63,7 +63,8 @@ def collect_sample(
     if not sample_collection_enabled():
         return None
 
-    metadata = metadata or {}
+    metadata = {} if metadata is None else metadata
+    downstream_decision = metadata.get("downstream_decision")
     run_id = str(metadata.get("run_id") or _run_id())
     sample_id = str(metadata.get("sample_id") or f"sample_{uuid4().hex[:12]}")
     root = Path(get_settings().sample.sample_dir or str(DEFAULT_SAMPLE_DIR))
@@ -82,7 +83,9 @@ def collect_sample(
         "parsed_output": _jsonable(
             parsed_output if parsed_output is not None else output
         ),
-        "downstream_decision": _jsonable(metadata.get("downstream_decision") or {}),
+        "downstream_decision": _jsonable(
+            {} if downstream_decision is None else downstream_decision
+        ),
         "metadata": _jsonable(
             {
                 key: value
