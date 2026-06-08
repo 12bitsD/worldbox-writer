@@ -54,7 +54,7 @@ NodeDetector.evaluate()                            [agents/node_detector.py:108]
     ├── 触发用户介入 → 暂停
     ▼
 SceneNode 固化 + Narrator 渲染                    [engine/services/narration_service.py]
-    │ 产出 800-2000 字中文网文
+    │ 产出 800-1500 字中文网文（`prompts/narrator_system.yaml:11`）
     ▼
 下一 tick 或结束
 ```
@@ -68,7 +68,7 @@ SceneNode 固化 + Narrator 渲染                    [engine/services/narration
 | 文件 | 类 | 关键方法 → 返回 | 角色 |
 |---|---|---|---|
 | `agents/director.py:61` | `DirectorAgent` | `plan_scene() → ScenePlan` | 故事编排（每 tick 规划本幕）|
-| `agents/world_builder.py:30` | `WorldBuilderAgent` | `expand_world() → WorldState` | 世界观扩写（首次时异步补全）|
+| `agents/world_builder.py:30,43` | `WorldBuilderAgent` | `expand_world() → WorldState` | 世界观扩写（首次时异步补全）|
 | `agents/actor.py:49` | `ActorAgent` | `propose_action() → ActionProposal` | **legacy 路径**，生产用 `isolated_actor_service` |
 | `agents/critic.py:46` | `CriticAgent` | `review_intent() → IntentCritique` | intent 策略审查 |
 | `agents/gate_keeper.py:65` | `GateKeeperAgent` | `validate() → ValidationResult` | HARD/SOFT 约束校验 |
@@ -76,7 +76,7 @@ SceneNode 固化 + Narrator 渲染                    [engine/services/narration
 | `agents/node_detector.py:91` | `NodeDetector` | `evaluate() → InterventionSignal` | 决定是否需要用户介入 |
 | ~~`agents/narrator.py`~~ | — | (Sprint 26 已删) | narration 移到 `engine/services/narration_service.py` |
 
-> **重要区分**：生产路径**不直接调用 `ActorAgent.propose_action()`**。Actor 类的该方法返回 `ActionProposal`（legacy 单事件流），**生产用的 `ActionIntent` 是 `isolated_actor_service` 产出的**。详见 §13 gotcha #1。
+> **重要区分**：生产路径**不直接调用 `ActorAgent.propose_action()`**。Actor 类的该方法返回 `ActionProposal`（legacy 单事件流），**生产用的 `ActionIntent` 是 `isolated_actor_service.run_isolated_actor_runtime()` 产出的**（`isolated_actor_service.py:116`）。详见 §13 gotcha #1。
 
 ---
 
@@ -133,7 +133,8 @@ class SimulationState(TypedDict):
     scene_plan: Optional[ScenePlan]
     action_intents: list[ActionIntent]
     intent_critiques: list[IntentCritique]
-    scene_script: Optional[SceneScript]
+    prompt_traces: list[PromptTrace]   # 每次 LLM 调用记录一条（debug 用）
+    scene_script: NotRequired[Optional[SceneScript]]
     candidate_event: str               # 旧路径占位（生产不用）
     validation_passed: bool
     needs_intervention: bool
@@ -162,9 +163,13 @@ constraints, source_node_id
 
 ### `SceneScript` (`core/dual_loop.py:133`) — GM 产出（事实源）
 ```python
-script_id, scene_id, title, summary, public_facts, beats,
-participating_character_ids, rejected_intent_ids, source_node_id
-# rejected_intent_ids 防止 Narrator 写入被拒 intent
+script_id, scene_id, branch_id="main", tick=0, title, summary,
+public_facts, participating_character_ids,
+accepted_intent_ids,              # accepted by Critic → goes into beats
+rejected_intent_ids,              # excluded from beats
+beats,                            # List[SceneBeat]
+source_node_id, metadata
+# accepted_intent_ids + rejected_intent_ids 一起：保证 beat 仅来自 accepted intents
 ```
 
 ### `ActionIntent` (`core/dual_loop.py:52`) — Actor 产出
@@ -231,7 +236,7 @@ memory_trace, metadata
 
 ## 8. 21 个 API 端点
 
-`api/server.py` + `api/routes/{simulations,branches,workspace}.py` 共定义 21 个端点（不含 `/health`）。
+`api/routes/{simulations,branches,workspace}.py` 共定义 21 个端点，**其中 20 个是业务端点**（`/health` 也算在表内）。
 
 ### 仿真核心 (`api/routes/simulations.py`)
 | 方法 | 路径 | 行 | 用途 |
@@ -307,10 +312,18 @@ memory_trace, metadata
 ### Prompt 模板
 - `src/worldbox_writer/prompts/*.yaml` — 外部化 prompt
 - `prompting/registry.py` — 加载器，支持 `PROMPT_TEMPLATE_DIR` 环境变量覆盖
-- 运行时热加载（按 mtime 缓存）
+- 运行时热加载（按 mtime 缓存）— **仅适用于 prompt yaml**。agent_profiles.yaml 不热加载（见 gotcha #13）
 
-### Profile 列表（`config/agent_profiles.yaml`）
-Sprint 26 后剩 12 个 profile：`director_init` / `director_intervention` / `director_title` / `critic_review` / `gate_keeper_validate` / `narrator_render` / `node_detector` / `world_builder_expand` / `world_builder_location` / `memory_summarize_entries` / `memory_reflection` / `judge_committee` / `judge_multi_chapter` / `actor_event` / `actor_intent`（最后 2 个是 dual-loop 用）。
+### Profile 列表（`src/worldbox_writer/config/agent_profiles.yaml`）
+Sprint 26 后剩 22 个 profile，按 role 分组：
+- **director** (3): `director_init` / `director_intervention` / `director_title`
+- **actor** (3): `actor_event`（legacy）/ `actor_intent`（dual-loop）/ `model_eval_logic_structured_action`
+- **critic / gate_keeper** (3): `critic_review` / `gate_keeper_validate` / `boundary_reviser`
+- **narrator** (3): `narrator_render` / `model_eval_creative_scene` / `model_eval_creative_dialogue`
+- **node_detector** (1): `node_detector`
+- **world_builder** (3): `world_builder_expand` / `world_builder_location` / `model_eval_creative_worldbuild`
+- **memory** (4): `memory_consistency` / `memory_character_arc` / `memory_summarize` / `model_eval_logic_memory_summary`
+- **judge** (2): `judge_committee` / `judge_multi_chapter`
 
 ---
 
@@ -383,7 +396,7 @@ actor_turn_service.run_actor_turn(world, memory, scene_plan=...)
 
 **修改代码前必读**。每条都是"踩过的坑"或"易误解的地方"。
 
-1. **`ActorAgent.propose_action()` 返回 `ActionProposal`，不是 `ActionIntent`**（`agents/actor.py:62`）。生产用的 `ActionIntent` 是 `isolated_actor_service.propose_intent()` 产出的（`isolated_actor_service.py:323`）。别混淆。
+1. **`ActorAgent.propose_action()` 返回 `ActionProposal`，不是 `ActionIntent`**（`agents/actor.py:62`）。生产用的 `ActionIntent` 是 `isolated_actor_service.run_isolated_actor_runtime()` 产出的（`isolated_actor_service.py:116`），它在内部对每个 spotlight 角色调 `invoke_isolated_actor_intent`（line 188）拼出 `ActionIntent`。别混淆。
 2. **Critic 和 GM 不是 LangGraph 节点**，是 factory 注入到 `actor_node` 的 callable（`graph.py:221-222`）。改 Critic/GM 行为时改 agent 类，**不要**在 `graph.py` 加节点。
 3. **`ActionIntent.action_type` 是 `str = "action"`**（`core/dual_loop.py:59`），**不是 enum**。prompt 文档建议 `"dialogue|action|decision|reaction"`，但代码不强制。加新 value 不需要改 schema。
 4. **`NarratorInput.contract_version` 默认值是 `"narrator-input-v2"`**（`core/dual_loop.py:154`），是历史命名残留。**改这个值会破坏 Inspector 输出的兼容**。
@@ -392,10 +405,10 @@ actor_turn_service.run_actor_turn(world, memory, scene_plan=...)
 7. **`storage/db.py` 的 `seed_kind` 列**（schema 第 72 行）写但从不读——历史残留，**不要**依赖它做版本判断。
 8. **branch fork 用 snapshot 不 replay**（`storage/db.py:323, 296-317`），因为 LLM 推演非确定性。replay 会得到不同故事线。
 9. **"信息物理隔离"是比喻**。每个 Actor 用独立的 LLM 调用 + 独立的 prompt context，**但**同进程、同 `WorldState`、同 `MemoryManager`。找 process/sandbox 找不到。
-10. **`NodeDetector` 触发介入**靠的是 LLM 调用 + 60+ 中文高风险关键词 + 每 5 tick 周期性检查，**不是**"scene_script 包含分歧点"。
+10. **`NodeDetector` 触发介入**靠的是 LLM 调用（`node_detector` profile）+ 关键词扫描（**15 中文 + 18 英文 = 33 个**高风险关键词，定义在 `agents/node_detector.py:45-82` 的 `_HIGH_STAKES_KEYWORDS_ZH` / `_HIGH_STAKES_KEYWORDS_EN`）+ 每 5 tick 周期性检查，**不是**"scene_script 包含分歧点"。
 11. **`Critic` 不一定用"廉价" LLM**——它走和 Actor 一样的 `chat_completion_with_profile`。"廉价"是 profile 路由选择（temperature 0.0, 廉价 prompt），不是不同引擎。
 12. **dual-loop 路径是唯一生产路径**。`legacy_actor_turn` 仅作紧急回滚。`engine/dual_loop.py` 里的 `build_compatibility_intent` / `_derive_intent_summary` 等是 Sprint 26 stub（raise `NotImplementedError`），**别**在新代码里调用。
-13. **改 profile_id 要重启服务**：`agent_profiles.yaml` 在启动时加载，热加载 prompt 但不热加载 profile。改了 profile_id 后下次启动生效。
+13. **改 profile_id 要重启服务**：`src/worldbox_writer/config/agent_profiles.yaml` 在启动时加载（`config/settings.py` 的 `PROFILES_FILE` 常量），热加载仅适用于 prompt yaml。改了 profile 后下次启动生效。
 14. **Graph state 是 TypedDict，不是 Pydantic**（`engine/state.py:20`）。新字段加在 `SimulationState` 里时，**所有** `_actor_node` / `scene_director_node` 等函数返回的 dict 都要对应更新。
 
 ---
@@ -404,7 +417,7 @@ actor_turn_service.run_actor_turn(world, memory, scene_plan=...)
 
 | 你想加什么 | 该改哪里 |
 |---|---|
-| 新的 Agent | 1) `agents/` 加新文件（复制 `agents/actor.py:49-156` 骨架）<br>2) `engine/graph.py:399-405` `add_node` 注册<br>3) `engine/services/` 加对应业务逻辑<br>4) `prompts/` 加 yaml<br>5) `config/agent_profiles.yaml` 加 profile_id |
+| 新的 Agent | 1) `src/worldbox_writer/agents/` 加新文件（参考 `actor.py:49` 类骨架）<br>2) `src/worldbox_writer/engine/graph.py:399-405` `add_node` 注册<br>3) `src/worldbox_writer/engine/services/` 加对应业务逻辑<br>4) `src/worldbox_writer/prompts/` 加 yaml<br>5) `src/worldbox_writer/config/agent_profiles.yaml` 加 profile_id |
 | 新的 State 字段 | `engine/state.py:20` `SimulationState` 加字段，**所有** graph node 函数的返回 dict 都要更新 |
 | 新的 LLM provider | `utils/llm.py` 加 `_build_client` 分支 + `_chat_completion_<provider>` 传输 |
 | 新的 LLM 路由策略 | `utils/llm.py` 改 `_should_fallback` |
@@ -440,4 +453,4 @@ actor_turn_service.run_actor_turn(world, memory, scene_plan=...)
 - [DEVELOPMENT.md](../development/DEVELOPMENT.md) — 环境、命令、CI、灰度与回滚、双循环 rollout 流程
 - [QUALITY_SPEC.md](../product/QUALITY_SPEC.md) — 评测系统（12 维 prose + 12 维 story + 7 维 AI-issue）
 - [PRODUCT_STRATEGY.md](../product/PRODUCT_STRATEGY.md) — 产品定位与演进路线
-- `config/_schema.md` — env vars 和 agent profile_ids 完整清单
+- `src/worldbox_writer/config/_schema.md` — env vars 和 agent profile_ids 完整清单
