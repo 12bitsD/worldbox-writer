@@ -104,10 +104,11 @@ def build_dual_loop_compare_report(
 ) -> dict[str, Any]:
     """Build a rollout readiness report comparing legacy and dual-loop paths."""
     lineage_nodes = _ordered_lineage_nodes(world)
-    nodes_rendered = nodes_rendered or []
-    telemetry_events = telemetry_events or []
+    rendered_nodes = [] if nodes_rendered is None else nodes_rendered
+    telemetry_payload = [] if telemetry_events is None else telemetry_events
+    feature_payload = {} if features is None else features
     feature_enabled = bool(
-        (features or {}).get("dual_loop_enabled", dual_loop_enabled())
+        feature_payload.get("dual_loop_enabled", dual_loop_enabled())
     )
 
     scene_script_nodes = [
@@ -134,7 +135,7 @@ def build_dual_loop_compare_report(
         len(_metadata_list(node, "prompt_traces")) for node in lineage_nodes
     )
     reflection_note_count = _reflection_note_count(world)
-    telemetry_stage_counts = _telemetry_stage_counts(telemetry_events)
+    telemetry_stage_counts = _telemetry_stage_counts(telemetry_payload)
 
     checks = [
         _check(
@@ -191,7 +192,7 @@ def build_dual_loop_compare_report(
         "contract_version": DUAL_LOOP_CONTRACT_VERSION,
         "legacy_path": {
             "node_count": len(lineage_nodes),
-            "rendered_node_count": _rendered_node_count(nodes_rendered),
+            "rendered_node_count": _rendered_node_count(rendered_nodes),
             "event_source": "StoryNode.description",
             "available": True,
         },
@@ -206,7 +207,7 @@ def build_dual_loop_compare_report(
             "reflection_note_count": reflection_note_count,
         },
         "telemetry": {
-            "event_count": len(telemetry_events),
+            "event_count": len(telemetry_payload),
             "stage_counts": telemetry_stage_counts,
         },
         "rollout_readiness": {
@@ -231,11 +232,13 @@ def build_report_for_session(sim_id: str) -> dict[str, Any]:
     data = db_load_session(sim_id)
     if not data or not data.get("world"):
         raise ValueError(f"Simulation {sim_id} does not exist or has no world state")
+    nodes_rendered = data.get("nodes_rendered")
+    telemetry_events = data.get("telemetry_events")
     return build_dual_loop_compare_report(
         sim_id,
         data["world"],
-        nodes_rendered=data.get("nodes_rendered") or [],
-        telemetry_events=data.get("telemetry_events") or [],
+        nodes_rendered=[] if nodes_rendered is None else nodes_rendered,
+        telemetry_events=[] if telemetry_events is None else telemetry_events,
     )
 
 

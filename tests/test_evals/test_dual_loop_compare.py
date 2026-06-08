@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import worldbox_writer.evals.dual_loop_compare as compare_module
 from worldbox_writer.core.models import Character, StoryNode, WorldState
@@ -38,6 +39,16 @@ def _world_with_dual_loop_metadata() -> tuple[WorldState, StoryNode]:
     return world, node
 
 
+class FalseyList(list[Any]):
+    def __bool__(self) -> bool:
+        return False
+
+
+class FalseyDict(dict[str, Any]):
+    def __bool__(self) -> bool:
+        return False
+
+
 def test_build_dual_loop_compare_report_counts_rollout_signals() -> None:
     world, node = _world_with_dual_loop_metadata()
 
@@ -60,6 +71,27 @@ def test_build_dual_loop_compare_report_counts_rollout_signals() -> None:
     assert report["dual_loop_path"]["reflection_note_count"] == 1
     assert report["telemetry"]["stage_counts"]["narrator.completed"] == 1
     assert report["rollback"]["feature_flag"] == "FEATURE_DUAL_LOOP_ENABLED"
+
+
+def test_build_dual_loop_compare_report_preserves_falsey_inputs(monkeypatch) -> None:
+    world, node = _world_with_dual_loop_metadata()
+    monkeypatch.setattr(compare_module, "dual_loop_enabled", lambda: False)
+
+    report = build_dual_loop_compare_report(
+        "sim-compare-falsey",
+        world,
+        nodes_rendered=FalseyList(
+            [{"id": str(node.id), "rendered_text": node.rendered_text}]
+        ),
+        telemetry_events=FalseyList([{"agent": "narrator", "stage": "completed"}]),
+        features=FalseyDict({"dual_loop_enabled": True}),
+    )
+
+    assert report["rollout_readiness"]["ready"] is True
+    assert report["legacy_path"]["rendered_node_count"] == 1
+    assert report["dual_loop_path"]["enabled"] is True
+    assert report["telemetry"]["event_count"] == 1
+    assert report["telemetry"]["stage_counts"]["narrator.completed"] == 1
 
 
 def test_dual_loop_compare_cli_writes_report(tmp_path, monkeypatch) -> None:
