@@ -111,7 +111,8 @@ def check_case_output(case: dict[str, Any], output: str) -> dict[str, Any]:
     checks: list[bool] = []
     detail: dict[str, Any] = {"length": len(output)}
 
-    expected_keys = case.get("expect_json_keys") or []
+    expected_keys_raw = case.get("expect_json_keys")
+    expected_keys = [] if expected_keys_raw is None else list(expected_keys_raw)
     if expected_keys:
         try:
             payload = json.loads(output)

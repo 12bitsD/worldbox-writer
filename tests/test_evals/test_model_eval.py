@@ -5,6 +5,11 @@ from worldbox_writer.evals.model_eval import (
 )
 
 
+class FalseyList(list[str]):
+    def __bool__(self) -> bool:
+        return False
+
+
 def test_check_case_output_validates_only_chain_structure():
     case = {
         "expect_json_keys": ["action", "reason"],
@@ -17,6 +22,18 @@ def test_check_case_output_validates_only_chain_structure():
     assert result["detail"]["output_non_empty"] is True
     assert "must_include_hits" not in result["detail"]
     assert "length_ok" not in result["detail"]
+
+
+def test_check_case_output_preserves_falsey_expected_keys():
+    case = {
+        "expect_json_keys": FalseyList(["action"]),
+    }
+
+    result = check_case_output(case, '{"reason": "缺少动作"}')
+
+    assert result["passed"] is False
+    assert result["detail"]["json_keys_ok"] is False
+    assert result["detail"]["output_non_empty"] is True
 
 
 def test_default_model_eval_cases_do_not_use_content_heuristic_scoring():
