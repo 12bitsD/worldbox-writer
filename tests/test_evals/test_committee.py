@@ -40,6 +40,11 @@ class ChatCompletionSideEffect(Protocol):
     ) -> str: ...
 
 
+class FalseyDict(dict[str, str]):
+    def __bool__(self) -> bool:
+        return False
+
+
 def _payload(
     score: float | None = 7.0,
     *,
@@ -65,7 +70,7 @@ def _route_by_dim(
     default_score: float = 7.0,
 ) -> ChatCompletionSideEffect:
     """Return a side_effect that matches the dim's prompt against ALL_DIMENSIONS."""
-    overrides = overrides or {}
+    overrides = {} if overrides is None else overrides
 
     def side_effect(
         _profile_id: str,
@@ -106,6 +111,18 @@ def test_committee_runs_all_dims_and_aggregates_three_axes() -> None:
     assert result["vetoed"] is False
     assert result["overall"] == 7.0
     assert result["errors"] == []
+
+
+def test_route_by_dim_preserves_falsey_overrides() -> None:
+    dim = ALL_DIMENSIONS[0]
+    route = _route_by_dim(
+        overrides=FalseyDict({dim.dim_id: _payload(score=8.0)}),
+        default_score=7.0,
+    )
+
+    payload = json.loads(route("judge_dimension", [{"content": dim.system_prompt}]))
+
+    assert payload["score"] == 8.0
 
 
 def test_committee_skips_inapplicable_conditional_from_axis_average() -> None:
@@ -524,7 +541,7 @@ def _cross_passage_payload(
         {
             "applicable": True,
             "score": score,
-            "evidence_quotes": evidence or [],
+            "evidence_quotes": [] if evidence is None else evidence,
             "rule_hit": "demo.cross",
             "reasoning": "demo",
         },
@@ -535,7 +552,7 @@ def _cross_passage_payload(
 def _route_by_cross_dim(
     overrides: dict[str, str] | None = None,
 ) -> ChatCompletionSideEffect:
-    overrides = overrides or {}
+    overrides = {} if overrides is None else overrides
 
     def side_effect(
         _profile_id: str,
@@ -591,6 +608,23 @@ def test_multi_chapter_runs_4_dims_and_aggregates() -> None:
         rec = result["per_dimension"][dim.dim_id]
         assert rec["applicable"] is True
         assert rec["score"] == 7.0
+
+
+def test_cross_passage_helpers_preserve_falsey_inputs() -> None:
+    dim = CROSS_PASSAGE_DIMENSIONS[0]
+    route = _route_by_cross_dim(
+        overrides=FalseyDict({dim.dim_id: _cross_passage_payload(score=8.0)})
+    )
+
+    routed_payload = json.loads(
+        route("judge_multi_chapter_dimension", [{"content": dim.system_prompt}])
+    )
+    quote_payload = json.loads(
+        _cross_passage_payload(evidence=FalseyList(["quoted text"]))
+    )
+
+    assert routed_payload["score"] == 8.0
+    assert quote_payload["evidence_quotes"] == ["quoted text"]
 
 
 def test_multi_chapter_inapplicable_dim_excluded_from_overall() -> None:
