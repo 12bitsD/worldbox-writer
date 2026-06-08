@@ -147,7 +147,7 @@ def materialize_character(
         ) from exc
 
     character_id = payload.id or (str(existing.id) if existing else None)
-    kwargs: Dict[str, Any] = {
+    character_data: Dict[str, Any] = {
         "name": payload.name.strip(),
         "description": payload.description.strip(),
         "personality": payload.personality.strip(),
@@ -158,8 +158,8 @@ def materialize_character(
         "metadata": {**(existing.metadata if existing else {}), **payload.metadata},
     }
     if character_id:
-        kwargs["id"] = character_id
-    return Character(**kwargs)
+        character_data["id"] = character_id
+    return Character.model_validate(character_data)
 
 
 def apply_wiki_request(session: SimulationSession, request: SaveWikiRequest) -> None:

@@ -9,7 +9,7 @@ aggregation, toxic veto, and error bookkeeping.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Callable, Protocol
 from unittest.mock import patch
 
 from worldbox_writer.evals.dimension_prompts import (
@@ -23,6 +23,21 @@ from worldbox_writer.evals.llm_judge import (
     judge_committee,
     parse_judge_response,
 )
+
+
+class ChatCompletionSideEffect(Protocol):
+    def __call__(
+        self,
+        profile_id: str,
+        messages: list[dict[str, str]],
+        *,
+        stream: bool = False,
+        on_token: Callable[[str], None] | None = None,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        top_p: float | None = None,
+    ) -> str: ...
 
 
 def _payload(
@@ -48,12 +63,21 @@ def _payload(
 def _route_by_dim(
     overrides: dict[str, str] | None = None,
     default_score: float = 7.0,
-) -> Any:
+) -> ChatCompletionSideEffect:
     """Return a side_effect that matches the dim's prompt against ALL_DIMENSIONS."""
     overrides = overrides or {}
 
-    def side_effect(*args, **_kwargs):
-        messages = args[-1]
+    def side_effect(
+        _profile_id: str,
+        messages: list[dict[str, str]],
+        *,
+        stream: bool = False,
+        on_token: Callable[[str], None] | None = None,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        top_p: float | None = None,
+    ) -> str:
         system = messages[0]["content"]
         for dim in ALL_DIMENSIONS:
             if dim.system_prompt == system:
@@ -503,11 +527,22 @@ def _cross_passage_payload(
     )
 
 
-def _route_by_cross_dim(overrides: dict[str, str] | None = None) -> Any:
+def _route_by_cross_dim(
+    overrides: dict[str, str] | None = None,
+) -> ChatCompletionSideEffect:
     overrides = overrides or {}
 
-    def side_effect(*args, **_kwargs):
-        messages = args[-1]
+    def side_effect(
+        _profile_id: str,
+        messages: list[dict[str, str]],
+        *,
+        stream: bool = False,
+        on_token: Callable[[str], None] | None = None,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        top_p: float | None = None,
+    ) -> str:
         system = messages[0]["content"]
         for dim in CROSS_PASSAGE_DIMENSIONS:
             if dim.system_prompt == system:
