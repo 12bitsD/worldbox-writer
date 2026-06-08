@@ -1,223 +1,140 @@
-# WorldBox Writer 架构
+# WorldBox Writer — Architecture Reference
 
-> 一份关于"这是什么、它怎么工作、如何扩展"的导览。
-> 读者：第一次接触本项目代码的工程师。
+> 真相源是 `src/`。本文档是**代码地图**，不是设计宣言。
+> 每个声明都给出 `file:line` 锚点。如发现本文与代码不一致，**代码为准**。
 
-## 一句话总结
+## 目录
 
-这是一个**事件推演引擎**。它把"我要写一篇 100 章的网文"这个任务，从"让 LLM 直接写"重构成"先把故事以结构化的事件 DAG 推演完，再用 LLM 把事件渲染成散文"。
-
-为什么要这样？因为长篇生成的核心难题不是"句子写不写得漂亮"，而是"100 章之后角色还记不记得自己姓什么"——即**逻辑一致性**。先固化结构、再渲染文字，是用工程化手段解决这个问题的核心选择。
-
----
-
-## 顶层结构
-
-整个系统是一根**有向无环图**的推演循环，每轮（一个 tick）跑一次：
-
-```
-用户前提 (一句话)
-    │
-    ▼
-[Director 初始化世界]──────[WorldBuilder 补全细节]
-    │
-    ▼  (tick 循环开始)
-[Director 规划本幕：ScenePlan]
-    │
-    ▼
-[Actor 决策：ActionIntent × N 个角色]  ←── 每个角色一个独立 LLM 调用
-    │
-    ▼
-[Critic 审查：accept/reject 每个 intent]
-    │
-    ▼
-[GM 结算：accepted intents → SceneScript]  ←── 唯一事实源
-    │
-    ▼
-[GateKeeper 硬约束校验]  ←── HARD 违反 → 阻断推演
-    │
-    ▼
-[NodeDetector 固化节点 + 判断是否需要用户干预]
-    │
-    ├── 需要干预 → 暂停 → 等用户指令
-    │
-    ▼
-[Narrator 渲染：SceneScript → 800-2000 字小说正文]
-    │
-    ▼
-[继续下一 tick | 结束]
-```
-
-每一步产出的都是**结构化数据**（JSON），不是自然语言。最后一步才把结构化数据扩写成散文。
+1. [一句话总结](#1-一句话总结)
+2. [顶层 tick 循环](#2-顶层-tick-循环)
+3. [8 个 Agent](#3-8-个-agent)
+4. [14 个 Engine Service](#4-14-个-engine-service)
+5. [LangGraph Wiring](#5-langgraph-wiring)
+6. [Pydantic 契约](#6-pydantic-契约)
+7. [4 个 SQLite 表](#7-4-个-sqlite-表)
+8. [21 个 API 端点](#8-21-个-api-端点)
+9. [10 个前端组件](#9-10-个前端组件)
+10. [LLM 接入与 Prompt Registry](#10-llm-接入与-prompt-registry)
+11. [角色记忆与状态](#11-角色记忆与状态)
+12. [双循环运行时](#12-双循环运行时)
+13. [Gotchas 与 Invariants](#13-gotchas-与-invariants)
+14. [扩展地图](#14-扩展地图)
+15. [术语表 + 进一步阅读](#15-术语表--进一步阅读)
 
 ---
 
-## 三个角色组
+## 1. 一句话总结
 
-按职责，系统可以分成三个组。**它们不是分层调用——是同一根循环上的不同步骤**。
-
-### 故事编排组：决定"接下来发生什么"
-
-| 组件 | 职责 | 关键产出 |
-|---|---|---|
-| **Director** | 接收前提，初始化世界；每轮规划 ScenePlan（objective / 重点角色 / 压力值） | `ScenePlan` |
-| **WorldBuilder** | 扩写世界规则、势力、地理、力量体系 | `WorldState.factions/locations/world_rules` |
-| **NodeDetector** | 决定是否需要用户干预（关键分歧点） | `InterventionSignal` |
-
-### 角色扮演组：决定"角色做什么"
-
-| 组件 | 职责 | 关键产出 |
-|---|---|---|
-| **Actor** × N | 每个 spotlight 角色独立 LLM 调用，**只看自己的私有记忆 + 公开场景**，不看其他角色意图 | `ActionIntent` |
-
-> 这是整套架构的核心反直觉点：**角色在决策时互相不知道对方在想什么**。这种"信息物理隔离"是避免 LLM 串戏、幻觉的关键。每个角色单独起一个 LLM 实例，各自有独立的 prompt context。
-
-### 校验结算组：决定"哪些能写进故事"
-
-| 组件 | 职责 | 关键产出 |
-|---|---|---|
-| **Critic** | 廉价 LLM 策略审查：判断每个 intent 是否符合世界观 | `IntentCritique` (accepted/rejected) |
-| **GateKeeper** | 硬约束检查：用户约束、HARD violation 直接阻断 | `ConstraintViolation` |
-| **GM** | 结算所有 accepted intent 为本轮的**唯一事实源** | `SceneScript` |
-| **Narrator** | 把 SceneScript + 三层记忆渲染成自然语言正文 | `rendered_text` |
-
-> GM 是"事实守门员"：在 Critic 通过之后，GM 决定哪些 intent 真正进入 SceneScript，哪些合并、哪些降级。SceneScript 一旦产出就是权威——Narrator 不能改写事实。
+这是一个**结构化推演 + 渲染管线**：每轮（一个 tick）让 LLM 产出结构化 JSON 事件，再让另一个 LLM 把结构化事件扩写成中文网文。结构化层负责"事实"（角色做了什么、结果是什么），渲染层负责"文笔"。所有跨 tick 的事实固化在 `WorldState` + `StoryNode` 里，渲染层只能读取、不能改写。
 
 ---
 
-## 一次 Tick 的完整数据流
+## 2. 顶层 tick 循环
 
-把上面那张图展开成数据流：
+每轮（一个 tick）跑一次完整循环。所有调用都是结构化数据，最后一步才渲染散文。
 
 ```
-输入: WorldState (上一 tick 的世界状态)
-        │
-        ▼
-   ┌─── Director.plan_scene() ───┐
-   │   输入: 前提 + 上一节点 + 当前世界
-   │   输出: ScenePlan {
-   │     objective, spotlight_character_ids,
-   │     narrative_pressure: "calm" | "balanced" | "intense",
-   │     ...
-   │   }
-   └────────────────────────────┘
-        │
-        ▼
-   ┌─── Actor (并发 fan-out) ─────┐
-   │   每个 spotlight 角色:
-   │     - 拿自己的 prompt (性格卡 + 私有记忆 + 公开场景)
-   │     - 调一次 LLM
-   │     - 输出 ActionIntent {
-   │         actor_id, action_type, summary,
-   │         target_ids, confidence, ...
-   │       }
-   └────────────────────────────┘
-        │
-        ▼
-   ┌─── Critic.review_batch() ───┐
-   │   对每个 intent 调一次 LLM (廉价)
-   │   输出: IntentCritique {
-   │     accepted, reason_code, severity,
-   │     revision_hint
-   │   }
-   │   拒绝的 intent 不进 SceneScript
-   └────────────────────────────┘
-        │
-        ▼
-   ┌─── GM.settle_scene() ────────┐
-   │   聚合所有 accepted intents
-   │   输出: SceneScript {
-   │     scene_id, title, summary,
-   │     public_facts, beats[],
-   │     participating_character_ids,
-   │     rejected_intent_ids,  ← prompt guard 防止被写入正文
-   │   }
-   │   ★ 这是本 tick 的唯一事实源
-   └────────────────────────────┘
-        │
-        ▼
-   ┌─── GateKeeper.validate() ────┐
-   │   比对 SceneScript.beats 与 WorldState.constraints
-   │   任何 HARD violation → 阻断整个 tick
-   │   SOFT violation → 警告但放行
-   └────────────────────────────┘
-        │
-        ▼
-   ┌─── NodeDetector ─────────────┐
-   │   检查 scene_script 是否包含 "分歧点" (关键决策 / 状态转折)
-   │   输出: InterventionSignal { should_intervene, urgency }
-   │   触发用户介入: needs_intervention = True
-   └────────────────────────────┘
-        │
-        ▼
-   ┌─── Narrator.render() ────────┐
-   │   输入: SceneScript + 角色记忆 + 风格指令
-   │   输出: 800-2000 字中文小说正文 (prose)
-   │   严格遵守: 不改写 facts, 不写 rejected_intent_ids 对应内容
-   └────────────────────────────┘
-        │
-        ▼
-   StoryNode {
-     id, title, tick, branch_id,
-     rendered_text,     ← 用户看到的
-     scene_script,      ← 持久化 (事实源)
-     rejected_intents,  ← 防止漂移
-   }
+Director.plan_scene()                              [agents/director.py:97]
+    │ 产出 ScenePlan
+    ▼
+Actor 并发 fan-out (每个 spotlight 角色一次 LLM)  [engine/services/isolated_actor_service.py]
+    │ 产出 ActionIntent × N
+    ▼
+Critic.review_intent()                            [agents/critic.py:64]
+    │ 产出 IntentCritique (accepted/rejected)
+    ▼
+GM.settle_scene()                                  [agents/gm.py:77]
+    │ 产出 SceneScript (本 tick 唯一事实源)
+    ▼
+GateKeeper.validate()                              [agents/gate_keeper.py:78]
+    │ HARD 违反 → 阻断整个 tick
+    ▼
+NodeDetector.evaluate()                            [agents/node_detector.py:108]
+    │ 产出 InterventionSignal (should_intervene)
+    ├── 触发用户介入 → 暂停
+    ▼
+SceneNode 固化 + Narrator 渲染                    [engine/services/narration_service.py]
+    │ 产出 800-2000 字中文网文
+    ▼
+下一 tick 或结束
 ```
 
-### 关键的"防漂移"约束
-
-- **拒绝的 intent 不会被遗忘**：`rejected_intent_ids` 字段被持久化、传给 Narrator、写到 prompt guard 里。
-- **事实与文笔分离**：Narrator 不能改写 SceneScript；它只能扩写。
-- **每个 tick 独立**：重放或跳过 tick 不应改变 WorldState。
+每一步都产出**结构化 Pydantic 对象**（不是裸 dict）。最后一步才把 SceneScript 扩写为散文。
 
 ---
 
-## 三个认知记忆层
+## 3. 8 个 Agent
 
-解决长篇"遗忘"问题。每个角色都有三层记忆：
-
-| 层 | 范围 | 写入方式 | 召回方式 |
+| 文件 | 类 | 关键方法 → 返回 | 角色 |
 |---|---|---|---|
-| **工作记忆** (Character.memory) | 最近 20 条事件 | 推演中同步追加 | 直接进 prompt |
-| **情景记忆** (MemoryEntry) | 全部历史事件 | tick 提交时按重要性持久化 | 向量检索 (ChromaDB) |
-| **反思记忆** | 跨多条事件的总结 | 后台异步聚合（"经历三次被骗 → 生性多疑"） | 写到 Character.metadata.reflection_notes |
+| `agents/director.py:61` | `DirectorAgent` | `plan_scene() → ScenePlan` | 故事编排（每 tick 规划本幕）|
+| `agents/world_builder.py:30` | `WorldBuilderAgent` | `expand_world() → WorldState` | 世界观扩写（首次时异步补全）|
+| `agents/actor.py:49` | `ActorAgent` | `propose_action() → ActionProposal` | **legacy 路径**，生产用 `isolated_actor_service` |
+| `agents/critic.py:46` | `CriticAgent` | `review_intent() → IntentCritique` | intent 策略审查 |
+| `agents/gate_keeper.py:65` | `GateKeeperAgent` | `validate() → ValidationResult` | HARD/SOFT 约束校验 |
+| `agents/gm.py:74` | `GMAgent` | `settle_scene() → SceneScript` | accepted intents → SceneScript 结算 |
+| `agents/node_detector.py:91` | `NodeDetector` | `evaluate() → InterventionSignal` | 决定是否需要用户介入 |
+| ~~`agents/narrator.py`~~ | — | (Sprint 26 已删) | narration 移到 `engine/services/narration_service.py` |
 
-向量检索默认使用 ChromaDB，可在 `MEMORY_VECTOR_BACKEND=auto` 下自动 fallback 到 SQLite BM25。
+> **重要区分**：生产路径**不直接调用 `ActorAgent.propose_action()`**。Actor 类的该方法返回 `ActionProposal`（legacy 单事件流），**生产用的 `ActionIntent` 是 `isolated_actor_service` 产出的**。详见 §13 gotcha #1。
 
 ---
 
-## 持久化模型
+## 4. 14 个 Engine Service
 
-### 三个 SQLite 表
+`engine/services/` 下 14 个模块，把业务实现从 agent 类里抽出来。
 
-| 表 | 存什么 | 为什么这样存 |
+| 服务 | 职责 | 主入口 |
 |---|---|---|
-| `sessions` | 完整 WorldState JSON + 渲染节点 + telemetry | WorldState 是 Pydantic model，dump 出来就行 |
-| `memory_entries` | 每个角色的情景/反思记忆条目 | 按 sim_id + character_id + tick 索引 |
-| `branch_seed_snapshots` | (sim_id, node_id, branch_id) → WorldState 快照 | 关键：用于分支 fork，**不重放历史** |
+| `actor_event_service.py` | legacy actor prompt 装配 | `build_actor_event_payload()` |
+| `actor_prompt_context_service.py` | 构造 actor 的 prompt | `build_actor_prompt()` |
+| `actor_runtime_service.py` | actor runtime metadata 持久化到 `world.metadata` | `record_actor_runtime()` |
+| **`actor_turn_service.py`** | 调度 `runtime_actor_turn`（生产）vs `legacy_actor_turn` | `dispatch_actor_turn()` |
+| `boundary_revision_service.py` | 修订被拒绝的 candidate event | `revise_rejected_event()` |
+| `boundary_validation_service.py` | HARD/SOFT 约束检查 | `validate_against_boundaries()` |
+| **`isolated_actor_service.py`** | **生产路径**：per-character 独立 LLM 调用 + 产出 `ActionIntent` | `run_isolated_actor_runtime()` |
+| `narration_service.py` | SceneScript → 中文散文（替代已删的 `narrator.py`） | `render_scene_prose()` |
+| `node_commit_service.py` | 提交 StoryNode | `commit_node()` |
+| `node_lifecycle_service.py` | 节点生命周期（commit + 介入检测）| `run_node_lifecycle()` |
+| `relationship_service.py` | 角色关系更新 | `update_relationships()` |
+| `simulation_runner_service.py` | 顶层 runner | `run_simulation()` |
+| `telemetry_service.py` | 发出 SSE telemetry 事件 | `emit_telemetry()` |
+| `world_setup_service.py` | 世界初始化、场景规划、world builder | `setup_world()` |
 
-### 分支恢复为什么用 snapshot 而不是 history replay？
-
-因为 LLM 推演是**非确定性的**——同样的 prompt 调 LLM 两次会得到不同输出。如果从历史 replay，会得到不同的故事线。
-
-所以 fork 时直接从**该节点的 WorldState 快照**开始，把"那一刻的世界"完整恢复，后面的推演以新分支的身份继续。
+**两个粗体是生产路径的关键服务**：`actor_turn_service` 决定走哪条路，`isolated_actor_service` 实际调 LLM。
 
 ---
 
-## LangGraph Wiring
+## 5. LangGraph Wiring
 
-`engine/graph.py` 把上面的循环编译成 LangGraph StateGraph。State 形状：
+`engine/graph.py:395-405` 编译了 7 个节点的 StateGraph（`build_simulation_graph()`）。**Critic 和 GM 不是独立 graph 节点**——它们作为 factory 注入到 `actor_node` 里。
+
+```
+director_node          (首次: 解析前提, 初始化世界)
+  → scene_director_node (每 tick: 规划本幕)
+  → actor_node          (内部: →isolated_actor →critic →gm → action_intents + scene_script)
+  → gate_keeper_node    (约束校验)
+  → node_detector_node  (固化节点, 判断介入)
+  → narrator_node       (渲染正文, 条件)
+  → world_builder_node  (首次条件)
+  → scene_director_node (循环)
+```
+
+**关键修正**（澄清常见误解）：
+- `actor_node` 内部**调 4 次 LLM**（per-character isolated + critic + gm）
+- 完整 graph 只有 **7 个节点**，不是 9 个
+- `critic_factory=CriticAgent` 和 `gm_factory=GMAgent` 在 `graph.py:221-222` 注入到 `actor_node`
 
 ```python
+# engine/state.py:20 - SimulationState
 class SimulationState(TypedDict):
-    world: WorldState              # 核心状态
-    memory: MemoryManager          # 三层记忆
+    world: WorldState                  # 核心状态
+    memory: MemoryManager              # 三层记忆
     scene_plan: Optional[ScenePlan]
     action_intents: list[ActionIntent]
     intent_critiques: list[IntentCritique]
     scene_script: Optional[SceneScript]
-    candidate_event: str           # 旧路径占位（生产路径用 scene_script）
+    candidate_event: str               # 旧路径占位（生产不用）
     validation_passed: bool
     needs_intervention: bool
     initialized: bool
@@ -226,120 +143,301 @@ class SimulationState(TypedDict):
     error: str
     sim_id: str
     trace_id: str
-    streaming_callbacks: Dict[str, Any]  # SSE callback 句柄
+    streaming_callbacks: Dict[str, Any]
 ```
 
-节点顺序：
+---
+
+## 6. Pydantic 契约
+
+`core/dual_loop.py` 定义了 dual-loop 的数据契约。
+
+### `ScenePlan` (`core/dual_loop.py:114`) — Director 产出
+```python
+scene_id, branch_id, tick, title, objective, conflict_type, suspense_hook,
+setting, public_summary, spotlight_character_ids, narrative_pressure,
+constraints, source_node_id
+# Default: narrative_pressure="balanced", conflict_type="external"
+```
+
+### `SceneScript` (`core/dual_loop.py:133`) — GM 产出（事实源）
+```python
+script_id, scene_id, title, summary, public_facts, beats,
+participating_character_ids, rejected_intent_ids, source_node_id
+# rejected_intent_ids 防止 Narrator 写入被拒 intent
+```
+
+### `ActionIntent` (`core/dual_loop.py:52`) — Actor 产出
+```python
+intent_id, scene_id, actor_id, actor_name, action_type, summary,
+rationale, target_ids, confidence (0-1), prompt_trace_id
+# Default: action_type="action", confidence=0.5
+# ⚠ action_type 是 str，不是 enum。prompt 文档建议 "dialogue|action|decision|reaction" 但代码不强制
+```
+
+### `IntentCritique` (`core/dual_loop.py:68`) — Critic 产出
+```python
+critique_id, scene_id, intent_id, actor_id, actor_name,
+accepted (bool), reason_code, severity, reason, revision_hint
+# Default: accepted=True, reason_code="accepted", severity="info"
+```
+
+### `SceneBeat` (`core/dual_loop.py:101`)
+```python
+beat_id, actor_id, actor_name, summary, outcome,
+visibility ("public"|"private"|"secret"), source_intent_id
+```
+
+### `NarratorInput` (`core/dual_loop.py:151`) — 传给 Narrator
+```python
+contract_version: str = "narrator-input-v2"   # ⚠ 默认值里还带 "v2" 后缀
+source: str = "story_node"                   # "scene_script"（生产）| "story_node"（fallback）
+scene_id, script_id, title, summary, public_facts, beats,
+participating_character_ids, rejected_intent_ids, memory_context,
+character_summaries, location_context, metadata
+# 字段默认值 `contract_version="narrator-input-v2"` 是历史命名残留，不要改
+```
+
+### `InterventionSignal` (`agents/node_detector.py:31`)
+```python
+should_intervene: bool
+urgency: str  # "low" | "medium" | "high" | "critical"（不强制）
+reason, context, suggested_options
+```
+
+### `PromptTrace` (`core/dual_loop.py:36`)
+```python
+trace_id, agent, scene_id, character_id, system_prompt, user_prompt,
+assembled_prompt, narrative_pressure, visible_character_ids,
+memory_trace, metadata
+```
+
+---
+
+## 7. 4 个 SQLite 表
+
+`storage/db.py:42-96` 定义了 4 个表。
+
+| 表 | 主键 | 存什么 | 用途 |
+|---|---|---|---|
+| `worlds` | `world_id` | `WorldState` Pydantic dump 到 `state_json` | WorldState 的 canonical 持久化 |
+| `sessions` | `sim_id` | session 状态、nodes_json、telemetry_events、metadata | session-level 状态 |
+| `memory_entries` | `entry_id` | per-character episodic memory + 可选 vector embedding | 角色记忆向量检索 |
+| `branch_seed_snapshots` | `(sim_id, node_id, branch_id)` | fork 时点的 `WorldState` 快照 | **分支 fork**（用 snapshot 不 replay） |
+
+**`seed_kind` 列**（`storage/db.py:72`）默认值 `'world_state_v1'` 是历史命名残留，写但从不读。详见 §13 gotcha #6。
+
+---
+
+## 8. 21 个 API 端点
+
+`api/server.py` + `api/routes/{simulations,branches,workspace}.py` 共定义 21 个端点（不含 `/health`）。
+
+### 仿真核心 (`api/routes/simulations.py`)
+| 方法 | 路径 | 行 | 用途 |
+|---|---|---|---|
+| GET | `/health` | 42 | 健康检查 + LLM 配置信息 |
+| POST | `/api/simulate/start` | 50 | 启动新推演 |
+| GET | `/api/simulate/{id}` | 54 | 拉取当前推演状态 |
+| GET | `/api/simulate/{id}/diagnostics` | 58 | 内存/路由/成本摘要 |
+| GET | `/api/simulate/{id}/inspector` | 146 | Prompt Inspector：完整 prompt + 召回记忆 |
+| GET | `/api/simulate/{id}/dual-loop/compare` | 191 | 双循环 vs 单循环对比报告 |
+| POST | `/api/simulate/{id}/intervene` | 215 | 提交用户干预指令 |
+| GET | `/api/simulate/{id}/export` | 221 | 导出 bundle（TXT/MD/HTML/DOCX/PDF） |
+| GET | `/api/simulate/{id}/export/file` | 225 | 下载导出文件 |
+| GET | `/api/simulate/{id}/stream` | 247 | **SSE 实时事件流** |
+| GET | `/api/sessions` | 291 | 列出最近会话 |
+
+### 分支 (`api/routes/branches.py`)
+| 方法 | 路径 | 行 | 用途 |
+|---|---|---|---|
+| POST | `/api/simulate/{id}/branch` | 20 | 从历史节点 fork |
+| POST | `/api/simulate/{id}/branch/switch` | 26 | 切换活跃分支 |
+| GET | `/api/simulate/{id}/branch/compare` | 30 | 主线/支线对比 |
+| POST | `/api/simulate/{id}/branch/pacing` | 34 | 设置分支节奏档位 |
+
+### 工作区编辑 (`api/routes/workspace.py`)
+| 方法 | 路径 | 行 | 用途 |
+|---|---|---|---|
+| PATCH | `/api/simulate/{id}/characters/{char_id}` | 21 | 编辑角色属性（waiting 状态） |
+| PATCH | `/api/simulate/{id}/relationships` | 27 | 建立/修改角色关系 |
+| PATCH | `/api/simulate/{id}/world` | 31 | 编辑世界设定 |
+| POST | `/api/simulate/{id}/constraints` | 35 | 添加约束 |
+| PUT | `/api/simulate/{id}/wiki` | 39 | 保存 Wiki 设定 |
+| PATCH | `/api/simulate/{id}/nodes/{node_id}/rendered-text` | 43 | 保存富文本正文 |
+
+**SSE 事件类型**（从 `engine/services/telemetry_service.py`）：节点提交、telemetry、LLM 路由、渲染进度。前端不轮询，全由服务端 push。
+
+---
+
+## 9. 10 个前端组件
+
+`frontend/src/components/` 下 10 个 React 组件（不含 `*.test.tsx`）。
+
+| 文件 | 组件 | 渲染什么 |
+|---|---|---|
+| `StartPanel.tsx` | `StartPanel` | 启动新推演的表单 |
+| `StoryFeed.tsx` | `StoryFeed` | tick 事件流（时间倒序） |
+| `BranchPanel.tsx` | `BranchPanel` | 分支树 + 切换 UI |
+| `ExportPanel.tsx` | `ExportPanel` | 导出/下载控制 |
+| `RelationshipPanel.tsx` | `RelationshipPanel` | 角色关系图谱 |
+| `InterventionPanel.tsx` | `InterventionPanel` | 导演指令 modal |
+| `WorldPanel.tsx` | `WorldPanel` | 世界状态查看 |
+| `EditPanel.tsx` | `EditPanel` | 编辑角色/世界/关系 |
+| `RichTextEditor.tsx` | `RichTextEditor` | 富文本正文编辑器 |
+| `Header.tsx` | `Header` | 应用 chrome（顶部导航） |
+
+---
+
+## 10. LLM 接入与 Prompt Registry
+
+### 统一入口
+- **`chat_completion_with_profile(profile_id, messages)`** — `utils/llm.py`
+- 通过 `agent_profiles.yaml` 中的 profile 路由
+- 不再存在公共 `chat_completion(...)`（Sprint 26 已私有化为 `_execute_chat_completion`）
+
+### 三层路由
+- `logic` / `creative` / `role` — 决定 provider 优先级
+- `agent_profiles.yaml` 定义每个 profile_id 的 temperature / max_tokens / top_p
+
+### 支持的 provider
+- **MiMo** (默认) / Kimi / OpenAI / Ollama (本地)
+- benchmark score < 阈值时自动回退到全局默认（`utils/llm.py:_should_fallback`）
+
+### Prompt 模板
+- `src/worldbox_writer/prompts/*.yaml` — 外部化 prompt
+- `prompting/registry.py` — 加载器，支持 `PROMPT_TEMPLATE_DIR` 环境变量覆盖
+- 运行时热加载（按 mtime 缓存）
+
+### Profile 列表（`config/agent_profiles.yaml`）
+Sprint 26 后剩 12 个 profile：`director_init` / `director_intervention` / `director_title` / `critic_review` / `gate_keeper_validate` / `narrator_render` / `node_detector` / `world_builder_expand` / `world_builder_location` / `memory_summarize_entries` / `memory_reflection` / `judge_committee` / `judge_multi_chapter` / `actor_event` / `actor_intent`（最后 2 个是 dual-loop 用）。
+
+---
+
+## 11. 角色记忆与状态
+
+### 角色属性 (`core/models.py:90` `Character`)
+```python
+id, name, description, personality, goals, status,
+relationships: Dict[str, Relationship],
+memory: List[str],                   # ⚠ 工作记忆：上限 20，append-only
+metadata: Dict[str, Any]             # ⚠ 反思记忆存在这里
+```
+
+### `WorldState` (`core/models.py:315`)
+```python
+world_id, title, premise,
+world_rules, factions, locations,    # WorldBuilder 扩写
+characters: Dict[str, Character],
+nodes: Dict[str, StoryNode],
+current_node_id,
+branches: Dict[str, Dict],            # 分支元数据
+active_branch_id: str = "main",
+constraints: List[Constraint],
+pending_intervention, intervention_context,
+tick, is_complete, metadata
+```
+
+### 实际持久化（**纠正"三个认知记忆层"的过度包装**）
+
+| 层 | 实际存储 | 性质 |
+|---|---|---|
+| 工作记忆 | `Character.memory: List[str]` | Python list，append-only，**上限 20 条** |
+| 情景记忆 | `memory_entries` 表（`storage/db.py:81`）+ 可选 vector embedding | 真正可向量检索 |
+| 反思记忆 | `Character.metadata["reflection_notes"]: List[str]`（`memory/memory_manager.py:629`） | **就是个 metadata list，不是独立 tier** |
+
+> **不是"后台异步聚合系统"**，是手工调 `MemoryManager.assess_consistency()` / `get_character_arc()` 触发的同步操作，输出写到 `reflection_notes` metadata 字段。
+
+### 向量检索后端
+- 默认 `chroma`，`MEMORY_VECTOR_BACKEND=auto` 时 fallback 到 SQLite BM25
+- 配置：(`MEMORY_VECTOR_BACKEND`, `MEMORY_VECTOR_PATH`, `MEMORY_VECTOR_COLLECTION`)
+
+---
+
+## 12. 双循环运行时
+
+**生产路径**（`FEATURE_DUAL_LOOP_ENABLED=True`，默认）：
 
 ```
-director_node → scene_director_node → actor_node → gate_keeper_node
-                                                            ↓
-                                                    node_detector_node
-                                                            ↓
-                                            narrator_node (conditional)
-                                                            ↓
-                                            world_builder_node (conditional, 首次)
-                                                            ↓
-                                            back to scene_director_node
+actor_turn_service.run_actor_turn(world, memory, scene_plan=...)
+  → if dual_loop_enabled_func() and scene_plan:
+      → runtime_actor_turn(...)
+        → isolated_actor_service.run_isolated_actor_runtime()  [PER-CHARACTER LLM]
+        → critic.review_batch(world, scene_plan, action_intents)    [1× LLM]
+        → gm.settle_scene(world, scene_plan, accepted_intents)      [1× LLM]
+        → actor_runtime_service.persist_actor_runtime_metadata()    [写入 world.metadata]
+      → return ActorTurnResult(...)
 ```
 
-LangGraph 提供 `interrupt_before` 支持关键节点的用户干预（NodeDetector 触发时暂停推演，等用户输入）。
+**为什么叫"双循环"**：
+- **内循环**（logic loop）：每个 tick 的 Actor → Critic → GM 回路
+- **外循环**（prose loop）：Narrator 把 SceneScript 扩写成正文
+
+**Legacy 单循环路径**（`legacy_actor_turn`，`FEATURE_DUAL_LOOP_ENABLED=False`）：保留作为**紧急回滚**用。生产永远走双循环。
+
+**内/外循环的命名是比喻**，代码上没有"内循环节点 / 外循环节点"这样的 LangGraph 划分——它们都是 `actor_node` 内部的子调用。
 
 ---
 
-## LLM 接入
+## 13. Gotchas 与 Invariants
 
-- **统一入口**：`chat_completion_with_profile(profile_id, messages)` 走 `agent_profiles.yaml` 中的 profile
-- **三层路由**：`logic` / `creative` / `role` 三种 role 在不同 provider 之间路由
-- **支持 provider**：MiMo (默认) / Kimi / OpenAI / Ollama (本地)
-- **降级**：当某 provider 的 benchmark score 低于阈值时自动回退到全局默认
+**修改代码前必读**。每条都是"踩过的坑"或"易误解的地方"。
 
-Prompt 模板放在 `src/worldbox_writer/prompts/*.yaml`，运行时通过 `PromptRegistry` 加载，支持 `PROMPT_TEMPLATE_DIR` 环境变量覆盖而不需要改代码。
-
----
-
-## 双循环运行时（当前生产路径）
-
-`engine.dual_loop_enabled` 是一个**功能开关**（`FEATURE_DUAL_LOOP_ENABLED`，默认 `True`）。开启时走"双循环"——即 Actor 输出 `ActionIntent` 后必须经 Critic + GM 才生成 `SceneScript`；关闭时回退到"单循环"——Actor 直接输出候选事件文本（用于紧急回滚，**生产中永远走双循环**）。
-
-### 为什么叫"双循环"？
-
-- **内循环**：每 tick 的 Actor → Critic → GM 回路
-- **外循环**：Narrator 把 SceneScript 扩写成正文、用户在前端读到结果
-
-两层循环嵌套，内层负责"事实"，外层负责"文笔"。
+1. **`ActorAgent.propose_action()` 返回 `ActionProposal`，不是 `ActionIntent`**（`agents/actor.py:62`）。生产用的 `ActionIntent` 是 `isolated_actor_service.propose_intent()` 产出的（`isolated_actor_service.py:323`）。别混淆。
+2. **Critic 和 GM 不是 LangGraph 节点**，是 factory 注入到 `actor_node` 的 callable（`graph.py:221-222`）。改 Critic/GM 行为时改 agent 类，**不要**在 `graph.py` 加节点。
+3. **`ActionIntent.action_type` 是 `str = "action"`**（`core/dual_loop.py:59`），**不是 enum**。prompt 文档建议 `"dialogue|action|decision|reaction"`，但代码不强制。加新 value 不需要改 schema。
+4. **`NarratorInput.contract_version` 默认值是 `"narrator-input-v2"`**（`core/dual_loop.py:154`），是历史命名残留。**改这个值会破坏 Inspector 输出的兼容**。
+5. **node.metadata 里存的是 `narrator_input`**（不是 `narrator_input_v2`，Sprint 26 已重命名）。`api/core/serialization.py:61` 读这个 key。
+6. **`WorldState` 是真正的"事实源"**（不是 `SceneScript`）。`SceneScript` 是 per-tick 的"本幕事实"，但 `WorldState.nodes` 持久化全部 tick。GM 不是唯一事实源，**只是 per-tick 唯一结算者**。
+7. **`storage/db.py` 的 `seed_kind` 列**（schema 第 72 行）写但从不读——历史残留，**不要**依赖它做版本判断。
+8. **branch fork 用 snapshot 不 replay**（`storage/db.py:323, 296-317`），因为 LLM 推演非确定性。replay 会得到不同故事线。
+9. **"信息物理隔离"是比喻**。每个 Actor 用独立的 LLM 调用 + 独立的 prompt context，**但**同进程、同 `WorldState`、同 `MemoryManager`。找 process/sandbox 找不到。
+10. **`NodeDetector` 触发介入**靠的是 LLM 调用 + 60+ 中文高风险关键词 + 每 5 tick 周期性检查，**不是**"scene_script 包含分歧点"。
+11. **`Critic` 不一定用"廉价" LLM**——它走和 Actor 一样的 `chat_completion_with_profile`。"廉价"是 profile 路由选择（temperature 0.0, 廉价 prompt），不是不同引擎。
+12. **dual-loop 路径是唯一生产路径**。`legacy_actor_turn` 仅作紧急回滚。`engine/dual_loop.py` 里的 `build_compatibility_intent` / `_derive_intent_summary` 等是 Sprint 26 stub（raise `NotImplementedError`），**别**在新代码里调用。
+13. **改 profile_id 要重启服务**：`agent_profiles.yaml` 在启动时加载，热加载 prompt 但不热加载 profile。改了 profile_id 后下次启动生效。
+14. **Graph state 是 TypedDict，不是 Pydantic**（`engine/state.py:20`）。新字段加在 `SimulationState` 里时，**所有** `_actor_node` / `scene_director_node` 等函数返回的 dict 都要对应更新。
 
 ---
 
-## API 层
-
-`api/server.py` 是 FastAPI 入口。三个核心路由：
-
-| 路由 | 用途 |
-|---|---|
-| `POST /api/simulate/start` | 新建推演 |
-| `GET /api/simulate/{id}/stream` | **SSE** 实时事件流（每个 tick 的 telemetry、节点更新、渲染完成） |
-| `GET /api/simulate/{id}/dual-loop/compare` | 双循环 vs 单循环对比报告（用于灰度决策） |
-| `GET /api/simulate/{id}/inspector` | Prompt Inspector：展示每次 LLM 调用的完整 prompt 与召回的记忆 |
-
-SSE 推送的事件类型：节点提交、telemetry、LLM 路由、渲染进度——前端不轮询，所有状态由服务端 push。
-
----
-
-## 前端
-
-React + TypeScript + Vite。核心交互：
-
-- **创作工作台**：左窗格推演事件流（时间倒序），右窗格渲染正文
-- **Inspector**：点击任何角色，查看它最近一次 LLM 调用的完整 prompt 模板 + 注入的私有记忆片段
-- **Prompt 编辑器**：用户可在 `prompts/*.yaml` 直接修改模板，热加载生效（无需重启服务）
-
----
-
-## 关键设计决策
-
-| 决策 | 原因 |
-|---|---|
-| 推演和渲染分离 | Token 短 + 结构化 + 单独 prompt = 幻觉率指数级下降；事实一旦固化就锁死 |
-| 角色信息物理隔离 | 每个 Actor 独立 LLM 实例 + 独立 prompt context，从架构层杜绝"偷看剧本" |
-| GM 作为唯一事实源 | SceneScript 是契约，谁也不能改写它——Narrator 也不行 |
-| 分支用 snapshot 而非 replay | LLM 非确定性，replay 会得到不同故事 |
-| Prompt 外部化为 YAML | 让 prompt 作者不需要改 Python 代码；支持热加载与环境覆盖 |
-| Narrator 接收 rejected_intent_ids | 防止"我说不让写但 LLM 写了"的漂移 |
-| 拒绝的 intent 持久化 | 否则下一 tick 的 Critic 没法避免重复犯同样的错 |
-
----
-
-## 如何扩展
+## 14. 扩展地图
 
 | 你想加什么 | 该改哪里 |
 |---|---|
-| 新的 Agent（比如"音乐 Agent"在场景里放背景音乐） | `agents/` 加文件 + `engine/graph.py` 加节点 + `engine/services/` 加业务逻辑 + `prompts/` 加 yaml |
-| 新的状态字段（比如"角色心情"） | `core/models.py` 加 Pydantic field + `engine/state.py` 改 TypedDict |
-| 新的 LLM provider | `utils/llm.py` 加 transport + `agent_profiles.yaml` 加 profile |
+| 新的 Agent | 1) `agents/` 加新文件（复制 `agents/actor.py:49-156` 骨架）<br>2) `engine/graph.py:399-405` `add_node` 注册<br>3) `engine/services/` 加对应业务逻辑<br>4) `prompts/` 加 yaml<br>5) `config/agent_profiles.yaml` 加 profile_id |
+| 新的 State 字段 | `engine/state.py:20` `SimulationState` 加字段，**所有** graph node 函数的返回 dict 都要更新 |
+| 新的 LLM provider | `utils/llm.py` 加 `_build_client` 分支 + `_chat_completion_<provider>` 传输 |
 | 新的 LLM 路由策略 | `utils/llm.py` 改 `_should_fallback` |
-| 新的约束类型 | `core/models.py` 加 `ConstraintType` enum |
+| 新的约束类型 | `core/models.py:42` `ConstraintType` enum |
 | 新的渲染风格 | `prompts/narrator_system.yaml` 加 `system_variants` 键 |
-| 新的 SSE 事件类型 | `engine/services/telemetry_service.py` 加 emit + 前端 `types/index.ts` 加类型 |
-| 新的分支恢复策略 | `engine/services/actor_turn_service.py`（已经有 `FEATURE_DUAL_LOOP_ENABLED` 开关模式可以参考） |
+| 新的 SSE 事件类型 | `engine/services/telemetry_service.py` 加 emit + `frontend/src/types/index.ts` 加类型 |
+| 新的 SQLite 表 | `storage/db.py:42-96` 加 `CREATE TABLE`，记得加迁移逻辑（无 auto-migration framework）|
 
 ---
 
-## 几个容易混淆的概念
+## 15. 术语表 + 进一步阅读
+
+### 容易混淆的概念
 
 | 概念 | 不是你想的那个 | 它是 |
 |---|---|---|
-| "tick" | 不是程序循环的 tick | 一个完整的"导演→演员→审→算→渲"周期 |
-| "scene" | 不是 HTML 标签 | Director 规划的一"幕"，可能跨多个 tick |
-| "branch" | 不是 Git branch | 用户在某个 StoryNode 上做的"分叉选择"，对应一个独立的推演支线 |
-| "intent" | 不是命令行 | 角色的"想做什么"——动词级（拔剑/逃跑/对话） |
-| "beat" | 不是音频 beat | SceneScript 的一个剧情点（一个动作 + 一个结果） |
-| "fast-forward" | 不是跳过 | Narrator 跳过文学渲染，直接把 SceneScript 压缩为概要文字 |
+| `tick` | 不是 CPU tick | 一个完整的 Director→Actor→Critic→GM→GateKeeper→Narrator 周期 |
+| `scene` | 不是 HTML 标签 | Director 规划的一"幕"（可能跨多个 tick）|
+| `branch` | 不是 Git branch | 用户在某个 StoryNode 上做的分叉选择 |
+| `intent` | 不是命令行 | 角色的"想做什么"——动词级（对话/动作/决策/反应）|
+| `beat` | 不是音频 beat | SceneScript 的一个剧情点（动作 + 结果）|
+| `fast-forward` | 不是跳过 | Narrator 跳过文学渲染直接输出 SceneScript 概要 |
 
----
+### 不在本文档范围
+- 没有"100 章网文"等市场定位（见 `PRODUCT_STRATEGY.md`）
+- 没有评测维度（见 `QUALITY_SPEC.md`）
+- 没有开发/部署命令（见 `DEVELOPMENT.md`）
+- 没有 Sprint 计划/历史（见 `docs/sprints/`）
+- 本文档只描述"代码是什么"，不描述"代码应为什么"
 
-## 进一步阅读
+### 进一步阅读
 
 - [DEVELOPMENT.md](../development/DEVELOPMENT.md) — 环境、命令、CI、灰度与回滚、双循环 rollout 流程
 - [QUALITY_SPEC.md](../product/QUALITY_SPEC.md) — 评测系统（12 维 prose + 12 维 story + 7 维 AI-issue）
 - [PRODUCT_STRATEGY.md](../product/PRODUCT_STRATEGY.md) — 产品定位与演进路线
+- `config/_schema.md` — env vars 和 agent profile_ids 完整清单
