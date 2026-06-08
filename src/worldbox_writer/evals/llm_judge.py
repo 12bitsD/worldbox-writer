@@ -630,7 +630,9 @@ def _multichapter_call_one(
         score = round(min(10.0, max(0.0, float(raw_score))), 2)
 
     # evidence_quotes is an array for cross-passage; coerce defensively
-    evidence_quotes_raw = parsed.get("evidence_quotes") or []
+    evidence_quotes_raw = parsed.get("evidence_quotes")
+    if evidence_quotes_raw is None:
+        evidence_quotes_raw = []
     if isinstance(evidence_quotes_raw, str):
         evidence_quotes_raw = [evidence_quotes_raw]
     evidence_quotes = [str(q)[:240] for q in evidence_quotes_raw if isinstance(q, str)]

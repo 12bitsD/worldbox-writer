@@ -512,6 +512,11 @@ from worldbox_writer.evals.dimension_prompts import (  # noqa: E402
 from worldbox_writer.evals.llm_judge import judge_multi_chapter  # noqa: E402
 
 
+class FalseyList(list[str]):
+    def __bool__(self) -> bool:
+        return False
+
+
 def _cross_passage_payload(
     score: float = 7.0, evidence: list[str] | None = None
 ) -> str:
@@ -610,6 +615,35 @@ def test_multi_chapter_inapplicable_dim_excluded_from_overall() -> None:
     assert result["per_dimension"]["foreshadowing_recovery"]["applicable"] is False
     assert result["n_applicable"] == 3
     assert result["overall"] == 7.0  # mean of remaining 3 at 7.0
+
+
+def test_multi_chapter_preserves_falsey_evidence_quotes() -> None:
+    """Falsey list-like evidence_quotes must still validate against chapters."""
+    chapters = ["真实存在的章节内容", "另一章真实内容"]
+    quote = "真实存在的章节内容"
+    parsed = {
+        "applicable": True,
+        "score": 7.0,
+        "evidence_quotes": FalseyList([quote]),
+        "rule_hit": "demo.cross",
+        "reasoning": "demo",
+    }
+    with (
+        patch(
+            "worldbox_writer.evals.llm_judge.chat_completion_with_profile",
+            side_effect=_route_by_cross_dim(),
+        ),
+        patch(
+            "worldbox_writer.evals.llm_judge.parse_judge_response",
+            return_value=parsed,
+        ),
+    ):
+        result = judge_multi_chapter(chapters)
+
+    rec = result["per_dimension"]["stakes_escalation"]
+    assert rec["evidence_quotes"] == [quote]
+    assert rec["invalid_evidence_quotes"] == []
+    assert rec["score"] == 7.0
 
 
 def test_multi_chapter_fabricated_quote_demotes_high_score() -> None:
