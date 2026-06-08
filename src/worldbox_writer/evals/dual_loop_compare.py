@@ -20,7 +20,7 @@ def _ordered_lineage_nodes(world: WorldState) -> list[StoryNode]:
     if not world.current_node_id:
         return sorted(
             world.nodes.values(),
-            key=lambda node: int(node.metadata.get("tick") or 0),
+            key=_node_tick,
         )
 
     ordered: list[StoryNode] = []
@@ -36,6 +36,11 @@ def _ordered_lineage_nodes(world: WorldState) -> list[StoryNode]:
 
     ordered.reverse()
     return ordered
+
+
+def _node_tick(node: StoryNode) -> int:
+    tick = node.metadata.get("tick")
+    return int(0 if tick is None else tick)
 
 
 def _metadata_dict(node: StoryNode, key: str) -> dict[str, Any]:

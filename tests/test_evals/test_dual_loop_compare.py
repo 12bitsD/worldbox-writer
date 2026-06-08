@@ -49,6 +49,11 @@ class FalseyDict(dict[str, Any]):
         return False
 
 
+class FalseyInt(int):
+    def __bool__(self) -> bool:
+        return False
+
+
 def test_build_dual_loop_compare_report_counts_rollout_signals() -> None:
     world, node = _world_with_dual_loop_metadata()
 
@@ -92,6 +97,19 @@ def test_build_dual_loop_compare_report_preserves_falsey_inputs(monkeypatch) -> 
     assert report["dual_loop_path"]["enabled"] is True
     assert report["telemetry"]["event_count"] == 1
     assert report["telemetry"]["stage_counts"]["narrator.completed"] == 1
+
+
+def test_ordered_lineage_nodes_preserves_falsey_tick_metadata() -> None:
+    world = WorldState(title="测试世界", premise="测试前提")
+    early = StoryNode(title="第一幕", description="先发生")
+    late = StoryNode(title="第二幕", description="后发生")
+    early.metadata["tick"] = FalseyInt(1)
+    late.metadata["tick"] = 2
+
+    world.add_node(late)
+    world.add_node(early)
+
+    assert compare_module._ordered_lineage_nodes(world) == [early, late]
 
 
 def test_dual_loop_compare_cli_writes_report(tmp_path, monkeypatch) -> None:
