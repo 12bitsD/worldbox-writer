@@ -28,6 +28,11 @@ class FalseyMetadata(dict[str, Any]):
         return False
 
 
+class FalseyStr(str):
+    def __bool__(self) -> bool:
+        return False
+
+
 def _world_with_characters() -> tuple[WorldState, Character, Character, Character]:
     world = WorldState(title="测试世界", premise="王城内没有魔法。")
     alice = Character(name="阿璃", personality="谨慎", goals=["守住王城"])
@@ -210,6 +215,30 @@ def test_critic_output_has_valid_reason_code(
 
     assert verdict.reason_code in _VALID_REASON_CODES
     assert verdict.reason_code == CRITIC_UNSAFE_OR_ABSURD
+
+
+def test_critic_verdict_preserves_falsey_string_fields() -> None:
+    _world, alice, bob, _hidden = _world_with_characters()
+    scene_plan = _scene_plan(alice, bob)
+    intent = _intent(scene_plan, alice, bob)
+
+    verdict = CriticAgent()._build_verdict_from_payload(
+        {
+            "accepted": False,
+            "reason_code": FalseyStr(CRITIC_WORLD_RULE_VIOLATION),
+            "severity": FalseyStr("warning"),
+            "reason": FalseyStr("违反世界规则"),
+            "revision_hint": FalseyStr("改成凡人工具"),
+        },
+        scene_plan=scene_plan,
+        intent=intent,
+    )
+
+    assert verdict.accepted is False
+    assert verdict.reason_code == CRITIC_WORLD_RULE_VIOLATION
+    assert verdict.severity == "warning"
+    assert verdict.reason == "违反世界规则"
+    assert verdict.revision_hint == "改成凡人工具"
 
 
 def test_critic_sample_preserves_falsey_llm_metadata(

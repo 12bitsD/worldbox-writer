@@ -233,14 +233,24 @@ class CriticAgent:
             )
 
         accepted = self._coerce_bool(data.get("accepted"), default=True)
-        reason_code = str(data.get("reason_code") or CRITIC_ACCEPTED)
+        reason_code_value = data.get("reason_code")
+        reason_code = (
+            CRITIC_ACCEPTED if reason_code_value is None else str(reason_code_value)
+        )
         if reason_code not in _VALID_REASON_CODES:
             reason_code = CRITIC_ACCEPTED if accepted else CRITIC_UNSAFE_OR_ABSURD
-        severity = str(data.get("severity") or ("info" if accepted else "blocking"))
+        severity_value = data.get("severity")
+        severity = (
+            ("info" if accepted else "blocking")
+            if severity_value is None
+            else str(severity_value)
+        )
         if severity not in _VALID_SEVERITIES:
             severity = "info" if accepted else "blocking"
-        reason = str(data.get("reason") or "")
-        revision_hint = str(data.get("revision_hint") or "")
+        reason_value = data.get("reason")
+        reason = "" if reason_value is None else str(reason_value)
+        revision_hint_value = data.get("revision_hint")
+        revision_hint = "" if revision_hint_value is None else str(revision_hint_value)
 
         if accepted:
             return self._accepted(
