@@ -65,10 +65,14 @@ def collect_sample(
 
     metadata = {} if metadata is None else metadata
     downstream_decision = metadata.get("downstream_decision")
+    run_id_value = metadata.get("run_id")
+    sample_id_value = metadata.get("sample_id")
     role = metadata.get("role")
     model = metadata.get("model")
-    run_id = str(metadata.get("run_id") or _run_id())
-    sample_id = str(metadata.get("sample_id") or f"sample_{uuid4().hex[:12]}")
+    run_id = str(_run_id() if run_id_value is None else run_id_value)
+    sample_id = str(
+        f"sample_{uuid4().hex[:12]}" if sample_id_value is None else sample_id_value
+    )
     root = Path(get_settings().sample.sample_dir or str(DEFAULT_SAMPLE_DIR))
     path = root / node_name / f"{run_id}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -21,7 +21,6 @@ def test_collect_sample_preserves_falsey_metadata_mapping(
 ) -> None:
     monkeypatch.setenv("WB_COLLECT_SAMPLES", "1")
     monkeypatch.setenv("WB_SAMPLE_DIR", str(tmp_path))
-    monkeypatch.setenv("WB_SAMPLE_RUN_ID", "run-falsey")
 
     path = collect_sample(
         "actor_intent",
@@ -31,7 +30,8 @@ def test_collect_sample_preserves_falsey_metadata_mapping(
             {
                 "role": FalseyStr("actor"),
                 "model": FalseyStr("unit-test-model"),
-                "sample_id": "sample-falsey",
+                "run_id": FalseyStr("run-falsey"),
+                "sample_id": FalseyStr("sample-falsey"),
                 "downstream_decision": FalseyDict(
                     {"intent_id": "intent-1", "accepted": False}
                 ),
