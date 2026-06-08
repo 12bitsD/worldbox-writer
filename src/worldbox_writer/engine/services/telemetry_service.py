@@ -20,7 +20,7 @@ def resolve_branch_context(world: WorldState) -> Dict[str, Optional[str]]:
 
 
 def llm_telemetry_fields(metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    if not metadata:
+    if metadata is None or len(metadata) == 0:
         return {}
 
     return {
@@ -63,11 +63,13 @@ def emit_telemetry(
     """Emit a user-visible telemetry event when a callback is configured."""
     callbacks = state["streaming_callbacks"]
     on_telemetry = callbacks.get("on_telemetry")
-    if not on_telemetry:
+    if on_telemetry is None:
         return
 
     branch_context = resolve_branch_context(state["world"])
-    merged_payload = {**(payload or {}), **(llm_payload or {})}
+    base_payload = {} if payload is None else payload
+    base_llm_payload = {} if llm_payload is None else llm_payload
+    merged_payload = {**base_payload, **base_llm_payload}
     on_telemetry(
         {
             "tick": tick,

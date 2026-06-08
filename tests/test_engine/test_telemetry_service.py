@@ -8,6 +8,22 @@ from worldbox_writer.engine.services.telemetry_service import (
 )
 
 
+class FalseyDict(dict[str, object]):
+    def __bool__(self) -> bool:
+        return False
+
+
+class FalseyTelemetryCallback:
+    def __init__(self) -> None:
+        self.events: list[dict[str, object]] = []
+
+    def __bool__(self) -> bool:
+        return False
+
+    def __call__(self, event: dict[str, object]) -> None:
+        self.events.append(event)
+
+
 def test_resolve_branch_context_uses_active_branch_metadata() -> None:
     world = WorldState(title="测试世界")
     world.branches["branch_a"] = {
@@ -45,6 +61,22 @@ def test_llm_telemetry_fields_flattens_metadata_for_engine_events() -> None:
     assert fields["llm_payload"]["route_group"] == "creative"
     assert fields["llm_payload"]["route_fallback_applied"] is True
     assert fields["llm_payload"]["estimated_cost_usd"] == 0.001
+
+
+def test_llm_telemetry_fields_preserves_falsey_metadata_mapping() -> None:
+    fields = llm_telemetry_fields(
+        FalseyDict(
+            {
+                "request_id": "req-falsey",
+                "provider": "kimi",
+                "model": "moonshot-test",
+            }
+        )
+    )
+
+    assert fields["request_id"] == "req-falsey"
+    assert fields["provider"] == "kimi"
+    assert fields["model"] == "moonshot-test"
 
 
 def test_emit_telemetry_merges_runtime_payload_and_branch_context() -> None:
@@ -93,3 +125,28 @@ def test_emit_telemetry_merges_runtime_payload_and_branch_context() -> None:
             "source_sim_id": None,
         }
     ]
+
+
+def test_emit_telemetry_preserves_falsey_payload_and_callback() -> None:
+    callback = FalseyTelemetryCallback()
+    world = WorldState(title="测试世界")
+    state = {
+        "world": world,
+        "trace_id": "trace-falsey",
+        "streaming_callbacks": {"on_telemetry": callback},
+    }
+
+    emit_telemetry(
+        state,  # type: ignore[arg-type]
+        tick=1,
+        agent="critic",
+        stage="reviewed",
+        message="审查完成",
+        payload=FalseyDict({"decision": "accepted"}),
+        llm_payload=FalseyDict({"route_group": "logic"}),
+    )
+
+    assert callback.events[0]["payload"] == {
+        "decision": "accepted",
+        "route_group": "logic",
+    }
