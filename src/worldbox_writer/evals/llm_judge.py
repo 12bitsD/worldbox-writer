@@ -159,6 +159,12 @@ def _normalize_for_substring(s: str) -> str:
     )
 
 
+def _string_field(payload: Mapping[str, Any], key: str, *, max_length: int) -> str:
+    value = payload.get(key)
+    text = "" if value is None else str(value)
+    return text[:max_length]
+
+
 def _evidence_in_text(text: str, quote: str) -> bool:
     """True iff `quote` is a substring of `text` after light normalization.
 
@@ -280,9 +286,9 @@ def _committee_call_one(
     if isinstance(raw_score, (int, float)) and not isinstance(raw_score, bool):
         score = round(min(10.0, max(0.0, float(raw_score))), 2)
 
-    evidence_quote = str(parsed.get("evidence_quote") or "")[:240]
-    setup_quote = str(parsed.get("setup_quote") or "")[:240]
-    rule_hit = str(parsed.get("rule_hit") or "")
+    evidence_quote = _string_field(parsed, "evidence_quote", max_length=240)
+    setup_quote = _string_field(parsed, "setup_quote", max_length=240)
+    rule_hit = _string_field(parsed, "rule_hit", max_length=240)
     coercions: list[str] = []
 
     if dim.dim_id == "ai_prose_ticks":
@@ -355,7 +361,7 @@ def _committee_call_one(
         "setup_quote": setup_quote,
         "setup_invalid": setup_invalid,
         "rule_hit": rule_hit,
-        "reasoning": str(parsed.get("reasoning") or "")[:120],
+        "reasoning": _string_field(parsed, "reasoning", max_length=120),
         "raw_excerpt": raw[:240],
         "parse_status": parse_status,
         "error": error,
@@ -659,8 +665,8 @@ def _multichapter_call_one(
         "score": score,
         "evidence_quotes": evidence_quotes,
         "invalid_evidence_quotes": invalid_quotes,
-        "rule_hit": str(parsed.get("rule_hit") or ""),
-        "reasoning": str(parsed.get("reasoning") or "")[:200],
+        "rule_hit": _string_field(parsed, "rule_hit", max_length=240),
+        "reasoning": _string_field(parsed, "reasoning", max_length=200),
         "raw_excerpt": raw[:240],
         "parse_status": parse_status,
         "error": error,

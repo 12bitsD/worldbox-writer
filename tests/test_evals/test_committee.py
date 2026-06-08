@@ -20,6 +20,7 @@ from worldbox_writer.evals.dimension_prompts import (
 from worldbox_writer.evals.llm_judge import (
     COMMITTEE_AXIS_WEIGHTS,
     COMMITTEE_TOXIC_VETO_THRESHOLD,
+    _committee_call_one,
     judge_committee,
     parse_judge_response,
 )
@@ -41,6 +42,11 @@ class ChatCompletionSideEffect(Protocol):
 
 
 class FalseyDict(dict[str, str]):
+    def __bool__(self) -> bool:
+        return False
+
+
+class FalseyStr(str):
     def __bool__(self) -> bool:
         return False
 
@@ -123,6 +129,40 @@ def test_route_by_dim_preserves_falsey_overrides() -> None:
     payload = json.loads(route("judge_dimension", [{"content": dim.system_prompt}]))
 
     assert payload["score"] == 8.0
+
+
+def test_committee_call_preserves_falsey_string_fields() -> None:
+    dim = next(item for item in ALL_DIMENSIONS if item.dim_id == "preachiness")
+    parsed = {
+        "applicable": True,
+        "score": 4.0,
+        "evidence_quote": FalseyStr("原文证据"),
+        "setup_quote": FalseyStr("setup evidence"),
+        "rule_hit": FalseyStr("demo.rule"),
+        "reasoning": FalseyStr("judge reasoning"),
+    }
+
+    with (
+        patch(
+            "worldbox_writer.evals.llm_judge.chat_completion_with_profile",
+            return_value="raw",
+        ),
+        patch(
+            "worldbox_writer.evals.llm_judge.parse_judge_response", return_value=parsed
+        ),
+    ):
+        record = _committee_call_one(
+            dim,
+            "原文证据",
+            model=None,
+            temperature=None,
+            max_tokens=None,
+        )
+
+    assert record["evidence_quote"] == "原文证据"
+    assert record["setup_quote"] == "setup evidence"
+    assert record["rule_hit"] == "demo.rule"
+    assert record["reasoning"] == "judge reasoning"
 
 
 def test_committee_skips_inapplicable_conditional_from_axis_average() -> None:
@@ -526,7 +566,10 @@ def test_forced_stupidity_fabricated_setup_quote_coerced() -> None:
 from worldbox_writer.evals.dimension_prompts import (  # noqa: E402
     CROSS_PASSAGE_DIMENSIONS,
 )
-from worldbox_writer.evals.llm_judge import judge_multi_chapter  # noqa: E402
+from worldbox_writer.evals.llm_judge import (  # noqa: E402
+    _multichapter_call_one,
+    judge_multi_chapter,
+)
 
 
 class FalseyList(list[str]):
@@ -625,6 +668,38 @@ def test_cross_passage_helpers_preserve_falsey_inputs() -> None:
 
     assert routed_payload["score"] == 8.0
     assert quote_payload["evidence_quotes"] == ["quoted text"]
+
+
+def test_multi_chapter_call_preserves_falsey_string_fields() -> None:
+    dim = CROSS_PASSAGE_DIMENSIONS[0]
+    parsed = {
+        "applicable": True,
+        "score": 4.0,
+        "evidence_quotes": [FalseyStr("章节证据")],
+        "rule_hit": FalseyStr("demo.cross"),
+        "reasoning": FalseyStr("cross reasoning"),
+    }
+
+    with (
+        patch(
+            "worldbox_writer.evals.llm_judge.chat_completion_with_profile",
+            return_value="raw",
+        ),
+        patch(
+            "worldbox_writer.evals.llm_judge.parse_judge_response", return_value=parsed
+        ),
+    ):
+        record = _multichapter_call_one(
+            dim,
+            ["章节证据", "第二章"],
+            model=None,
+            temperature=None,
+            max_tokens=None,
+        )
+
+    assert record["evidence_quotes"] == ["章节证据"]
+    assert record["rule_hit"] == "demo.cross"
+    assert record["reasoning"] == "cross reasoning"
 
 
 def test_multi_chapter_inapplicable_dim_excluded_from_overall() -> None:
