@@ -8,6 +8,7 @@ from worldbox_writer.core.dual_loop import (
     PromptTrace,
     ScenePlan,
     SceneScript,
+    accepted_and_rejected_action_intents,
 )
 
 
@@ -61,3 +62,47 @@ def test_dual_loop_snapshot_uses_frozen_contract_metadata() -> None:
     assert snapshot.adapter_mode == DUAL_LOOP_ADAPTER_MODE
     assert snapshot.intent_critiques[0].accepted is True
     assert snapshot.intent_critiques[0].reason_code == "accepted"
+
+
+def test_action_intents_split_keeps_unreviewed_and_tracks_rejected() -> None:
+    accepted = ActionIntent(
+        intent_id="intent-accepted",
+        scene_id="scene-1",
+        actor_id="char-1",
+        actor_name="角色A",
+        summary="角色A 观察局势",
+    )
+    rejected = ActionIntent(
+        intent_id="intent-rejected",
+        scene_id="scene-1",
+        actor_id="char-2",
+        actor_name="角色B",
+        summary="角色B 违反规则",
+    )
+    unreviewed = ActionIntent(
+        intent_id="intent-unreviewed",
+        scene_id="scene-1",
+        actor_id="char-3",
+        actor_name="角色C",
+        summary="角色C 等待机会",
+    )
+    accepted_intents, rejected_intent_ids = accepted_and_rejected_action_intents(
+        [accepted, rejected, unreviewed],
+        [
+            IntentCritique(
+                scene_id="scene-1",
+                intent_id=accepted.intent_id,
+                actor_id=accepted.actor_id,
+                accepted=True,
+            ),
+            IntentCritique(
+                scene_id="scene-1",
+                intent_id=rejected.intent_id,
+                actor_id=rejected.actor_id,
+                accepted=False,
+            ),
+        ],
+    )
+
+    assert accepted_intents == [accepted, unreviewed]
+    assert rejected_intent_ids == ["intent-rejected"]

@@ -22,6 +22,7 @@ from worldbox_writer.core.dual_loop import (
     SceneBeat,
     ScenePlan,
     SceneScript,
+    accepted_and_rejected_action_intents,
 )
 from worldbox_writer.core.models import Character, StoryNode, WorldState
 from worldbox_writer.engine.services import isolated_actor_service as _isolated_actor
@@ -244,19 +245,9 @@ def build_scene_script(
     )
     summary = current_node.description if current_node else scene_plan.public_summary
     title = current_node.title if current_node else scene_plan.title
-    critique_lookup = {critique.intent_id: critique for critique in intent_critiques}
-    accepted_intents = [
-        intent
-        for intent in action_intents
-        if critique_lookup.get(intent.intent_id) is None
-        or critique_lookup[intent.intent_id].accepted
-    ]
-    rejected_intent_ids = [
-        intent.intent_id
-        for intent in action_intents
-        if critique_lookup.get(intent.intent_id) is not None
-        and not critique_lookup[intent.intent_id].accepted
-    ]
+    accepted_intents, rejected_intent_ids = accepted_and_rejected_action_intents(
+        action_intents, intent_critiques
+    )
     beats = [
         SceneBeat(
             actor_id=intent.actor_id,

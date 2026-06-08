@@ -81,6 +81,23 @@ class IntentCritique(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
+def accepted_and_rejected_action_intents(
+    action_intents: List[ActionIntent],
+    intent_critiques: List[IntentCritique],
+) -> tuple[List[ActionIntent], List[str]]:
+    """Split intents by critic verdict; unreviewed intents remain accepted."""
+    critique_lookup = {critique.intent_id: critique for critique in intent_critiques}
+    accepted_intents: List[ActionIntent] = []
+    rejected_intent_ids: List[str] = []
+    for intent in action_intents:
+        critique = critique_lookup.get(intent.intent_id)
+        if critique is None or critique.accepted:
+            accepted_intents.append(intent)
+        else:
+            rejected_intent_ids.append(intent.intent_id)
+    return accepted_intents, rejected_intent_ids
+
+
 class SceneBeat(BaseModel):
     """One factual beat inside a scene script."""
 

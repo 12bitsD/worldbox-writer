@@ -10,6 +10,7 @@ from worldbox_writer.core.dual_loop import (
     IntentCritique,
     ScenePlan,
     SceneScript,
+    accepted_and_rejected_action_intents,
 )
 from worldbox_writer.core.models import WorldState
 from worldbox_writer.engine.services.isolated_actor_service import (
@@ -67,13 +68,10 @@ def accepted_action_intents(
     action_intents: list[ActionIntent],
     intent_critiques: list[IntentCritique],
 ) -> list[ActionIntent]:
-    critique_lookup = {critique.intent_id: critique for critique in intent_critiques}
-    return [
-        intent
-        for intent in action_intents
-        if critique_lookup.get(intent.intent_id) is None
-        or critique_lookup[intent.intent_id].accepted
-    ]
+    accepted_intents, _ = accepted_and_rejected_action_intents(
+        action_intents, intent_critiques
+    )
+    return accepted_intents
 
 
 def persist_actor_runtime_metadata(
