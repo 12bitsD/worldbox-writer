@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Callable
 
 import pytest
 
@@ -120,7 +120,15 @@ def test_narrator_agent_rerenders_once_on_ai_prose_ticks(monkeypatch) -> None:
     ]
 
     def fake_chat_completion_with_profile(
-        _profile_id: str, messages: list[dict[str, str]], **_kwargs: Any
+        _profile_id: str,
+        messages: list[dict[str, str]],
+        *,
+        stream: bool = False,
+        on_token: Callable[[str], None] | None = None,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        top_p: float | None = None,
     ) -> str:
         captured_messages.append(messages)
         return responses.pop(0)
@@ -147,16 +155,29 @@ def test_narrator_agent_rerenders_once_on_ai_prose_ticks(monkeypatch) -> None:
 
 
 def test_narrator_agent_keeps_render_when_ai_prose_judge_fails(monkeypatch) -> None:
-    monkeypatch.setattr(
-        narrator_module,
-        "chat_completion_with_profile",
-        lambda *_args, **_kwargs: json.dumps(
+    def fake_chat_completion_with_profile(
+        _profile_id: str,
+        _messages: list[dict[str, str]],
+        *,
+        stream: bool = False,
+        on_token: Callable[[str], None] | None = None,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        top_p: float | None = None,
+    ) -> str:
+        return json.dumps(
             {
                 "prose": "阿璃扣住铁链，桥闸落下。白夜停在三步外。",
                 "style_notes": "clean",
             },
             ensure_ascii=False,
-        ),
+        )
+
+    monkeypatch.setattr(
+        narrator_module,
+        "chat_completion_with_profile",
+        fake_chat_completion_with_profile,
     )
     judge_records = [
         {
@@ -194,10 +215,23 @@ def test_narrator_agent_keeps_render_when_ai_prose_judge_fails(monkeypatch) -> N
 
 
 def test_narrator_agent_raises_on_unparseable_response(monkeypatch) -> None:
+    def fake_chat_completion_with_profile(
+        _profile_id: str,
+        _messages: list[dict[str, str]],
+        *,
+        stream: bool = False,
+        on_token: Callable[[str], None] | None = None,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        top_p: float | None = None,
+    ) -> str:
+        return "这不是 JSON"
+
     monkeypatch.setattr(
         narrator_module,
         "chat_completion_with_profile",
-        lambda *_args, **_kwargs: "这不是 JSON",
+        fake_chat_completion_with_profile,
     )
     monkeypatch.setattr(narrator_module, "get_last_llm_call_metadata", lambda: None)
 

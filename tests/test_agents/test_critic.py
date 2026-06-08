@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Callable
 
 import pytest
 
@@ -68,7 +68,15 @@ def _mock_chat_completion(
     captured: list[list[dict[str, str]]] | None = None,
 ) -> None:
     def fake_chat_completion(
-        _profile_id: str, messages: list[dict[str, str]], **_kwargs: Any
+        _profile_id: str,
+        messages: list[dict[str, str]],
+        *,
+        stream: bool = False,
+        on_token: Callable[[str], None] | None = None,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        top_p: float | None = None,
     ) -> str:
         if captured is not None:
             captured.append(messages)
@@ -153,7 +161,15 @@ def test_critic_fallback_accepted_on_llm_error(
     intent = _intent(scene_plan, alice, bob)
 
     def failing_chat_completion(
-        _profile_id: str, _messages: list[dict[str, str]], **_kwargs: Any
+        _profile_id: str,
+        _messages: list[dict[str, str]],
+        *,
+        stream: bool = False,
+        on_token: Callable[[str], None] | None = None,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        top_p: float | None = None,
     ) -> str:
         raise RuntimeError("mock llm unavailable")
 

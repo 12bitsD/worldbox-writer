@@ -232,7 +232,7 @@ class NarratorAgent:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _invoke(self, messages: List[dict], **kwargs) -> str:
+    def _invoke(self, messages: List[dict], *, profile_id: str) -> str:
         """Unified LLM call: uses injected llm or falls back to chat_completion."""
         if self.llm is not None:
             response = self.llm.invoke(messages)
@@ -244,7 +244,6 @@ class NarratorAgent:
                 "status": "completed",
             }
             return cast(str, response.content)
-        profile_id = str(kwargs.pop("profile_id"))
         content = chat_completion_with_profile(profile_id, messages)
         self.last_call_metadata = get_last_llm_call_metadata()
         return content

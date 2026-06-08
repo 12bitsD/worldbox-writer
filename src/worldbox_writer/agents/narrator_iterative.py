@@ -310,7 +310,9 @@ class NarratorIterativeAgent:
             passed=score >= threshold,
         )
 
-    def _invoke_generation(self, messages: list[dict[str, str]], **kwargs: Any) -> str:
+    def _invoke_generation(
+        self, messages: list[dict[str, str]], *, profile_id: str
+    ) -> str:
         if self.llm is not None:
             response = self.llm.invoke(messages)
             self.last_call_metadata = {
@@ -322,7 +324,6 @@ class NarratorIterativeAgent:
             }
             return cast(str, response.content)
 
-        profile_id = str(kwargs.pop("profile_id"))
         content = chat_completion_with_profile(profile_id, messages)
         self.last_call_metadata = get_last_llm_call_metadata()
         return content
