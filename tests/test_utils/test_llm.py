@@ -12,6 +12,11 @@ from worldbox_writer.utils.llm import (
 )
 
 
+class FalseyDict(dict[str, object]):
+    def __bool__(self) -> bool:
+        return False
+
+
 def _openai_completion_client(
     response: object,
     *,
@@ -190,6 +195,29 @@ def test_eval_report_triggers_fallback(monkeypatch, tmp_path):
     assert narrator_route.model == "gpt-4.1-mini"
     assert narrator_route.benchmark_score == 0.7
     assert narrator_route.benchmark_threshold == 0.8
+
+
+def test_eval_report_preserves_falsey_route_mappings(monkeypatch):
+    monkeypatch.setattr(
+        llm_module,
+        "_load_eval_report",
+        lambda: FalseyDict(
+            {
+                "routes": FalseyDict(
+                    {
+                        "creative": FalseyDict(
+                            {
+                                "score": 0.7,
+                                "threshold": 0.8,
+                            }
+                        )
+                    }
+                )
+            }
+        ),
+    )
+
+    assert llm_module._resolve_benchmark_gate("creative") == (0.7, 0.8)
 
 
 def test_provider_info_reports_logic_and_creative_routes(monkeypatch):

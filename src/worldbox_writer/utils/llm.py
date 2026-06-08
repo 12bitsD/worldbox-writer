@@ -237,8 +237,10 @@ def _resolve_benchmark_gate(
     route_group: str,
 ) -> tuple[Optional[float], Optional[float]]:
     report = _load_eval_report()
-    routes = cast(dict[str, Any], report.get("routes") or {})
-    route = cast(dict[str, Any], routes.get(route_group) or {})
+    routes_raw = report.get("routes")
+    routes = cast(dict[str, Any], {} if routes_raw is None else routes_raw)
+    route_raw = routes.get(route_group)
+    route = cast(dict[str, Any], {} if route_raw is None else route_raw)
     score = route.get("score")
     threshold = route.get("threshold")
     if isinstance(score, (int, float)) and isinstance(threshold, (int, float)):
