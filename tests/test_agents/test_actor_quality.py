@@ -4,6 +4,9 @@ import json
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
+import worldbox_writer.agents.actor as actor_module
 from worldbox_writer.agents.actor import ActorAgent
 from worldbox_writer.core.models import Character, StoryNode, WorldState
 
@@ -18,6 +21,11 @@ class FakeLLM:
         return SimpleNamespace(
             content=json.dumps(self.payload, ensure_ascii=False),
         )
+
+
+class FalseyStr(str):
+    def __bool__(self) -> bool:
+        return False
 
 
 def _world_and_character() -> tuple[WorldState, Character, StoryNode]:
@@ -73,3 +81,20 @@ def test_actor_output_json_has_required_keys() -> None:
         "emotional_state",
         "consequence_hint",
     }.issubset(payload)
+
+
+def test_actor_proposal_preserves_falsey_description(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    world, character, node = _world_and_character()
+    description = FalseyStr("阿璃守住桥闸密钥，扣住铁链逼白夜停步。")
+    monkeypatch.setattr(
+        actor_module,
+        "parse_json_object",
+        lambda _content, *, default: _actor_payload(description=description),
+    )
+    actor = ActorAgent(llm=FakeLLM({}))
+
+    proposal = actor.propose_action(character, world, node)
+
+    assert proposal.description == description

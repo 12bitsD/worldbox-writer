@@ -228,7 +228,10 @@ class ActorAgent:
         return self._parse_json_response(response)
 
     def _build_proposal(self, data: dict, character: Character) -> ActionProposal:
-        description = str(data.get("description") or "").strip()
+        description_value = data.get("description")
+        description = (
+            "" if description_value is None else str(description_value).strip()
+        )
         if not description:
             description = self._fallback_action_data(character)["description"]
         description = self._ensure_visible_motivation(description, character)
