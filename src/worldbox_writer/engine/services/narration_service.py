@@ -329,6 +329,7 @@ class NarrationService:
 
         if on_end_cb:
             on_end_cb()
+        span_kind_value = llm_fields.get("span_kind")
         self.emit_telemetry_func(
             state,
             tick=world.tick,
@@ -345,7 +346,7 @@ class NarrationService:
                 "ai_prose_ticks_rerendered": ai_check_report["rerendered"],
             },
             request_id=llm_fields.get("request_id"),
-            span_kind=str(llm_fields.get("span_kind") or "event"),
+            span_kind="event" if span_kind_value is None else str(span_kind_value),
             provider=llm_fields.get("provider"),
             model=llm_fields.get("model"),
             duration_ms=llm_fields.get("duration_ms"),

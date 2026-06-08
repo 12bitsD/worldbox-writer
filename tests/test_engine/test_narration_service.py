@@ -12,6 +12,11 @@ from worldbox_writer.memory.memory_manager import MemoryManager
 CompletionMessages = list[dict[str, str]]
 
 
+class FalseyStr(str):
+    def __bool__(self) -> bool:
+        return False
+
+
 def _state(world: WorldState, **overrides: Any) -> Dict[str, Any]:
     state: Dict[str, Any] = {
         "world": world,
@@ -205,6 +210,43 @@ def test_narration_service_notifies_rendered_node_callback() -> None:
     )
 
     assert observed == [(str(node.id), 1, "阿璃按下桥闸，追兵被阻断。")]
+
+
+def test_narration_service_preserves_falsey_span_kind() -> None:
+    world = WorldState(title="测试世界", premise="断桥守卫战")
+    alice = Character(name="阿璃", personality="冷静", goals=["守住断桥"])
+    world.add_character(alice)
+    node = StoryNode(
+        title="断桥落闸",
+        description="阿璃按下断桥闸机。",
+        character_ids=[str(alice.id)],
+    )
+    world.add_node(node)
+    world.current_node_id = str(node.id)
+    world.tick = 1
+    emitted: list[dict[str, Any]] = []
+
+    def emit_telemetry(
+        _state: Dict[str, Any],
+        **kwargs: Any,
+    ) -> None:
+        emitted.append(kwargs)
+
+    NarrationService(
+        chat_completion_func=_json_completion("阿璃按下桥闸，追兵被阻断。"),
+        get_last_metadata_func=lambda: None,
+        judge_ai_prose_ticks_func=_clean_ai_check,
+        load_prompt_template_func=_prompt_template,
+        emit_telemetry_func=emit_telemetry,  # type: ignore[arg-type]
+        llm_telemetry_fields_func=lambda _metadata: {
+            "request_id": "req-narrator",
+            "span_kind": FalseyStr("llm"),
+        },
+    ).render_current_node(_state(world))
+
+    assert emitted[-1]["stage"] == "completed"
+    assert emitted[-1]["request_id"] == "req-narrator"
+    assert emitted[-1]["span_kind"] == "llm"
 
 
 def test_narration_service_rerenders_once_on_ai_prose_ticks() -> None:
