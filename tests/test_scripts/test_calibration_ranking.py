@@ -49,6 +49,17 @@ def _write_fixture_dir(root: Path) -> Path:
     return fixture_dir
 
 
+class FalseyList(list[object]):
+    def __bool__(self) -> bool:
+        return False
+
+
+def test_judge_error_count_preserves_falsey_error_list() -> None:
+    module = _load_script_module()
+
+    assert module.judge_error_count({"errors": FalseyList(["parse_failed"])}) == 1
+
+
 def test_calibration_ranking_accepts_custom_fixture_dir(tmp_path, monkeypatch) -> None:
     module = _load_script_module()
     fixture_dir = _write_fixture_dir(tmp_path)

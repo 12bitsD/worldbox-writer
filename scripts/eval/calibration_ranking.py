@@ -50,6 +50,13 @@ def load_sample_text(path_str: str, fixture_dir: Path = DEFAULT_CALIBRATION_DIR)
     return (fixture_dir / path_str).read_text(encoding="utf-8").strip()
 
 
+def judge_error_count(run: dict[str, Any]) -> int:
+    errors = run.get("errors")
+    if errors is None:
+        return 0
+    return len(errors)
+
+
 def spearman_rank_correlation(values_a: list[float], values_b: list[float]) -> float:
     """Spearman ρ from two parallel value sequences (ranks computed internally)."""
     if len(values_a) != len(values_b) or len(values_a) < 2:
@@ -149,7 +156,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     max_tokens=args.max_tokens,
                     concurrency=1,
                 )
-                error_count = len(run.get("errors") or [])
+                error_count = judge_error_count(run)
                 if not error_count or attempt_idx == attempts - 1:
                     break
                 print(
@@ -161,7 +168,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             elapsed = round(time.time() - t0, 1)
             runs.append(run)
-            error_count = len(run.get("errors") or [])
+            error_count = judge_error_count(run)
             print(
                 f"  [{sample_idx}/{n_samples} {sample_id} run#{run_idx + 1}/{args.runs}] "
                 f"overall={run['overall']} vetoed={run['vetoed']} "
