@@ -13,6 +13,7 @@ import importlib.util
 import json
 from pathlib import Path
 from types import ModuleType
+from typing import Callable
 
 ROOT = Path(__file__).parents[2]
 SCRIPT_PATH = ROOT / "scripts" / "e2e_judge.py"
@@ -76,7 +77,17 @@ def test_e2e_judge_mock_flag_runs_judge_committee(tmp_path, monkeypatch) -> None
     module = _load_script_module()
     output_path = tmp_path / "report.json"
 
-    def fake_chat(_profile_id, messages, **_kwargs):
+    def fake_chat(
+        _profile_id: str,
+        messages: list[dict[str, str]],
+        *,
+        stream: bool = False,
+        on_token: Callable[[str], None] | None = None,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        top_p: float | None = None,
+    ) -> str:
         system = messages[0]["content"]
         if "cross-passage" in system or "跨章节" in system:
             return _xp_payload(score=7.0)

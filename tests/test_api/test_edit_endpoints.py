@@ -4,7 +4,6 @@ Uses FastAPI TestClient, no LLM required.
 """
 
 import time
-from typing import Any, Callable
 
 import pytest
 from fastapi.testclient import TestClient
@@ -17,7 +16,7 @@ from worldbox_writer.api.server import (
     _sessions,
     app,
 )
-from worldbox_writer.api.services.branch_service import BranchService
+from worldbox_writer.api.services.branch_service import BranchService, RunSimulationSync
 from worldbox_writer.api.services.simulation_service import (
     InterventionCallback,
     NodeRenderedCallback,
@@ -1145,9 +1144,12 @@ class TestBranchingAPI:
 
         class ImmediateLoop:
             def run_in_executor(
-                self, executor: object, func: Callable[..., Any], *args: Any
-            ) -> Any:
-                return func(*args)
+                self,
+                executor: object,
+                func: RunSimulationSync,
+                session: SimulationSession,
+            ) -> None:
+                func(session)
 
         def fake_run_simulation_sync(session: SimulationSession) -> None:
             assert session.world is not None

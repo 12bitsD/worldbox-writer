@@ -4,6 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 from types import ModuleType
+from typing import Mapping
 
 ROOT = Path(__file__).parents[2]
 SCRIPT_PATH = ROOT / "scripts" / "eval" / "calibration_ranking.py"
@@ -53,7 +54,15 @@ def test_calibration_ranking_accepts_custom_fixture_dir(tmp_path, monkeypatch) -
     fixture_dir = _write_fixture_dir(tmp_path)
     output_path = tmp_path / "ranking.json"
 
-    def fake_judge_committee(text, **_kwargs):
+    def fake_judge_committee(
+        text: str,
+        *,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        concurrency: int = 1,
+        weights: Mapping[str, float] | None = None,
+    ) -> dict[str, object]:
         if "HIGH" in text:
             overall = 8.0
         elif "MID" in text:
@@ -96,7 +105,15 @@ def test_calibration_ranking_can_skip_spearman_gate(tmp_path, monkeypatch) -> No
     fixture_dir = _write_fixture_dir(tmp_path)
     output_path = tmp_path / "ranking.json"
 
-    def fake_judge_committee(text, **_kwargs):
+    def fake_judge_committee(
+        text: str,
+        *,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        concurrency: int = 1,
+        weights: Mapping[str, float] | None = None,
+    ) -> dict[str, object]:
         score = 8.0 if "HIGH" in text else 7.0 if "MID" in text else 1.0
         return {
             "overall": score,
