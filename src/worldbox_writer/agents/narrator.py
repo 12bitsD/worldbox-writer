@@ -292,9 +292,10 @@ class NarratorAgent:
             self._strict_narrator_messages(messages),
             profile_id="narrator_agent_render",
         )
-        strict_prose = str(strict_raw.get("prose") or "").strip()
-        if not strict_prose:
+        strict_prose_value = strict_raw.get("prose")
+        if not isinstance(strict_prose_value, str) or not strict_prose_value.strip():
             raise ValueError("Strict narrator response field 'prose' must be non-empty")
+        strict_prose = strict_prose_value.strip()
         final_runs = self._judge_ai_prose_ticks_runs(strict_prose)
         final_marker_hit = self._has_banned_ai_prose_marker(strict_prose)
         return {

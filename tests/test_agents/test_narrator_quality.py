@@ -21,6 +21,11 @@ class FakeNarratorLLM:
         return SimpleNamespace(content=json.dumps(self.payload, ensure_ascii=False))
 
 
+class FalseyStr(str):
+    def __bool__(self) -> bool:
+        return False
+
+
 def _sample_node() -> StoryNode:
     return StoryNode(
         title="雨巷对峙",
@@ -152,6 +157,42 @@ def test_narrator_agent_rerenders_once_on_ai_prose_ticks(monkeypatch) -> None:
     assert check["rerendered"] is True
     assert check["final_hit"] is False
     assert "重写上一版正文" in captured_messages[1][0]["content"]
+
+
+def test_narrator_strict_rerender_preserves_falsey_prose() -> None:
+    class StrictNarrator(NarratorAgent):
+        def _invoke_json(
+            self,
+            _messages: list[dict[str, str]],
+            *,
+            profile_id: str,
+        ) -> dict[str, Any]:
+            assert profile_id == "narrator_agent_render"
+            return {
+                "prose": FalseyStr("阿璃扣住铁链，桥闸落下。白夜停在三步外，没有拔剑。")
+            }
+
+        def _judge_ai_prose_ticks_runs(self, prose: str) -> list[dict[str, Any]]:
+            score = 8.0 if "凉意" in prose else 2.0
+            return [
+                {
+                    "applicable": True,
+                    "score": score,
+                    "rule_hit": "",
+                    "evidence_quote": "",
+                    "parse_status": "ok",
+                    "error": None,
+                    "elapsed_ms": 10,
+                }
+            ]
+
+    report = StrictNarrator()._maybe_rerender_for_ai_prose_ticks(
+        [{"role": "system", "content": "render"}],
+        "凉意像一条蛇往下爬。",
+    )
+
+    assert report["rerendered"] is True
+    assert report["final_hit"] is False
 
 
 def test_narrator_agent_keeps_render_when_ai_prose_judge_fails(monkeypatch) -> None:
