@@ -624,7 +624,7 @@ def _dialogue_character_count(text: str) -> int:
 
 
 def _draft_stats(text: str) -> dict[str, Any]:
-    normalized = str(text or "")
+    normalized = str(text)
     word_count = _nonspace_length(normalized)
     dialogue_chars = _dialogue_character_count(normalized)
     dialogue_ratio = dialogue_chars / word_count if word_count else 0.0

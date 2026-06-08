@@ -123,7 +123,7 @@ def check_case_output(case: dict[str, Any], output: str) -> dict[str, Any]:
             checks.append(False)
             detail["json_keys_ok"] = False
 
-    output_non_empty = bool(str(output or "").strip())
+    output_non_empty = bool(str(output).strip())
     checks.append(output_non_empty)
     detail["output_non_empty"] = output_non_empty
 

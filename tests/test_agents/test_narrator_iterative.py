@@ -5,7 +5,10 @@ from types import SimpleNamespace
 from typing import Any
 
 from worldbox_writer.agents.narrator import NarratorOutput
-from worldbox_writer.agents.narrator_iterative import NarratorIterativeAgent
+from worldbox_writer.agents.narrator_iterative import (
+    NarratorIterativeAgent,
+    _draft_stats,
+)
 from worldbox_writer.core.dual_loop import SceneBeat, SceneScript
 from worldbox_writer.core.models import Character, NodeType, StoryNode, WorldState
 
@@ -22,6 +25,11 @@ class SequenceLLM:
 
 
 class FalseyThresholds(dict[str, float]):
+    def __bool__(self) -> bool:
+        return False
+
+
+class FalseyStr(str):
     def __bool__(self) -> bool:
         return False
 
@@ -144,6 +152,13 @@ def test_iterative_narrator_metrics_increase_across_rounds() -> None:
 
     assert metrics[0]["word_count"] < metrics[1]["word_count"]
     assert metrics[1]["word_count"] < metrics[2]["word_count"]
+
+
+def test_draft_stats_preserves_falsey_text_input() -> None:
+    stats = _draft_stats(FalseyStr("甲说：“继续。”"))
+
+    assert stats["word_count"] > 0
+    assert stats["dialogue_char_count"] > 0
 
 
 def test_iterative_narrator_marks_review_without_blocking() -> None:

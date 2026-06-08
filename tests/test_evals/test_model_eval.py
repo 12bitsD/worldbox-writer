@@ -10,6 +10,11 @@ class FalseyList(list[str]):
         return False
 
 
+class FalseyStr(str):
+    def __bool__(self) -> bool:
+        return False
+
+
 def test_check_case_output_validates_only_chain_structure():
     case = {
         "expect_json_keys": ["action", "reason"],
@@ -33,6 +38,13 @@ def test_check_case_output_preserves_falsey_expected_keys():
 
     assert result["passed"] is False
     assert result["detail"]["json_keys_ok"] is False
+    assert result["detail"]["output_non_empty"] is True
+
+
+def test_check_case_output_preserves_falsey_text_output():
+    result = check_case_output({}, FalseyStr("仍然是有效输出"))
+
+    assert result["passed"] is True
     assert result["detail"]["output_non_empty"] is True
 
 
