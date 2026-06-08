@@ -12,7 +12,6 @@ import json
 import math
 import os
 import time
-import warnings
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from functools import lru_cache
@@ -621,7 +620,7 @@ def _estimate_cost_usd(
     )
 
 
-def chat_completion(
+def _execute_chat_completion(
     messages: list,
     role: str = "director",
     temperature: float = 0.7,
@@ -630,22 +629,14 @@ def chat_completion(
     on_token: Optional[Callable[[str], None]] = None,
     top_p: Optional[float] = None,
     model: Optional[str] = None,
-    _suppress_deprecation_warning: bool = False,
-    _sampling_profile_id: Optional[str] = None,
+    sampling_profile_id: Optional[str] = None,
 ) -> str:
-    if not _suppress_deprecation_warning:
-        warnings.warn(
-            "chat_completion(..., temperature=..., max_tokens=...) is deprecated; "
-            "use chat_completion_with_profile(profile_id, messages)",
-            DeprecationWarning,
-            stacklevel=2,
-        )
     resolved_route = resolve_llm_route(role)
     if model:
         resolved_route = replace(resolved_route, model=model)
-    if _sampling_profile_id:
+    if sampling_profile_id:
         sampling = {
-            "profile_id": _sampling_profile_id,
+            "profile_id": sampling_profile_id,
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
@@ -770,7 +761,7 @@ def chat_completion_with_profile(
 ) -> str:
     profile = load_sampling_profile(profile_id)
     selected_model = model or profile.model_override
-    return chat_completion(
+    return _execute_chat_completion(
         messages,
         role=profile.role,
         temperature=profile.temperature if temperature is None else temperature,
@@ -779,8 +770,7 @@ def chat_completion_with_profile(
         on_token=on_token,
         top_p=profile.top_p if top_p is None else top_p,
         model=selected_model,
-        _suppress_deprecation_warning=True,
-        _sampling_profile_id=profile.profile_id,
+        sampling_profile_id=profile.profile_id,
     )
 
 

@@ -30,7 +30,7 @@ def test_execute_judge_preserves_falsey_string_fields(monkeypatch: Any) -> None:
     module = _load_dim_stability_module()
     dim = module.ALL_DIMENSIONS[0]
 
-    monkeypatch.setattr(module, "chat_completion", lambda *_args, **_kwargs: "raw")
+    monkeypatch.setattr(module, "chat_completion_with_profile", lambda *_args, **_kwargs: "raw")
     monkeypatch.setattr(
         module,
         "parse_judge_response",

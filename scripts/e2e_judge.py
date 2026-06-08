@@ -37,7 +37,6 @@ from worldbox_writer.agents.actor import ActionProposal, ActorAgent
 from worldbox_writer.agents.critic import CriticAgent
 from worldbox_writer.agents.director import DirectorAgent
 from worldbox_writer.agents.gm import GMAgent
-from worldbox_writer.agents.narrator import NarratorAgent
 from worldbox_writer.core.dual_loop import (
     ActionIntent,
     SceneBeat,
@@ -46,7 +45,7 @@ from worldbox_writer.core.dual_loop import (
 )
 from worldbox_writer.core.models import Character, NodeType, StoryNode, WorldState
 from worldbox_writer.evals.llm_judge import judge_committee, judge_multi_chapter
-from worldbox_writer.utils.llm import chat_completion
+from worldbox_writer.utils.llm import chat_completion_with_profile
 
 SIMULATION_ID_ENV = "WORLDBOX_SIMULATION_ID"
 EVAL_DATA_SCHEMA_VERSION = "worldbox-eval-data-v1"
@@ -115,9 +114,9 @@ class _RealEvalTimer:
 
 def _probe_real_llm(model: str | None = None) -> None:
     """Fail fast when the configured LLM route is unavailable."""
-    chat_completion(
+    chat_completion_with_profile(
+        "e2e_probe",
         [{"role": "user", "content": "只输出 OK"}],
-        role="director",
         model=model,
         temperature=0.0,
         max_tokens=8,
@@ -384,77 +383,25 @@ def run_real_simulation(
     chapters: int = DEFAULT_REAL_CHAPTERS,
     simulation_id: str = DEFAULT_REAL_SIMULATION_ID,
 ) -> dict[str, Any]:
-    """Run the production agents through N chapters and return rendered prose."""
-    director = DirectorAgent()
-    actor = ActorAgent()
-    critic = CriticAgent()
-    gm = GMAgent()
-    narrator = NarratorAgent()
-    warnings: list[str] = []
-    world = director.initialize_world(premise)
-    world.metadata["simulation_id"] = simulation_id
-    world.metadata["eval_mode"] = "real"
+    """REMOVED IN SPRINT 26 CLEANUP.
 
-    chapter_payloads: list[dict[str, Any]] = []
-    for chapter_number in range(1, max(1, chapters) + 1):
-        scene_plan = director.plan_scene(
-            world,
-            memory_context=_recent_memory_context(world),
-        )
-        proposals = actor.batch_propose(world, max_actors=3)
-        action_intents = [
-            _proposal_to_intent(proposal, scene_plan) for proposal in proposals
-        ]
-        if not action_intents:
-            action_intents = _fallback_intents_for_scene(world, scene_plan)
-            warnings.append(
-                f"第 {chapter_number} 章 Actor 无输出，已使用确定性 fallback。"
-            )
+    The ``--real`` mode previously drove the legacy single-event agent pipeline
+    (DirectorAgent → ActorAgent → CriticAgent → GMAgent → NarratorAgent).
+    The NarratorAgent was replaced by ``engine.services.narration_service.
+    NarrationService`` in the production LangGraph, so this end-to-end smoke
+    test no longer reflects what production runs.
 
-        intent_critiques = critic.review_batch(world, scene_plan, action_intents)
-        scene_script = gm.settle_scene(
-            world, scene_plan, action_intents, intent_critiques
-        )
-        node = _commit_real_eval_node(world, scene_plan, scene_script)
-        narrator_output = narrator.render_node(node, world, is_chapter_start=True)
-        node.rendered_text = narrator_output.prose.strip()
-        node.is_rendered = True
-        world.nodes[str(node.id)] = node
-
-        for character_id in node.character_ids[:3]:
-            character = world.get_character(character_id)
-            if character:
-                character.add_memory(scene_script.summary[:100])
-
-        chapter_payloads.append(
-            {
-                "chapter": chapter_number,
-                "node_id": str(node.id),
-                "scene_plan": scene_plan,
-                "scene_script": scene_script,
-                "rendered_text": node.rendered_text or "",
-                "narrator": {
-                    "chapter_title": narrator_output.chapter_title,
-                    "word_count": narrator_output.word_count,
-                    "style_notes": narrator_output.style_notes,
-                    "metadata": narrator_output.metadata or {},
-                },
-                "action_intents": action_intents,
-                "intent_critiques": intent_critiques,
-            }
-        )
-
-    return {
-        "simulation_id": simulation_id,
-        "world": world,
-        "chapters": chapter_payloads,
-        "warnings": warnings,
-        "metadata": {
-            "real_llm_available": True,
-            "chapter_count": len(chapter_payloads),
-            "premise": premise,
-        },
-    }
+    For a real end-to-end test today, use the FastAPI server
+    (``make dev-api``) + a real simulation run, which exercises the same code
+    paths the frontend uses. The --mock committee judge path below is still
+    available for CI-only judge scoring.
+    """
+    raise NotImplementedError(
+        "run_real_simulation was removed in Sprint 26 — the legacy agent "
+        "pipeline it exercised is no longer the production path. Use the "
+        "FastAPI server or scripts/eval/baseline_current_system.py for a "
+        "real end-to-end run."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -607,6 +554,29 @@ def main(argv: list[str] | None = None) -> int:
                     chapters=args.chapters,
                     simulation_id=args.simulation_id,
                 )
+        except NotImplementedError as exc:
+            # ``run_real_simulation`` is a stub that raises NotImplementedError
+            # to signal the legacy single-event agent pipeline was retired.
+            # We surface the error and fall back to the minimal fixture so a
+            # --real invocation still produces a judge report rather than
+            # crashing — callers may still pass --real out of habit.
+            print(
+                f"--real mode no longer supported: {exc}; "
+                f"falling back to minimal fixture.",
+                file=sys.stderr,
+            )
+            world, scene_script, node = _minimal_eval_world(args.simulation_id)
+            simulation = {
+                "simulation_id": args.simulation_id,
+                "chapters": [
+                    {
+                        "chapter": 1,
+                        "node_id": str(node.id),
+                        "rendered_text": node.rendered_text,
+                    }
+                ],
+                "warnings": [f"real-fallback: {type(exc).__name__}: {exc}"],
+            }
         except Exception as exc:
             print(
                 f"Real simulation failed ({type(exc).__name__}: {exc}); "
@@ -614,6 +584,17 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             world, scene_script, node = _minimal_eval_world(args.simulation_id)
+            simulation = {
+                "simulation_id": args.simulation_id,
+                "chapters": [
+                    {
+                        "chapter": 1,
+                        "node_id": str(node.id),
+                        "rendered_text": node.rendered_text,
+                    }
+                ],
+                "warnings": [f"real-fallback: {type(exc).__name__}: {exc}"],
+            }
             simulation = {
                 "simulation_id": args.simulation_id,
                 "chapters": [

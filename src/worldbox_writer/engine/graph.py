@@ -67,29 +67,34 @@ from worldbox_writer.utils.llm import (
     get_last_llm_call_metadata,
 )
 
+# ---------------------------------------------------------------------------
+# Service binding aliases.
+#
+# The graph nodes below are intentionally thin shims: they call into
+# `engine.services.*` and forward the result into the LangGraph state update.
+# The aliases below make those call sites readable.
+#
+# DO NOT RE-ADD REMOVED ALIASES HERE WITHOUT UPDATING THE PUBLIC SURFACE.
+#
+# History (Sprint 26 slim-down): 12 names previously re-exported from this
+# module were removed because they had *zero* callers — neither imported
+# elsewhere nor referenced inside this file. They were:
+#   AI_PROSE_TICKS_BANNED_MARKERS, _ai_prose_ticks_hit, _ai_prose_ticks_summary,
+#   _format_prompt_lines, _has_banned_ai_prose_marker,
+#   _json_retry_narrator_messages, _parse_narrator_prose, _scene_beat_line,
+#   _strict_narrator_messages, _POSITIVE_RELATIONSHIP_KEYWORDS,
+#   _TRUST_RELATIONSHIP_KEYWORDS, _NEGATIVE_RELATIONSHIP_KEYWORDS.
+# If you need them back, import directly from `worldbox_writer.engine.services`
+# (the canonical location) rather than re-creating the indirection.
+# ---------------------------------------------------------------------------
+
 _GATE_KEEPER_SELF_HEAL_ATTEMPTS = _boundary_validation.DEFAULT_SELF_HEAL_ATTEMPTS
-
-AI_PROSE_TICKS_BANNED_MARKERS = _narration.AI_PROSE_TICKS_BANNED_MARKERS
 NarrationService = _narration.NarrationService
-_ai_prose_ticks_hit = _narration.ai_prose_ticks_hit
-_ai_prose_ticks_summary = _narration.ai_prose_ticks_summary
-_build_narrator_input_v2 = _narration.build_narrator_input_v2
-_format_prompt_lines = _narration.format_prompt_lines
-_has_banned_ai_prose_marker = _narration.has_banned_ai_prose_marker
-_json_retry_narrator_messages = _narration.json_retry_narrator_messages
 _load_scene_script_for_node = _narration.load_scene_script_for_node
-_parse_narrator_prose = _narration.parse_narrator_prose
-_scene_beat_line = _narration.scene_beat_line
-_strict_narrator_messages = _narration.strict_narrator_messages
-
-_POSITIVE_RELATIONSHIP_KEYWORDS = _relationships.POSITIVE_RELATIONSHIP_KEYWORDS
-_TRUST_RELATIONSHIP_KEYWORDS = _relationships.TRUST_RELATIONSHIP_KEYWORDS
-_NEGATIVE_RELATIONSHIP_KEYWORDS = _relationships.NEGATIVE_RELATIONSHIP_KEYWORDS
 _select_character_ids_for_event = _relationships.select_character_ids_for_event
 _clamp_affinity = _relationships.clamp_affinity
 _relationship_signal = _relationships.relationship_signal
 _apply_relationship_updates = _relationships.apply_relationship_updates
-
 _emit_telemetry = _telemetry.emit_telemetry
 _llm_telemetry_fields = _telemetry.llm_telemetry_fields
 _resolve_branch_context = _telemetry.resolve_branch_context

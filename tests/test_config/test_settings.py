@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from worldbox_writer.config.settings import emit_env_example, get_settings
 
 
-def test_settings_reads_legacy_env_names(monkeypatch) -> None:
+def test_settings_reads_env_names(monkeypatch) -> None:
     monkeypatch.setenv("FEATURE_BRANCHING_ENABLED", "0")
     monkeypatch.setenv("DB_PATH", "/tmp/worldbox-test.db")
     monkeypatch.setenv("MEMORY_VECTOR_DIMENSIONS", "128")

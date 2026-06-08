@@ -57,7 +57,7 @@ system_variants:
 
     输出合法 JSON：
     {"prose": "小说正文...", "style_notes": "本段风格说明"}
-  legacy: |-
+  single_event: |-
     你是一位出色的中文网络小说作家。你的任务是根据 GM 提供的场景脚本，创作一段引人入胜的小说章节。
 
     写作风格要求：
@@ -118,4 +118,12 @@ user_template_vars:
   - public_facts
   - beats
   - rejected_intent_ids
-notes: "v2 adds explicit ai_prose_ticks bans and a strict rerender variant."
+notes: "v2 adds explicit ai_prose_ticks bans and a strict rerender variant.
+
+`single_event` is the fallback when ``narrator_input.source != 'scene_script'``
+(i.e., the pre-dual-loop single-event path). It mirrors the v1 prompt
+without the ``rejected intent ids`` constraint because single-event input
+has no rejected-intent metadata. The label was renamed from ``legacy``
+in Sprint 26 — it is NOT a deprecated v1 prompt, it is an active
+fallback for the current single-event runtime. DO NOT add a new
+``legacy`` variant."

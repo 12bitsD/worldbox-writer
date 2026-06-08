@@ -49,7 +49,7 @@ from worldbox_writer.evals.dimension_prompts import (  # noqa: E402
     build_user_message,
 )
 from worldbox_writer.evals.llm_judge import parse_judge_response  # noqa: E402
-from worldbox_writer.utils.llm import chat_completion  # noqa: E402
+from worldbox_writer.utils.llm import chat_completion_with_profile  # noqa: E402
 
 CALIBRATION_DIR = REPO_ROOT / "tests/test_evals/fixtures/calibration_v1"
 DEFAULT_OUTPUT = REPO_ROOT / "artifacts/eval/sprint-25/round-1/dim_stability.json"
@@ -134,9 +134,9 @@ def execute_judge(
     attempt = 0
     while attempt <= max_retries:
         try:
-            raw = chat_completion(
+            raw = chat_completion_with_profile(
+                "judge_dim_stability",
                 messages,
-                role="narrator",
                 model=model,
                 temperature=temperature,
                 max_tokens=max_tokens,

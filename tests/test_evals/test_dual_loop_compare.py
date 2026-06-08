@@ -26,7 +26,7 @@ def _world_with_dual_loop_metadata() -> tuple[WorldState, StoryNode]:
         "scene_id": "scene-1",
         "summary": "阿璃守住断桥。",
     }
-    node.metadata["narrator_input_v2"] = {"source": "scene_script"}
+    node.metadata["narrator_input"] = {"source": "scene_script"}
     node.metadata["action_intents"] = [{"intent_id": "intent-1"}]
     node.metadata["intent_critiques"] = [
         {"intent_id": "intent-1", "accepted": True},
@@ -71,7 +71,7 @@ def test_build_dual_loop_compare_report_counts_rollout_signals() -> None:
     assert report["rollout_readiness"]["ready"] is True
     assert report["legacy_path"]["rendered_node_count"] == 1
     assert report["dual_loop_path"]["scene_script_node_count"] == 1
-    assert report["dual_loop_path"]["narrator_input_v2_node_count"] == 1
+    assert report["dual_loop_path"]["narrator_input_node_count"] == 1
     assert report["dual_loop_path"]["critic_rejected_count"] == 1
     assert report["dual_loop_path"]["reflection_note_count"] == 1
     assert report["telemetry"]["stage_counts"]["narrator.completed"] == 1

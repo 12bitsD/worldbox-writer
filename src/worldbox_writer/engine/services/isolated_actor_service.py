@@ -236,8 +236,6 @@ def invoke_isolated_actor_intent(
 
     data = parse_json_object(raw)
     summary_value = data.get("summary")
-    if summary_value is None:
-        summary_value = data.get("description")
     summary = "" if summary_value is None else str(summary_value).strip()
     if not summary:
         summary = fallback_actor_summary(character, scene_plan, raw=raw)
@@ -412,8 +410,6 @@ def target_ids_from_payload(
         return [str(item) for item in raw_ids if str(item) in visible_character_ids][:3]
 
     raw_names = data.get("target_character_names")
-    if raw_names is None:
-        raw_names = data.get("target_characters")
     if isinstance(raw_names, str):
         candidate_names = [raw_names]
     elif isinstance(raw_names, list):

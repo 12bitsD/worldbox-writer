@@ -346,9 +346,6 @@ class _HashedEmbeddingFunction:
     def supported_spaces() -> List[str]:
         return ["cosine"]
 
-    def is_legacy(self) -> bool:
-        return False
-
     def _embed(self, text: str) -> List[float]:
         vector = [0.0] * self._dimensions
         for token in _tokenize_text(text):

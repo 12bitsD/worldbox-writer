@@ -114,7 +114,22 @@ class Character(BaseModel):
     def _coerce_legacy_relationships(
         cls, raw_relationships: Any
     ) -> Dict[str, "Relationship"]:
-        """Accept legacy string maps and normalize them into structured edges."""
+        """Accept legacy string maps and normalize them into structured edges.
+
+        >>> MIGRATION SHIM — DO NOT EXTEND <<<
+
+        This validator exists *only* to load pre-Sprint-9 sessions where
+        ``Character.relationships`` was stored as a ``Dict[str, str]``
+        (label only) or ``Dict[str, dict]`` (unstructured). It must stay
+        in place until the persistence layer can guarantee that all
+        surviving DB rows use the structured ``Relationship`` model.
+
+        DO NOT add new coercion branches here (e.g. for other legacy
+        shapes). New field shapes belong in a new model field with a
+        clean Pydantic type. When you delete this shim, also delete the
+        support window note in ``docs/architecture/DESIGN.md`` (§
+        persistence) and bump the minimum supported DB schema version.
+        """
         if not raw_relationships:
             return {}
 

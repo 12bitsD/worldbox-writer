@@ -136,6 +136,11 @@ class Settings:
 
 
 def _load_domain_settings(settings_cls: type[T]) -> T:
+    # pydantic-settings `BaseSettings` exposes a `_settings` kwarg in its
+    # public type stubs, but the documented construction form is the no-arg
+    # call (the library reads env / .env file internally). The `type: ignore`
+    # exists because of the stub mismatch, not a real call site bug — do NOT
+    # add `_settings={}` here or you will silently disable env loading.
     return settings_cls()  # type: ignore[call-arg]
 
 

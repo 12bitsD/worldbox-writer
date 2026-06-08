@@ -159,8 +159,8 @@ def test_narration_service_consumes_scene_script_input_v2() -> None:
     assert "阿璃按下桥闸" in prompt
     assert "intent-rejected" in prompt
     assert rendered.rendered_text == "阿璃按下桥闸，潮雾吞没了追兵的火把。"
-    assert rendered.metadata["narrator_input_v2"]["source"] == "scene_script"
-    assert rendered.metadata["narrator_input_v2"]["scene_id"] == "scene-render"
+    assert rendered.metadata["narrator_input"]["source"] == "scene_script"
+    assert rendered.metadata["narrator_input"]["scene_id"] == "scene-render"
 
 
 def test_narration_service_empty_completion_raises() -> None:

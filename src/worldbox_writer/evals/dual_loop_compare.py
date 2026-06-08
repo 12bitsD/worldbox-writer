@@ -122,7 +122,7 @@ def build_dual_loop_compare_report(
     narrator_scene_nodes = [
         node
         for node in scene_script_nodes
-        if _metadata_dict(node, "narrator_input_v2").get("source") == "scene_script"
+        if _metadata_dict(node, "narrator_input").get("source") == "scene_script"
     ]
     action_intent_count = sum(
         len(_metadata_list(node, "action_intents")) for node in lineage_nodes
@@ -158,7 +158,7 @@ def build_dual_loop_compare_report(
             f"{len(scene_script_nodes)} lineage nodes include SceneScript metadata",
         ),
         _check(
-            "narrator_input_v2",
+            "narrator_input",
             (
                 "pass"
                 if scene_script_nodes
@@ -204,7 +204,7 @@ def build_dual_loop_compare_report(
         "dual_loop_path": {
             "enabled": feature_enabled,
             "scene_script_node_count": len(scene_script_nodes),
-            "narrator_input_v2_node_count": len(narrator_scene_nodes),
+            "narrator_input_node_count": len(narrator_scene_nodes),
             "action_intent_count": action_intent_count,
             "intent_critique_count": intent_critique_count,
             "critic_rejected_count": critic_rejected_count,
@@ -276,7 +276,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "readiness="
         f"{'ready' if ready else 'not-ready'} "
         f"scene_scripts={report['dual_loop_path']['scene_script_node_count']} "
-        f"narrator_v2={report['dual_loop_path']['narrator_input_v2_node_count']}"
+        f"narrator_v2={report['dual_loop_path']['narrator_input_node_count']}"
     )
     if args.require_ready and not ready:
         return 1

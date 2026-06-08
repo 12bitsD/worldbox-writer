@@ -12,7 +12,7 @@ generates the necessary details on demand.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional
 
 from worldbox_writer.core.models import WorldState
 from worldbox_writer.prompting.registry import load_prompt_template
@@ -121,7 +121,7 @@ class WorldBuilderAgent:
                 "role": "world_builder",
                 "status": "completed",
             }
-            return cast(str, response.content)
+            return response.content
         content = chat_completion_with_profile(profile_id, messages)
         self.last_call_metadata = get_last_llm_call_metadata()
         return content

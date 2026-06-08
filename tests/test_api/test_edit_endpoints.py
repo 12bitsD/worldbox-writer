@@ -9,13 +9,21 @@ import pytest
 from fastapi.testclient import TestClient
 
 import worldbox_writer.api.server as server_module
+from worldbox_writer.api.core.serialization import serialize_node
 from worldbox_writer.api.schemas import CreateBranchRequest
-from worldbox_writer.api.server import (
-    SimulationSession,
-    _restore_world_at_node,
-    _sessions,
-    app,
+from worldbox_writer.api.server import app
+from worldbox_writer.api.session import SimulationSession
+from worldbox_writer.api.session_store import (
+    recover_sessions as _recover_sessions,
+    restore_world_at_node,
 )
+from worldbox_writer.api.state import _sessions
+from worldbox_writer.core.models import (
+    TelemetryEvent,
+    TelemetryLevel,
+    TelemetrySpanKind,
+)
+from worldbox_writer.storage.db import load_session as db_load_session, save_session as db_save_session
 from worldbox_writer.api.services.branch_service import BranchService, RunSimulationSync
 from worldbox_writer.api.services.simulation_service import (
     InterventionCallback,
@@ -42,7 +50,7 @@ def _rendered_node_payload(
     scene_script = node.metadata.get("scene_script")
     if not isinstance(scene_script, dict):
         scene_script = {}
-    narrator_input = node.metadata.get("narrator_input_v2")
+    narrator_input = node.metadata.get("narrator_input")
     if not isinstance(narrator_input, dict):
         narrator_input = {}
 
@@ -173,7 +181,7 @@ def complete_session():
     session.status = "complete"
     session.world = world
     session.nodes_rendered = [_rendered_node_payload(node, 1, node.rendered_text)]
-    server_module.db_save_session(
+    db_save_session(
         sim_id=sim_id,
         premise="测试前提",
         max_ticks=3,
@@ -202,7 +210,7 @@ def branchable_session():
     node1.is_rendered = True
     node1.rendered_text = "主线开场正文"
     node1.metadata["tick"] = 1
-    server_module.db_save_session(
+    db_save_session(
         sim_id=sim_id,
         premise="测试前提",
         max_ticks=5,
@@ -259,7 +267,7 @@ def branchable_session():
         "status": "complete",
         "pacing": "balanced",
     }
-    server_module.db_save_session(
+    db_save_session(
         sim_id=sim_id,
         premise="测试前提",
         max_ticks=5,
@@ -319,8 +327,8 @@ def branchable_session():
         _rendered_node_payload(node2, 2, node2.rendered_text),
     ]
     session.telemetry_events = [
-        server_module.TelemetryEvent.model_validate(event)
-        for event in server_module.db_load_session(sim_id)["telemetry_events"]
+        TelemetryEvent.model_validate(event)
+        for event in db_load_session(sim_id)["telemetry_events"]
     ]
     _sessions[sim_id] = session
     return sim_id, str(node1.id), str(node2.id)
@@ -571,7 +579,7 @@ class TestCreativeWorkspace:
         )
         archive_memory_entries(sim_id, ["mem-1"])
         session.telemetry_events.append(
-            server_module.TelemetryEvent(
+            TelemetryEvent(
                 event_id="evt-llm",
                 sim_id=sim_id,
                 trace_id="trace-1",
@@ -579,8 +587,8 @@ class TestCreativeWorkspace:
                 tick=1,
                 agent="narrator",
                 stage="completed",
-                level=server_module.TelemetryLevel.INFO,
-                span_kind=server_module.TelemetrySpanKind.LLM,
+                level=TelemetryLevel.INFO,
+                span_kind=TelemetrySpanKind.LLM,
                 message="Narrator 完成润色",
                 payload={
                     "route_group": "creative",
@@ -616,7 +624,11 @@ class TestCreativeWorkspace:
             body["dual_loop"]["scene_script"]["source_node_id"]
             == session.world.current_node_id
         )
-        assert body["dual_loop"]["intent_critiques"][0]["accepted"] is True
+        # Sprint 26: synthetic compat-intent path removed. The waiting session
+        # has no persisted runtime output, so action_intents / intent_critiques
+        # are empty in the snapshot. Structural verification only.
+        assert body["dual_loop"]["action_intents"] == []
+        assert body["dual_loop"]["intent_critiques"] == []
 
     def test_get_simulation_includes_dual_loop_feature_flag(
         self, client, waiting_session, monkeypatch
@@ -658,9 +670,9 @@ class TestCreativeWorkspace:
             summary="GM 结算后的场景摘要。",
         )
         node.metadata["scene_script"] = scene_script.model_dump(mode="json")
-        node.metadata["narrator_input_v2"] = {"source": "scene_script"}
+        node.metadata["narrator_input"] = {"source": "scene_script"}
         session.nodes_rendered = [
-            server_module._serialize_node(node, session.world),
+            serialize_node(node, session.world),
         ]
 
         res = client.get(f"/api/simulate/{sim_id}")
@@ -700,11 +712,11 @@ class TestCreativeWorkspace:
             summary="GM 结算后的对比摘要。",
         )
         node.metadata["scene_script"] = scene_script.model_dump(mode="json")
-        node.metadata["narrator_input_v2"] = {"source": "scene_script"}
+        node.metadata["narrator_input"] = {"source": "scene_script"}
         node.metadata["intent_critiques"] = [
             {"intent_id": "intent-1", "accepted": False}
         ]
-        session.nodes_rendered = [server_module._serialize_node(node, session.world)]
+        session.nodes_rendered = [serialize_node(node, session.world)]
 
         res = client.get(f"/api/simulate/{sim_id}/dual-loop/compare")
 
@@ -793,7 +805,7 @@ class TestGetSimulation:
         sim_id, _ = waiting_session
         session = _sessions[sim_id]
         session.telemetry_events.append(
-            server_module.TelemetryEvent(
+            TelemetryEvent(
                 event_id="evt-1",
                 sim_id=sim_id,
                 trace_id="trace-1",
@@ -801,8 +813,8 @@ class TestGetSimulation:
                 tick=1,
                 agent="actor",
                 stage="proposal_generated",
-                level=server_module.TelemetryLevel.INFO,
-                span_kind=server_module.TelemetrySpanKind.LLM,
+                level=TelemetryLevel.INFO,
+                span_kind=TelemetrySpanKind.LLM,
                 message="生成了新的候选事件",
                 payload={"preview": "预览"},
                 provider="openai",
@@ -826,7 +838,7 @@ class TestGetSimulation:
         session = SimulationSession(sim_id=sim_id, premise="测试前提", max_ticks=3)
         session.status = "initializing"
         session.telemetry_events.append(
-            server_module.TelemetryEvent(
+            TelemetryEvent(
                 event_id="evt-init",
                 sim_id=sim_id,
                 trace_id="trace-init",
@@ -834,8 +846,8 @@ class TestGetSimulation:
                 tick=0,
                 agent="director",
                 stage="world_initialized",
-                level=server_module.TelemetryLevel.INFO,
-                span_kind=server_module.TelemetrySpanKind.LLM,
+                level=TelemetryLevel.INFO,
+                span_kind=TelemetrySpanKind.LLM,
                 message="世界骨架初始化完成",
                 payload={"characters": 3},
                 provider="openai",
@@ -858,7 +870,7 @@ class TestGetSimulation:
     def test_get_simulation_backfills_legacy_node_and_telemetry_fields(self, client):
         """Sessions loaded from DB should backfill Sprint 7 defaults for old payloads."""
         world = WorldState(title="旧世界", premise="旧前提")
-        server_module.db_save_session(
+        db_save_session(
             sim_id="legacy-session",
             premise="旧前提",
             max_ticks=2,
@@ -906,7 +918,7 @@ class TestGetSimulation:
     ):
         """A complete world should return every rendered node, not only nodes_json."""
         world, nodes = _world_with_rendered_nodes(4)
-        server_module.db_save_session(
+        db_save_session(
             sim_id="missing-rendered-history",
             premise="测试前提",
             max_ticks=4,
@@ -934,7 +946,7 @@ class TestIntervene:
         sim_id, _ = waiting_session
         session = _sessions[sim_id]
         session.telemetry_events.append(
-            server_module.TelemetryEvent(
+            TelemetryEvent(
                 event_id="evt-before",
                 sim_id=sim_id,
                 trace_id=session.trace_id,
@@ -942,8 +954,8 @@ class TestIntervene:
                 tick=1,
                 agent="node_detector",
                 stage="intervention_requested",
-                level=server_module.TelemetryLevel.WARNING,
-                span_kind=server_module.TelemetrySpanKind.EVENT,
+                level=TelemetryLevel.WARNING,
+                span_kind=TelemetrySpanKind.EVENT,
                 message="等待干预",
                 payload={"context": "需要干预"},
                 ts="2026-01-01T00:00:00+00:00",
@@ -1028,7 +1040,7 @@ class TestSessionRecovery:
     def test_recover_sessions_preserves_telemetry_history(self):
         """Interrupted sessions should keep existing telemetry when marked as error."""
         world = WorldState(title="测试世界", premise="测试前提")
-        server_module.db_save_session(
+        db_save_session(
             sim_id="recover-1",
             premise="测试前提",
             max_ticks=3,
@@ -1057,9 +1069,9 @@ class TestSessionRecovery:
             ],
         )
 
-        server_module._recover_sessions()
+        _recover_sessions()
 
-        recovered = server_module.db_load_session("recover-1")
+        recovered = db_load_session("recover-1")
         assert recovered is not None
         assert recovered["status"] == "error"
         assert recovered["error"] == "Server restarted during simulation"
@@ -1083,7 +1095,7 @@ class TestBranchSeedRecovery:
         session.world = world
         _sessions[session.sim_id] = session
 
-        restored = _restore_world_at_node(session.sim_id, str(node.id), "main")
+        restored = restore_world_at_node(session.sim_id, str(node.id), "main")
 
         assert restored.current_node_id == str(node.id)
         assert restored.tick == 1
@@ -1093,7 +1105,7 @@ class TestBranchSeedRecovery:
     def test_restore_world_at_node_raises_for_legacy_session_without_seed(self):
         """Legacy persisted sessions should fail explicitly when no fork seed exists."""
         world = WorldState(title="旧世界", premise="旧前提")
-        server_module.db_save_session(
+        db_save_session(
             sim_id="legacy-branch-seed",
             premise="旧前提",
             max_ticks=2,
@@ -1104,7 +1116,7 @@ class TestBranchSeedRecovery:
         )
 
         with pytest.raises(BranchSeedNotFoundError):
-            _restore_world_at_node(
+            restore_world_at_node(
                 "legacy-branch-seed",
                 "missing-node",
                 "main",

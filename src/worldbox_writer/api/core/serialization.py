@@ -58,7 +58,7 @@ def serialize_node(node: Any, world: WorldState) -> Dict[str, Any]:
     scene_script = node.metadata.get("scene_script")
     if not isinstance(scene_script, dict):
         scene_script = {}
-    narrator_input = node.metadata.get("narrator_input_v2")
+    narrator_input = node.metadata.get("narrator_input")
     if not isinstance(narrator_input, dict):
         narrator_input = {}
     tick = node.metadata.get("tick", world.tick)

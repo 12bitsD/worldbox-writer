@@ -164,7 +164,7 @@ def scene_beat_line(beat: Any) -> str:
     return f"{actor_prefix}{beat.summary}"
 
 
-def build_narrator_input_v2(
+def build_narrator_input(
     current_node: StoryNode,
     *,
     scene_script: Optional[SceneScript],
@@ -279,14 +279,14 @@ class NarrationService:
             else ""
         )
 
-        narrator_input = build_narrator_input_v2(
+        narrator_input = build_narrator_input(
             current_node,
             scene_script=scene_script,
             narrative_context=narrative_context,
             chars_info=chars_info,
             locations_text=locations_text,
         )
-        current_node.metadata["narrator_input_v2"] = narrator_input.model_dump(
+        current_node.metadata["narrator_input"] = narrator_input.model_dump(
             mode="json"
         )
 
@@ -404,7 +404,7 @@ class NarrationService:
             {
                 "role": "system",
                 "content": self.load_prompt_template_func(
-                    "narrator_system", variant="legacy"
+                    "narrator_system", variant="single_event"
                 ),
             },
             {

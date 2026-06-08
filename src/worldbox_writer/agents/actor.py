@@ -9,7 +9,7 @@ goals, memory, and relationships, then proposes the character's next action.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from worldbox_writer.core.models import Character, NodeType, StoryNode, WorldState
@@ -171,7 +171,7 @@ class ActorAgent:
                 "role": "actor",
                 "status": "completed",
             }
-            return cast(str, response.content)
+            return response.content
         content = chat_completion_with_profile(profile_id, messages)
         self.last_call_metadata = get_last_llm_call_metadata()
         return content

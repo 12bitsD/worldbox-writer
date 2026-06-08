@@ -40,9 +40,6 @@ class PromptRegistry:
         if template is not None:
             return template.system
 
-        text = self._load_txt(name)
-        if text is not None:
-            return text.strip()
         return default.strip()
 
     def load_template(
@@ -75,22 +72,6 @@ class PromptRegistry:
         try:
             resource = files("worldbox_writer").joinpath("prompts", filename)
             return None, resource.read_text(encoding="utf-8")
-        except (FileNotFoundError, ModuleNotFoundError):
-            return None
-
-    def _load_txt(self, name: str) -> str | None:
-        filename = f"{name}.txt"
-        if self.template_dir:
-            candidate = Path(self.template_dir) / filename
-            if candidate.exists():
-                return candidate.read_text(encoding="utf-8")
-
-        try:
-            return (
-                files("worldbox_writer")
-                .joinpath("prompts", filename)
-                .read_text(encoding="utf-8")
-            )
         except (FileNotFoundError, ModuleNotFoundError):
             return None
 

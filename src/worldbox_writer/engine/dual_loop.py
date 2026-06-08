@@ -8,7 +8,10 @@ incrementally migrate runtime behavior behind a feature flag.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+import logging
+from typing import Any, Dict, List, Optional, TypeVar
+
+from pydantic import BaseModel
 
 from worldbox_writer.agents.director import DirectorAgent
 from worldbox_writer.config.settings import get_settings
@@ -28,6 +31,8 @@ from worldbox_writer.core.models import Character, StoryNode, WorldState
 from worldbox_writer.engine.services import isolated_actor_service as _isolated_actor
 from worldbox_writer.evals.sample_collector import collect_sample
 from worldbox_writer.memory.memory_manager import MemoryManager
+
+T = TypeVar("T", bound=BaseModel)
 from worldbox_writer.prompting.registry import load_prompt_template
 from worldbox_writer.utils.llm import (
     chat_completion_with_profile,
@@ -59,35 +64,16 @@ def build_dual_loop_snapshot(
     stored_action_intents = _load_stored_action_intents(world, scene_plan)
     stored_intent_critiques = _load_stored_intent_critiques(world, scene_plan)
     stored_scene_script = _load_stored_scene_script(world, scene_plan)
-    if stored_action_intents:
-        prompt_traces = stored_prompt_traces
-        action_intents = stored_action_intents
-        intent_critiques = stored_intent_critiques
-    else:
-        for character_id in scene_plan.spotlight_character_ids:
-            character = world.get_character(character_id)
-            if not character:
-                continue
-            prompt_trace = build_prompt_trace(
-                character,
-                world,
-                scene_plan=scene_plan,
-                memory=memory,
-            )
-            prompt_traces.append(prompt_trace)
-            action_intents.append(
-                build_compatibility_intent(character, world, scene_plan, prompt_trace)
-            )
-        intent_critiques = [
-            build_accepted_intent_critique(scene_plan, intent)
-            for intent in action_intents
-        ]
-
-    if not intent_critiques:
-        intent_critiques = [
-            build_accepted_intent_critique(scene_plan, intent)
-            for intent in action_intents
-        ]
+    # ``last_actor_intents`` is always populated by
+    # ``actor_runtime_service.persist_actor_runtime_metadata`` in the
+    # production dual-loop path, so the else-branch (synthetic compat
+    # intents) is unreachable. The branch was removed in Sprint 26 along
+    # with ``build_compatibility_intent`` / ``build_accepted_intent_critique``
+    # / ``_derive_intent_summary`` / ``_guess_target_ids`` (all zero callers
+    # once the synthetic path was gone).
+    prompt_traces = stored_prompt_traces
+    action_intents = stored_action_intents
+    intent_critiques = stored_intent_critiques
 
     scene_script = stored_scene_script or build_scene_script(
         world,
@@ -184,52 +170,24 @@ def invoke_isolated_actor_intent(
     )
 
 
-def synthesize_candidate_event_from_intents(
-    action_intents: List[ActionIntent],
-    *,
-    scene_plan: ScenePlan,
-) -> str:
-    """Bridge Sprint 12 intents back into the legacy single-event pipeline."""
-    if not action_intents:
-        return "世界陷入了短暂的平静，角色们暂时没有采取新的行动。"
-
-    scene_title = scene_plan.title or "当前场景"
-    summaries = [
-        intent.summary.rstrip("。")
-        for intent in action_intents
-        if intent.summary.strip()
-    ]
-    if not summaries:
-        return f"在{scene_title}中，角色们短暂停顿，局势继续酝酿。"
-    return f"在{scene_title}中，" + "；".join(summaries) + "。"
-
-
 def build_compatibility_intent(
     character: Character,
     world: WorldState,
     scene_plan: ScenePlan,
     prompt_trace: PromptTrace,
 ) -> ActionIntent:
-    current_node = (
-        world.get_node(world.current_node_id) if world.current_node_id else None
-    )
-    summary = _derive_intent_summary(character, current_node)
-    return ActionIntent(
-        scene_id=scene_plan.scene_id,
-        actor_id=str(character.id),
-        actor_name=character.name,
-        action_type="compatibility_summary",
-        summary=summary,
-        rationale="Derived from current world state until isolated actor execution replaces the legacy path.",
-        target_ids=_guess_target_ids(character, current_node),
-        confidence=0.35,
-        prompt_trace_id=prompt_trace.trace_id,
-        metadata={
-            "synthetic": True,
-            "adapter_mode": DUAL_LOOP_ADAPTER_MODE,
-            "branch_id": scene_plan.branch_id,
-            "tick": scene_plan.tick,
-        },
+    """Sprint 26: removed. The synthetic compatibility-intent path was
+    unreachable — ``actor_runtime_service.persist_actor_runtime_metadata``
+    always populates ``world.metadata['last_actor_intents']`` in the
+    production dual-loop. This function is kept as a stub that raises so
+    any stale import path fails loudly rather than silently producing
+    ``compatibility_summary`` intents.
+    """
+    raise NotImplementedError(
+        "build_compatibility_intent was removed in Sprint 26 — the "
+        "synthetic compat-intent path is unreachable. The production "
+        "dual-loop always populates last_actor_intents via "
+        "actor_runtime_service.persist_actor_runtime_metadata."
     )
 
 
@@ -288,20 +246,13 @@ def build_accepted_intent_critique(
     scene_plan: ScenePlan,
     intent: ActionIntent,
 ) -> IntentCritique:
-    return IntentCritique(
-        scene_id=scene_plan.scene_id,
-        intent_id=intent.intent_id,
-        actor_id=intent.actor_id,
-        actor_name=intent.actor_name,
-        accepted=True,
-        reason_code="accepted",
-        severity="info",
-        metadata={
-            "synthetic": True,
-            "adapter_mode": DUAL_LOOP_ADAPTER_MODE,
-            "branch_id": scene_plan.branch_id,
-            "tick": scene_plan.tick,
-        },
+    """Sprint 26: removed. This was the synthetic critique used by the
+    unreachable compat-intent path. Kept as a NotImplementedError stub so
+    any stale caller fails loudly.
+    """
+    raise NotImplementedError(
+        "build_accepted_intent_critique was removed in Sprint 26 — see "
+        "build_compatibility_intent for the full removal note."
     )
 
 
@@ -313,76 +264,85 @@ def _resolve_runtime_mode(action_intents: List[ActionIntent]) -> str:
     return DUAL_LOOP_ADAPTER_MODE
 
 
+def _load_stored_by_scene(
+    world: WorldState,
+    scene_plan: ScenePlan,
+    *,
+    metadata_key: str,
+    model: type[T],
+) -> List[T]:
+    """Read a list of Pydantic records from ``world.metadata[metadata_key]``
+    and return only those whose ``scene_id`` matches ``scene_plan.scene_id``.
+
+    Malformed entries (not a dict, fails ``model_validate``) are logged at
+    DEBUG and dropped — they are diagnostic data, not authoritative state.
+    """
+    raw = world.metadata.get(metadata_key)
+    if not isinstance(raw, list):
+        return []
+    items: List[T] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            obj = model.model_validate(entry)
+        except Exception:
+            logging.getLogger(__name__).debug(
+                "Invalid %s entry in %s: %s",
+                model.__name__,
+                metadata_key,
+                entry,
+            )
+            continue
+        if obj.scene_id == scene_plan.scene_id:
+            items.append(obj)
+    return items
+
+
 def _load_stored_action_intents(
     world: WorldState,
     scene_plan: ScenePlan,
 ) -> List[ActionIntent]:
-    raw_intents = world.metadata.get("last_actor_intents")
-    if not isinstance(raw_intents, list):
-        return []
-    intents: List[ActionIntent] = []
-    for item in raw_intents:
-        if not isinstance(item, dict):
-            continue
-        try:
-            intent = ActionIntent.model_validate(item)
-        except Exception:
-            import logging
-
-            logging.getLogger(__name__).debug("Invalid action intent item: %s", item)
-            continue
-        if intent.scene_id == scene_plan.scene_id:
-            intents.append(intent)
-    return intents
+    return _load_stored_by_scene(
+        world,
+        scene_plan,
+        metadata_key="last_actor_intents",
+        model=ActionIntent,
+    )
 
 
 def _load_stored_prompt_traces(
     world: WorldState,
     scene_plan: ScenePlan,
 ) -> List[PromptTrace]:
-    raw_traces = world.metadata.get("last_prompt_traces")
-    if not isinstance(raw_traces, list):
-        return []
-    traces: List[PromptTrace] = []
-    for item in raw_traces:
-        if not isinstance(item, dict):
-            continue
-        try:
-            trace = PromptTrace.model_validate(item)
-        except Exception:
-            import logging
-
-            logging.getLogger(__name__).debug("Invalid prompt trace item: %s", item)
-            continue
-        if trace.scene_id == scene_plan.scene_id:
-            traces.append(trace)
-    return traces
+    return _load_stored_by_scene(
+        world,
+        scene_plan,
+        metadata_key="last_prompt_traces",
+        model=PromptTrace,
+    )
 
 
 def _load_stored_intent_critiques(
     world: WorldState,
     scene_plan: ScenePlan,
 ) -> List[IntentCritique]:
-    raw_critiques = world.metadata.get("last_critic_verdicts")
-    if not isinstance(raw_critiques, list):
-        return []
-    critiques: List[IntentCritique] = []
-    for item in raw_critiques:
-        if not isinstance(item, dict):
-            continue
-        try:
-            critique = IntentCritique.model_validate(item)
-        except Exception:
-            continue
-        if critique.scene_id == scene_plan.scene_id:
-            critiques.append(critique)
-    return critiques
+    return _load_stored_by_scene(
+        world,
+        scene_plan,
+        metadata_key="last_critic_verdicts",
+        model=IntentCritique,
+    )
 
 
 def _load_stored_scene_script(
     world: WorldState,
     scene_plan: ScenePlan,
 ) -> Optional[SceneScript]:
+    # Scene script lookup is intentionally NOT routed through
+    # ``_load_stored_by_scene`` — it must consult multiple sources
+    # (latest draft, committed snapshot, current node metadata) and return
+    # the *first* match, not a list.
     candidates: List[Any] = []
     raw_latest = world.metadata.get("last_scene_script")
     raw_committed = world.metadata.get("last_committed_scene_script")
@@ -409,21 +369,25 @@ def _derive_intent_summary(
     character: Character,
     current_node: Optional[StoryNode],
 ) -> str:
-    character_id = str(character.id)
-    if current_node and character_id in current_node.character_ids:
-        return f"{character.name} 正在响应当前场景：{current_node.description}"
-    if character.goals:
-        return f"{character.name} 准备推进目标：{character.goals[0]}"
-    return f"{character.name} 正在观察局势，准备采取下一步行动。"
+    """Sprint 26: removed. This synthetic helper only fed the
+    ``build_compatibility_intent`` compat path. Kept as a NotImplementedError
+    stub so any stale caller fails loudly.
+    """
+    raise NotImplementedError(
+        "_derive_intent_summary was removed in Sprint 26 — see "
+        "build_compatibility_intent for the full removal note."
+    )
 
 
 def _guess_target_ids(
     character: Character,
     current_node: Optional[StoryNode],
 ) -> List[str]:
-    if not current_node:
-        return []
-    character_id = str(character.id)
-    return [
-        other_id for other_id in current_node.character_ids if other_id != character_id
-    ][:2]
+    """Sprint 26: removed. This synthetic helper only fed the
+    ``build_compatibility_intent`` compat path. Kept as a NotImplementedError
+    stub so any stale caller fails loudly.
+    """
+    raise NotImplementedError(
+        "_guess_target_ids was removed in Sprint 26 — see "
+        "build_compatibility_intent for the full removal note."
+    )

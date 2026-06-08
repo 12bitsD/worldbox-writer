@@ -13,12 +13,16 @@ from worldbox_writer.engine.dual_loop import (
     build_scene_plan,
     build_scene_script,
     dual_loop_enabled,
-    synthesize_candidate_event_from_intents,
 )
 from worldbox_writer.memory.memory_manager import MemoryManager
 
 
 def test_build_dual_loop_snapshot_is_branch_aware(monkeypatch) -> None:
+    """Sprint 26: updated. The synthetic compat-intent path was removed, so
+    the snapshot now reflects the empty-intent state when no persisted
+    runtime metadata is present. The structure-only invariants (scene_plan,
+    scene_script, contract_version) are still verified here.
+    """
     monkeypatch.setenv("FEATURE_DUAL_LOOP_ENABLED", "1")
 
     world = WorldState(title="测试世界", premise="测试前提")
@@ -52,12 +56,12 @@ def test_build_dual_loop_snapshot_is_branch_aware(monkeypatch) -> None:
     assert snapshot.scene_plan.narrative_pressure == "intense"
     assert snapshot.scene_plan.source_node_id == str(node.id)
     assert snapshot.scene_script.source_node_id == str(node.id)
-    assert snapshot.action_intents[0].metadata["synthetic"] is True
-    assert snapshot.intent_critiques[0].accepted is True
-    assert snapshot.prompt_traces[0].memory_trace is not None
-    assert snapshot.prompt_traces[0].memory_trace.reflective_memory == [
-        "经历背叛后变得更谨慎"
-    ]
+    # Sprint 26: no synthetic compat-intent path anymore. The lists are
+    # empty because we did not seed ``last_actor_intents`` (the production
+    # runtime output). Structural verification only.
+    assert snapshot.action_intents == []
+    assert snapshot.intent_critiques == []
+    assert snapshot.contract_version == "dual-loop-v1"
 
 
 def test_build_scene_plan_reuses_persisted_runtime_scene_plan() -> None:
@@ -209,31 +213,3 @@ def test_prompt_trace_separates_episodic_and_reflective_memory_layers() -> None:
     assert trace.memory_trace.episodic_memory_snippets
     assert "阿璃意识到自己过于急躁" in trace.memory_trace.reflective_memory[0]
     assert trace.memory_trace.metadata["layer_counts"]["reflective"] == 1
-
-
-def test_synthesize_candidate_event_from_intents_joins_scene_summaries() -> None:
-    scene_plan = ScenePlan(
-        scene_id="scene-runtime",
-        branch_id="branch-a",
-        title="断桥试探",
-    )
-    candidate = synthesize_candidate_event_from_intents(
-        [
-            ActionIntent(
-                scene_id=scene_plan.scene_id,
-                actor_id="char-1",
-                actor_name="阿璃",
-                summary="阿璃决定逼问白夜昨夜的行踪。",
-            ),
-            ActionIntent(
-                scene_id=scene_plan.scene_id,
-                actor_id="char-2",
-                actor_name="白夜",
-                summary="白夜选择用半真半假的回答拖延时间。",
-            ),
-        ],
-        scene_plan=scene_plan,
-    )
-
-    assert "阿璃决定逼问白夜昨夜的行踪" in candidate
-    assert "白夜选择用半真半假的回答拖延时间" in candidate

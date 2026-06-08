@@ -48,13 +48,6 @@ def test_prompt_registry_reloads_yaml_override_when_mtime_changes(tmp_path) -> N
     assert registry.load("actor_system") == "版本二"
 
 
-def test_prompt_registry_keeps_txt_compatibility(tmp_path) -> None:
-    template_path = tmp_path / "actor_system.txt"
-    template_path.write_text("旧版文本", encoding="utf-8")
-
-    assert PromptRegistry(template_dir=str(tmp_path)).load("actor_system") == "旧版文本"
-
-
 def test_prompt_registry_loads_yaml_system_variant(tmp_path) -> None:
     template_path = tmp_path / "narrator_system.yaml"
     template_path.write_text(
@@ -68,7 +61,7 @@ def test_prompt_registry_loads_yaml_system_variant(tmp_path) -> None:
                 "system: base",
                 "system_variants:",
                 "  scene_script: scene prompt",
-                "  legacy: legacy prompt",
+                "  single_event: single event prompt",
             ]
         ),
         encoding="utf-8",
@@ -76,7 +69,7 @@ def test_prompt_registry_loads_yaml_system_variant(tmp_path) -> None:
     registry = PromptRegistry(template_dir=str(tmp_path))
 
     assert registry.load("narrator_system", variant="scene_script") == "scene prompt"
-    assert registry.load("narrator_system", variant="legacy") == "legacy prompt"
+    assert registry.load("narrator_system", variant="single_event") == "single event prompt"
 
 
 def test_prompt_registry_raises_for_malformed_yaml(tmp_path) -> None:

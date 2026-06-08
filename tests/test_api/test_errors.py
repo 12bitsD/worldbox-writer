@@ -2,7 +2,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from worldbox_writer.api.errors import ApiError
-from worldbox_writer.api.server import _sessions, app
+from worldbox_writer.api.server import app
+from worldbox_writer.api.state import _sessions
 from worldbox_writer.api.services.branch_service import coerce_pacing
 from worldbox_writer.api.services.simulation_service import (
     InterventionCallback,

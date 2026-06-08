@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, List, Optional, cast
+from typing import Any, List, Optional
 
 from worldbox_writer.core.models import NodeType, StoryNode, WorldState
 from worldbox_writer.prompting.registry import load_prompt_template
@@ -174,7 +174,7 @@ class NodeDetector:
                 "role": "node_detector",
                 "status": "completed",
             }
-            return cast(str, response.content)
+            return response.content
         content = chat_completion_with_profile(profile_id, messages)
         self.last_call_metadata = get_last_llm_call_metadata()
         return content

@@ -11,7 +11,7 @@ Responsibilities:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, List, Optional, cast
+from typing import Any, List, Optional
 
 from worldbox_writer.core.models import (
     Constraint,
@@ -108,7 +108,7 @@ class GateKeeperAgent:
                 "role": "gate_keeper",
                 "status": "completed",
             }
-            return cast(str, response.content)
+            return response.content
         content = chat_completion_with_profile(profile_id, messages)
         self.last_call_metadata = get_last_llm_call_metadata()
         return content

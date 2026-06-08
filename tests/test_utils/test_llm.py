@@ -1,11 +1,8 @@
 import json
 from types import SimpleNamespace
 
-import pytest
-
 from worldbox_writer.utils import llm as llm_module
 from worldbox_writer.utils.llm import (
-    EmptyLLMResponseError,
     chat_completion_with_profile,
     get_provider_info,
     resolve_llm_route,
@@ -332,37 +329,3 @@ def test_chat_completion_with_profile_applies_sampling(monkeypatch):
     metadata = llm_module.get_last_llm_call_metadata()
     assert metadata["role"] == "critic"
     assert metadata["sampling"]["profile_id"] == "critic_review"
-
-
-def test_chat_completion_old_entry_warns_deprecated(monkeypatch):
-    response = SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content="OK"))]
-    )
-    client = _openai_completion_client(response)
-    monkeypatch.setenv("LLM_PROVIDER", "openai")
-    monkeypatch.setenv("LLM_MODEL", "gpt-4.1-mini")
-    monkeypatch.setattr(llm_module, "get_llm_client", lambda route: client)
-
-    with pytest.warns(DeprecationWarning):
-        llm_module.chat_completion([{"role": "user", "content": "OK"}])
-
-
-def test_chat_completion_treats_empty_provider_response_as_failure(monkeypatch):
-    response = SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content=""))]
-    )
-    client = _openai_completion_client(response)
-    monkeypatch.setenv("LLM_PROVIDER", "openai")
-    monkeypatch.setenv("LLM_MODEL", "gpt-4.1-mini")
-    monkeypatch.setattr(llm_module, "get_llm_client", lambda route: client)
-
-    with pytest.raises(EmptyLLMResponseError):
-        llm_module.chat_completion(
-            [{"role": "user", "content": "只输出 OK"}],
-            role="director",
-            max_tokens=8,
-        )
-
-    metadata = llm_module.get_last_llm_call_metadata()
-    assert metadata["status"] == "failed"
-    assert metadata["estimated_completion_tokens"] == 0

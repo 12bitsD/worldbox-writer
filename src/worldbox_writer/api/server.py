@@ -11,6 +11,16 @@ WorldBox Writer — FastAPI 后端服务
 - POST /api/simulate/{id}/constraints — 添加约束
 - GET  /api/simulate/{id}/export    — 导出结果
 - GET  /api/health           — 健康检查
+
+History (Sprint 26 slim-down): a 30+-line ``_xxx = xxx`` alias block that
+re-exported symbols from ``api.state``, ``api.core.*``, ``api.services.*``,
+``api.session``, and ``api.session_store`` was removed. Tests were migrated
+to import from the canonical modules directly.
+
+DO NOT RE-ADD THE ALIAS BLOCK. If a test or consumer needs a symbol, import
+it from its canonical home (``api.state`` for shared singletons,
+``api.session_store`` for DB lifecycle, ``api.core.{branching,serialization}``
+for pure helpers, ``api.services.<name>`` for service classes).
 """
 
 from __future__ import annotations
@@ -43,124 +53,24 @@ from worldbox_writer.api.routes.branches import build_branch_router
 from worldbox_writer.api.routes.deps import ApiRouteDeps
 from worldbox_writer.api.routes.simulations import build_simulation_router
 from worldbox_writer.api.routes.workspace import build_workspace_router
-from worldbox_writer.api.services.branch_service import (
-    BranchService,
-)
-from worldbox_writer.api.services.branch_service import (
-    coerce_pacing as _branch_coerce_pacing,
-)
-from worldbox_writer.api.services.branch_service import (
-    ensure_branching_enabled as _branch_ensure_branching_enabled,
-)
-from worldbox_writer.api.services.branch_service import (
-    find_rendered_node as _branch_find_rendered_node,
-)
+from worldbox_writer.api.services.branch_service import BranchService
 from worldbox_writer.api.services.simulation_service import (
     SimulationService,
+    restore_branch_world,
 )
-from worldbox_writer.api.services.simulation_service import (
-    append_telemetry_event as _append_telemetry_event,
-)
-from worldbox_writer.api.services.simulation_service import (
-    branch_status as _branch_status,
-)
-from worldbox_writer.api.services.simulation_service import (
-    restore_branch_world as _restore_branch_world,
-)
-from worldbox_writer.api.services.workspace_service import (
-    WorkspaceService,
-)
-from worldbox_writer.api.services.workspace_service import (
-    apply_wiki_request as _workspace_apply_wiki_request,
-)
-from worldbox_writer.api.services.workspace_service import (
-    ensure_workspace_mutable as _workspace_ensure_workspace_mutable,
-)
-from worldbox_writer.api.services.workspace_service import (
-    materialize_character as _workspace_materialize_character,
-)
-from worldbox_writer.api.services.workspace_service import (
-    validate_wiki_request as _workspace_validate_wiki_request,
-)
-from worldbox_writer.api.services.workspace_service import (
-    wiki_issue as _workspace_wiki_issue,
-)
-from worldbox_writer.api.session import (
-    SimulationSession,
-)
-from worldbox_writer.api.session import (
-    build_simulation_payload as _build_simulation_payload,
-)
-from worldbox_writer.api.session import feature_payload as _feature_payload
-from worldbox_writer.api.session import (
-    merge_rendered_nodes_from_world as _merge_rendered_nodes_from_world,
-)
-from worldbox_writer.api.session import queue_event as _session_queue_event
-from worldbox_writer.api.session import (
-    upsert_rendered_node as _session_upsert_rendered_node,
-)
+from worldbox_writer.api.services.workspace_service import WorkspaceService
+from worldbox_writer.api.session import SimulationSession
 from worldbox_writer.api.session_store import (
-    load_session_into_memory as _load_session_into_memory,
+    load_session_into_memory,
+    recover_sessions,
 )
-from worldbox_writer.api.session_store import persist_session as _persist_session
-from worldbox_writer.api.session_store import recover_sessions as _recover_sessions
-from worldbox_writer.api.session_store import (
-    restore_world_at_node as _restore_world_at_node,
-)
-from worldbox_writer.api.state import _VALID_PACING_VALUES as _STATE_VALID_PACING_VALUES
-from worldbox_writer.api.state import (
-    _WORKSPACE_MUTABLE_STATUSES as _STATE_WORKSPACE_MUTABLE_STATUSES,
-)
-from worldbox_writer.api.state import _executor as _STATE_EXECUTOR
-from worldbox_writer.api.state import (
-    _sessions,
-)
-from worldbox_writer.api.state import branching_enabled as _state_branching_enabled
+from worldbox_writer.api.state import _sessions
 from worldbox_writer.config.settings import get_settings
-from worldbox_writer.core.models import (
-    TelemetryEvent,
-)
-from worldbox_writer.core.models import TelemetryLevel as _TelemetryLevel
-from worldbox_writer.core.models import TelemetrySpanKind as _TelemetrySpanKind
+from worldbox_writer.core.models import TelemetryEvent
 from worldbox_writer.engine.graph import run_simulation
 from worldbox_writer.exporting import build_export_bundle
 from worldbox_writer.storage.db import init_db
 from worldbox_writer.storage.db import load_session as db_load_session
-from worldbox_writer.storage.db import save_session as _db_save_session
-
-# ---------------------------------------------------------------------------
-# Aliases to new core modules (backward compat during refactor)
-# ---------------------------------------------------------------------------
-
-_default_branch_meta = default_branch_meta
-_normalize_branch_registry = normalize_branch_registry
-_node_index = node_index
-_lineage_from_latest_node = lineage_from_latest_node
-_branch_cutoffs = branch_cutoffs
-_filter_nodes_for_branch = filter_nodes_for_branch
-_filter_telemetry_for_branch = filter_telemetry_for_branch
-_compare_summary = compare_summary
-_serialize_world = serialize_world
-_serialize_node = serialize_node
-_serialize_nodes = serialize_nodes
-_serialize_telemetry = serialize_telemetry
-TelemetryLevel = _TelemetryLevel
-TelemetrySpanKind = _TelemetrySpanKind
-db_save_session = _db_save_session
-_branching_enabled = _state_branching_enabled
-_coerce_pacing = _branch_coerce_pacing
-_ensure_branching_enabled = _branch_ensure_branching_enabled
-_find_rendered_node = _branch_find_rendered_node
-_VALID_PACING_VALUES = _STATE_VALID_PACING_VALUES
-_WORKSPACE_MUTABLE_STATUSES = _STATE_WORKSPACE_MUTABLE_STATUSES
-_executor = _STATE_EXECUTOR
-_ensure_workspace_mutable = _workspace_ensure_workspace_mutable
-_wiki_issue = _workspace_wiki_issue
-_validate_wiki_request = _workspace_validate_wiki_request
-_materialize_character = _workspace_materialize_character
-_apply_wiki_request = _workspace_apply_wiki_request
-_queue_event = _session_queue_event
-_upsert_rendered_node = _session_upsert_rendered_node
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -171,7 +81,7 @@ _upsert_rendered_node = _session_upsert_rendered_node
 async def lifespan(app: FastAPI):
     get_settings()
     init_db()
-    _recover_sessions()
+    recover_sessions()
     yield
 
 
@@ -294,9 +204,9 @@ def _build_export_bundle_for_session(
         raise HTTPException(status_code=400, detail="推演尚未产生世界数据")
 
     selected_branch = branch or world.active_branch_id or "main"
-    restored_world = _restore_branch_world(sim_id, world, selected_branch)
+    restored_world = restore_branch_world(sim_id, world, selected_branch)
     rendered_nodes = [] if nodes_rendered is None else nodes_rendered
-    filtered_nodes = _filter_nodes_for_branch(
+    filtered_nodes = filter_nodes_for_branch(
         rendered_nodes,
         restored_world.branches,
         selected_branch,
@@ -335,7 +245,7 @@ def _route_deps() -> ApiRouteDeps:
         simulation_service=_simulation_service,
         branch_service=_branch_service,
         workspace_service=_workspace_service,
-        load_session_into_memory=_load_session_into_memory,
+        load_session_into_memory=load_session_into_memory,
         build_export_bundle_for_session=_build_export_bundle_for_session,
         collect_llm_diagnostics=_collect_llm_diagnostics,
         sessions=_sessions,

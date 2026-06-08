@@ -14,16 +14,6 @@ profiles:
     temperature: 0.8
     max_tokens: 50
     notes: Short scene/chapter title generation.
-  - profile_id: actor_propose
-    role: actor
-    temperature: 0.8
-    max_tokens: 300
-    notes: Single-character action proposal.
-  - profile_id: actor_synthesize
-    role: actor
-    temperature: 0.7
-    max_tokens: 300
-    notes: Merge actor proposals into one event.
   - profile_id: actor_event
     role: actor
     temperature: 0.8
@@ -73,41 +63,6 @@ profiles:
     top_p: 0.95
     max_tokens: 2000
     notes: Production graph scene-script rendering.
-  - profile_id: narrator_agent_render
-    role: narrator
-    temperature: 0.75
-    max_tokens: 800
-    notes: Legacy NarratorAgent node rendering.
-  - profile_id: narrator_fast_forward
-    role: narrator
-    temperature: 0.5
-    max_tokens: 800
-    notes: Fast-forward skeleton summary.
-  - profile_id: narrator_title
-    role: narrator
-    temperature: 0.7
-    max_tokens: 30
-    notes: Short chapter title generation.
-  - profile_id: narrator_iterative_skeleton
-    role: narrator
-    temperature: 0.3
-    max_tokens: 700
-    notes: Iterative narrator skeleton stage.
-  - profile_id: narrator_iterative_expansion
-    role: narrator
-    temperature: 0.65
-    max_tokens: 1600
-    notes: Iterative narrator expansion stage.
-  - profile_id: narrator_iterative_polish
-    role: narrator
-    temperature: 0.75
-    max_tokens: 2400
-    notes: Iterative narrator polish stage.
-  - profile_id: narrator_iterative_judge
-    role: judge
-    temperature: 0.2
-    max_tokens: 500
-    notes: Iterative narrator stage judge.
   - profile_id: memory_consistency
     role: memory
     temperature: 0.0

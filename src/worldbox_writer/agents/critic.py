@@ -8,7 +8,7 @@ Critic pass before isolated actor intents are bridged into one candidate event.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional
 
 from worldbox_writer.core.dual_loop import ActionIntent, IntentCritique, ScenePlan
 from worldbox_writer.core.models import WorldState
@@ -38,6 +38,9 @@ _VALID_REASON_CODES = {
     CRITIC_UNSAFE_OR_ABSURD,
 }
 _VALID_SEVERITIES = {"info", "warning", "blocking"}
+
+_TRUTHY_LITERALS = frozenset({"true", "1", "yes", "y"})
+_FALSY_LITERALS = frozenset({"false", "0", "no", "n"})
 
 
 class CriticAgent:
@@ -89,7 +92,7 @@ class CriticAgent:
                     "role": "critic",
                     "status": "completed",
                 }
-                raw = cast(str, response.content)
+                raw = response.content
             else:
                 raw = chat_completion_with_profile("critic_review", messages)
                 self.last_call_metadata = get_last_llm_call_metadata()
@@ -278,9 +281,9 @@ class CriticAgent:
             return value
         if isinstance(value, str):
             normalized = value.strip().lower()
-            if normalized in {"true", "1", "yes", "y"}:
+            if normalized in _TRUTHY_LITERALS:
                 return True
-            if normalized in {"false", "0", "no", "n"}:
+            if normalized in _FALSY_LITERALS:
                 return False
         return default
 

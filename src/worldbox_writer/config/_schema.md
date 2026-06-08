@@ -51,8 +51,9 @@ profiles:
   point after PR-04.
 - Unknown profile ids, malformed sampling fields, or invalid role names must
   raise before making an LLM request.
-- The old `chat_completion(..., temperature=...)` path may remain temporarily
-  for compatibility, but migrated production call sites must not use it.
+- The old `chat_completion(..., temperature=...)` public path was removed in
+  Sprint 26 (now an internal `_execute_chat_completion`); do not re-introduce
+  a public wrapper without a profile id, it makes LLM routing un-auditable.
 - Tuning sampling values is a behavior change. It requires sweep data or an
   evaluation report; do not tune by intuition.
 
@@ -63,17 +64,9 @@ PR-04 must cover at least these profile ids:
 - `director_init`
 - `director_intervention`
 - `director_title`
-- `actor_propose`
-- `actor_synthesize`
 - `critic_review`
 - `gate_keeper_validate`
 - `narrator_render`
-- `narrator_fast_forward`
-- `narrator_title`
-- `narrator_iterative_skeleton`
-- `narrator_iterative_expansion`
-- `narrator_iterative_polish`
-- `narrator_iterative_judge`
 - `node_detector`
 - `world_builder_expand`
 - `world_builder_location`

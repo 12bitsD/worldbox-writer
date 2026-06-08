@@ -15,7 +15,7 @@ machine-actionable structures that all downstream agents can operate on.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional
 
 from worldbox_writer.core.dual_loop import ScenePlan
 from worldbox_writer.core.models import (
@@ -74,13 +74,16 @@ class DirectorAgent:
     def initialize_world(
         self, user_premise: str, world: Optional[WorldState] = None
     ) -> WorldState:
-        """Create a fully initialised WorldState from a user's premise."""
+        """Create a fully initialised WorldState from a user's premise.
+
+        NOTE: The UK-spelling ``initialise_world`` alias that used to live here
+        was removed in the Sprint 26 slim-down because all known callers
+        (including the integration tests) now use the US spelling. If you find
+        yourself wanting to re-add it, prefer to migrate the call site to
+        ``initialize_world`` instead — keeping both creates silent API drift.
+        """
         raw = self._call_llm_for_init(user_premise)
         return self._build_world_state(raw, world)
-
-    # Keep backward compat alias
-    def initialise_world(self, user_premise: str) -> WorldState:
-        return self.initialize_world(user_premise)
 
     def process_intervention(self, world: WorldState, instruction: str) -> WorldState:
         """Translate a user intervention into persistent constraints."""
@@ -187,7 +190,7 @@ class DirectorAgent:
                 "role": "director",
                 "status": "completed",
             }
-            return cast(str, response.content)
+            return response.content
         content = chat_completion_with_profile(profile_id, messages)
         self.last_call_metadata = get_last_llm_call_metadata()
         return content

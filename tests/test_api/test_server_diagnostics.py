@@ -3,7 +3,14 @@ from __future__ import annotations
 from typing import Any
 
 import worldbox_writer.api.server as server_module
-from worldbox_writer.core.models import WorldState
+from worldbox_writer.api.session import SimulationSession
+from worldbox_writer.api.state import _sessions
+from worldbox_writer.core.models import (
+    TelemetryEvent,
+    TelemetryLevel,
+    TelemetrySpanKind,
+    WorldState,
+)
 
 
 class FalseyDict(dict[str, Any]):
@@ -17,7 +24,7 @@ class FalseyList(list[dict[str, Any]]):
 
 
 def test_collect_llm_diagnostics_preserves_falsey_payload() -> None:
-    event = server_module.TelemetryEvent(
+    event = TelemetryEvent(
         event_id="evt-llm-falsey",
         sim_id="sim-diagnostics",
         trace_id="trace-1",
@@ -25,8 +32,8 @@ def test_collect_llm_diagnostics_preserves_falsey_payload() -> None:
         tick=1,
         agent="narrator",
         stage="completed",
-        level=server_module.TelemetryLevel.INFO,
-        span_kind=server_module.TelemetrySpanKind.LLM,
+        level=TelemetryLevel.INFO,
+        span_kind=TelemetrySpanKind.LLM,
         message="Narrator completed",
         payload=FalseyDict(
             {
@@ -55,11 +62,11 @@ def test_collect_llm_diagnostics_preserves_falsey_payload() -> None:
 
 def test_export_bundle_preserves_falsey_rendered_nodes() -> None:
     sim_id = "sim-export-falsey"
-    server_module._sessions.clear()
+    _sessions.clear()
     try:
         world = WorldState(title="Export World", premise="Test premise")
         world.is_complete = True
-        session = server_module.SimulationSession(
+        session = SimulationSession(
             sim_id=sim_id,
             premise="Test premise",
             max_ticks=1,
@@ -79,7 +86,7 @@ def test_export_bundle_preserves_falsey_rendered_nodes() -> None:
                 }
             ]
         )
-        server_module._sessions[sim_id] = session
+        _sessions[sim_id] = session
 
         bundle = server_module._build_export_bundle_for_session(sim_id)
 
@@ -87,4 +94,4 @@ def test_export_bundle_preserves_falsey_rendered_nodes() -> None:
         assert bundle["summary"]["rendered_node_count"] == 1
         assert bundle["story_sections"][0]["title"] == "Chapter One"
     finally:
-        server_module._sessions.clear()
+        _sessions.clear()
