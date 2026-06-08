@@ -12,7 +12,7 @@ def parse_json_object(
 ) -> dict[str, Any]:
     """Parse a JSON object, tolerating markdown fences and surrounding text."""
 
-    fallback = dict(default or {})
+    fallback = dict(default) if default is not None else {}
     sentinel = object()
     parsed = _parse_json_object_or_sentinel(content, sentinel=sentinel)
     return fallback if parsed is sentinel else parsed
@@ -29,7 +29,7 @@ def parse_json_object_or_raise(content: Any, *, message: str) -> dict[str, Any]:
 
 
 def _parse_json_object_or_sentinel(content: Any, *, sentinel: object) -> Any:
-    text = str(content or "").strip()
+    text = "" if content is None else str(content).strip()
     if text.startswith("```"):
         lines = text.splitlines()
         text = (

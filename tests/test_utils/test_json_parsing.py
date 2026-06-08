@@ -24,6 +24,16 @@ def test_parse_json_object_returns_default_for_non_object() -> None:
     }
 
 
+def test_parse_json_object_preserves_falsey_default_mapping() -> None:
+    class FalseyDefault(dict[str, object]):
+        def __bool__(self) -> bool:
+            return False
+
+    assert parse_json_object("", default=FalseyDefault(accepted=False)) == {
+        "accepted": False
+    }
+
+
 def test_parse_json_object_or_raise_rejects_invalid_content() -> None:
     with pytest.raises(ValueError, match="must be JSON"):
         parse_json_object_or_raise("no object here", message="must be JSON")
