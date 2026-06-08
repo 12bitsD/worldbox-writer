@@ -3,16 +3,25 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
+
+import worldbox_writer.engine.services.isolated_actor_service as isolated_actor_module
 from worldbox_writer.core.dual_loop import ActionIntent, ScenePlan
 from worldbox_writer.core.models import Character, WorldState
 from worldbox_writer.engine.services.isolated_actor_service import (
     ISOLATED_ACTOR_RUNTIME_MODE,
+    invoke_isolated_actor_intent,
     run_isolated_actor_runtime,
 )
 from worldbox_writer.memory.memory_manager import MemoryManager
 
 
 class FalseyMetadata(dict[str, Any]):
+    def __bool__(self) -> bool:
+        return False
+
+
+class FalseyStr(str):
     def __bool__(self) -> bool:
         return False
 
@@ -185,3 +194,44 @@ def test_isolated_actor_runtime_empty_completion_uses_story_forward_fallback() -
     assert "调查断桥" in intent.summary
     assert "让阿璃逼近伏击真相" in intent.summary
     assert sample_recorder.samples == []
+
+
+def test_invoke_isolated_actor_intent_preserves_falsey_string_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    world = WorldState(title="测试世界", premise="测试前提")
+    alice = Character(name="阿璃", personality="谨慎", goals=["调查断桥"])
+    bob = Character(name="白夜", personality="隐忍", goals=["守住秘密"])
+    world.add_character(alice)
+    world.add_character(bob)
+    scene_plan = ScenePlan(
+        scene_id="scene-falsey-fields",
+        objective="让阿璃逼近伏击真相",
+        spotlight_character_ids=[str(alice.id), str(bob.id)],
+    )
+    sample_recorder = _SampleRecorder()
+    monkeypatch.setattr(
+        isolated_actor_module,
+        "parse_json_object",
+        lambda _raw: {
+            "action_type": FalseyStr("dialogue"),
+            "summary": "阿璃扣住断桥旧符钉，逼问白夜昨夜行踪。",
+            "rationale": FalseyStr("她要确认伏击者。"),
+            "target_character_names": ["白夜"],
+            "confidence": 0.82,
+        },
+    )
+
+    intent, _trace = invoke_isolated_actor_intent(
+        alice,
+        world,
+        scene_plan=scene_plan,
+        chat_completion_func=lambda _profile_id, _messages: "raw",
+        metadata_func=lambda: {},
+        collect_sample_func=sample_recorder,
+        load_prompt_template_func=_actor_system_prompt,
+    )
+
+    assert intent.action_type == "dialogue"
+    assert intent.rationale == "她要确认伏击者。"
+    assert sample_recorder.samples[0]["output"] is intent

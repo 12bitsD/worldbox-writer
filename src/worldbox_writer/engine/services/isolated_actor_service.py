@@ -240,8 +240,13 @@ def invoke_isolated_actor_intent(
         or data.get("description")
         or fallback_actor_summary(character, scene_plan, raw=raw)
     ).strip()
-    action_type = str(data.get("action_type") or "action").strip() or "action"
-    rationale = str(data.get("rationale") or "").strip()
+    action_type_value = data.get("action_type")
+    action_type = (
+        "action" if action_type_value is None else str(action_type_value).strip()
+    )
+    action_type = action_type or "action"
+    rationale_value = data.get("rationale")
+    rationale = "" if rationale_value is None else str(rationale_value).strip()
     confidence = coerce_confidence(data.get("confidence"))
     target_ids = target_ids_from_payload(
         data, world, prompt_trace.visible_character_ids
