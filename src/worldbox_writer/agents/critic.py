@@ -104,6 +104,9 @@ class CriticAgent:
             }
             return {}
         parsed = self._parse_json_response(raw)
+        llm_metadata = (
+            self.last_call_metadata if self.last_call_metadata is not None else {}
+        )
         collect_sample(
             "critic_review",
             {
@@ -122,8 +125,8 @@ class CriticAgent:
             parsed,
             metadata={
                 "role": "critic",
-                "model": str((self.last_call_metadata or {}).get("model") or ""),
-                "llm_metadata": self.last_call_metadata or {},
+                "model": str(llm_metadata.get("model") or ""),
+                "llm_metadata": llm_metadata,
             },
             raw_output=raw,
             parsed_output=parsed,
@@ -281,6 +284,7 @@ class CriticAgent:
         revision_hint: str = "",
         metadata: Optional[Dict[str, Any]] = None,
     ) -> IntentCritique:
+        extra_metadata = {} if metadata is None else metadata
         return IntentCritique(
             scene_id=scene_plan.scene_id,
             intent_id=intent.intent_id,
@@ -291,7 +295,7 @@ class CriticAgent:
             severity=severity,
             reason=reason,
             revision_hint=revision_hint,
-            metadata={"source": "critic", **(metadata or {})},
+            metadata={"source": "critic", **extra_metadata},
         )
 
     def _blocking(
@@ -305,6 +309,7 @@ class CriticAgent:
         severity: str = "blocking",
         metadata: Optional[Dict[str, Any]] = None,
     ) -> IntentCritique:
+        extra_metadata = {} if metadata is None else metadata
         return IntentCritique(
             scene_id=scene_plan.scene_id,
             intent_id=intent.intent_id,
@@ -315,7 +320,7 @@ class CriticAgent:
             severity=severity,
             reason=reason,
             revision_hint=revision_hint,
-            metadata={"source": "critic", **(metadata or {})},
+            metadata={"source": "critic", **extra_metadata},
         )
 
     def _parse_json_response(self, content: str) -> Dict[str, Any]:

@@ -23,6 +23,11 @@ from worldbox_writer.core.models import (
 )
 
 
+class FalseyMetadata(dict[str, Any]):
+    def __bool__(self) -> bool:
+        return False
+
+
 def _world_with_characters() -> tuple[WorldState, Character, Character, Character]:
     world = WorldState(title="测试世界", premise="王城内没有魔法。")
     alice = Character(name="阿璃", personality="谨慎", goals=["守住王城"])
@@ -205,3 +210,70 @@ def test_critic_output_has_valid_reason_code(
 
     assert verdict.reason_code in _VALID_REASON_CODES
     assert verdict.reason_code == CRITIC_UNSAFE_OR_ABSURD
+
+
+def test_critic_sample_preserves_falsey_llm_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    world, alice, bob, _hidden = _world_with_characters()
+    scene_plan = _scene_plan(alice, bob)
+    intent = _intent(scene_plan, alice, bob)
+    llm_metadata = FalseyMetadata(
+        {
+            "model": "critic-test-model",
+            "provider": "kimi",
+        }
+    )
+    samples: list[dict[str, Any]] = []
+    _mock_chat_completion(
+        monkeypatch,
+        {
+            "accepted": True,
+            "reason_code": CRITIC_ACCEPTED,
+            "severity": "info",
+            "reason": "accepted",
+            "revision_hint": "",
+        },
+    )
+    monkeypatch.setattr(
+        critic_module,
+        "get_last_llm_call_metadata",
+        lambda: llm_metadata,
+    )
+
+    def collect_sample(
+        _node_name: str,
+        _input_ctx: dict[str, Any],
+        _output: Any,
+        metadata: dict[str, Any] | None = None,
+        **_kwargs: Any,
+    ) -> None:
+        samples.append({} if metadata is None else metadata)
+
+    monkeypatch.setattr(critic_module, "collect_sample", collect_sample)
+
+    verdict = CriticAgent().review_intent(world, scene_plan=scene_plan, intent=intent)
+
+    assert verdict.accepted is True
+    assert samples[0]["model"] == "critic-test-model"
+    assert samples[0]["llm_metadata"] is llm_metadata
+
+
+def test_critic_verdict_helpers_preserve_falsey_metadata_mapping() -> None:
+    _world, alice, bob, _hidden = _world_with_characters()
+    scene_plan = _scene_plan(alice, bob)
+    intent = _intent(scene_plan, alice, bob)
+    metadata = FalseyMetadata({"source": "llm", "review_id": "review-1"})
+
+    accepted = CriticAgent()._accepted(scene_plan, intent, metadata=metadata)
+    blocking = CriticAgent()._blocking(
+        scene_plan,
+        intent,
+        reason_code=CRITIC_WORLD_RULE_VIOLATION,
+        reason="违反规则",
+        revision_hint="移除违规行为",
+        metadata=metadata,
+    )
+
+    assert accepted.metadata == {"source": "llm", "review_id": "review-1"}
+    assert blocking.metadata == {"source": "llm", "review_id": "review-1"}
