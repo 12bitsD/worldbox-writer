@@ -700,7 +700,7 @@ PROMPT_TEMPLATE_DIR=/tmp/prompts make dev-api
 ### 13.4 注意事项
 
 - **`_` 前缀的文件/目录被忽略** — 用 `_notes/` / `_examples/` 放本地笔记，不进 catalog
-- **variant 两种形式**：`body:`（完整替换，匹配旧 yaml `system_variants` 语义）/ `patch:`（追加到主 body 后）
+- **variant 两种形式**：`body:`（完整替换主 body）/ `patch:`（追加到主 body 后，空行分隔）
 - **改 profile（temperature / max_tokens）要重启服务** — 见 gotcha #13。**改 prompt 内容**不需要重启
 - **多个 variant 互不干扰**：每个 .md 文件独立 reload，跨文件不会相互污染
 

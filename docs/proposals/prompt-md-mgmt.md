@@ -297,9 +297,12 @@ class DirectorAgent:
 
 ### 3.2 兼容性窗口
 
-- 保留 `prompts/*.yaml` 6 个 sprint
-- registry 启动时同时扫描 `.yaml` 和 `.md`；catalog.json 优先
-- 6 sprint 后删 `.yaml` 支持
+**实际执行：取消兼容期，迁移原子完成**（用户要求）
+
+- 迁移脚本在确认所有 21 个 (id, variant) 字节级一致后才删除 .yaml
+- 不保留 legacy yaml 解析路径（`_legacy_yaml.py` 同步删除）
+- 旧 `PromptRegistry` 类的兼容 shim 同步删除
+- 一次性 `bf24623` commit 包含所有 10 个 yaml → md 转换 + 加载器重写
 
 ### 3.3 灰度上线
 

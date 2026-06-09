@@ -54,7 +54,7 @@ NodeDetector.evaluate()                            [agents/node_detector.py:108]
     ├── 触发用户介入 → 暂停
     ▼
 SceneNode 固化 + Narrator 渲染                    [engine/services/narration_service.py]
-    │ 产出 800-1500 字中文网文（`prompts/narrator_system.yaml:11`）
+    │ 产出 800-1500 字中文网文（`prompts/narrator/narrator_system.md:11`）
     ▼
 下一 tick 或结束
 ```
@@ -317,7 +317,7 @@ memory_trace, metadata
   - `_` 前缀的文件/目录被加载器忽略（用于本地笔记、设计文档）
 - **`prompting/registry.py`** — `PromptCatalog` 类负责 glob 扫描、按 id 索引、mtime 缓存、热重载
 - **`PROMPT_TEMPLATE_DIR`** 环境变量仍可指定 override 目录（用于本地试调，不进 git）
-- **运行时热加载**（按 mtime 缓存）— **仅适用于 prompt md / yaml**。agent_profiles.yaml 不热加载（见 gotcha #13）
+- **运行时热加载**（按 mtime 缓存）— **仅适用于 prompt md**。agent_profiles.yaml 不热加载（见 gotcha #13）
 
 ### 加一个新 prompt（4 步，**不改 Python 代码**）
 1. 在 `prompts/<role>/` 下创建 `<prompt_id>.md`，含 frontmatter（`id` / `version` / `role` / `changelog`）和 body
@@ -419,7 +419,7 @@ actor_turn_service.run_actor_turn(world, memory, scene_plan=...)
 10. **`NodeDetector` 触发介入**靠的是 LLM 调用（`node_detector` profile）+ 关键词扫描（**15 中文 + 18 英文 = 33 个**高风险关键词，定义在 `agents/node_detector.py:45-82` 的 `_HIGH_STAKES_KEYWORDS_ZH` / `_HIGH_STAKES_KEYWORDS_EN`）+ 每 5 tick 周期性检查，**不是**"scene_script 包含分歧点"。
 11. **`Critic` 不一定用"廉价" LLM**——它走和 Actor 一样的 `chat_completion_with_profile`。"廉价"是 profile 路由选择（temperature 0.0, 廉价 prompt），不是不同引擎。
 12. **dual-loop 路径是唯一生产路径**。`legacy_actor_turn` 仅作紧急回滚。`engine/dual_loop.py` 里的 `build_compatibility_intent` / `_derive_intent_summary` 等是 Sprint 26 stub（raise `NotImplementedError`），**别**在新代码里调用。
-13. **改 profile_id 要重启服务**：`src/worldbox_writer/config/agent_profiles.yaml` 在启动时加载（`config/settings.py` 的 `PROFILES_FILE` 常量），热加载仅适用于 `prompts/` 下的 markdown / yaml。改了 profile 后下次启动生效。
+13. **改 profile_id 要重启服务**：`src/worldbox_writer/config/agent_profiles.yaml` 在启动时加载（`config/settings.py` 的 `PROFILES_FILE` 常量），热加载仅适用于 `prompts/` 下的 markdown。改了 profile 后下次启动生效。
 14. **Graph state 是 TypedDict，不是 Pydantic**（`engine/state.py:20`）。新字段加在 `SimulationState` 里时，**所有** `_actor_node` / `scene_director_node` 等函数返回的 dict 都要对应更新。
 
 ---
@@ -428,12 +428,12 @@ actor_turn_service.run_actor_turn(world, memory, scene_plan=...)
 
 | 你想加什么 | 该改哪里 |
 |---|---|
-| 新的 Agent | 1) `src/worldbox_writer/agents/` 加新文件（参考 `actor.py:49` 类骨架）<br>2) `src/worldbox_writer/engine/graph.py:399-405` `add_node` 注册<br>3) `src/worldbox_writer/engine/services/` 加对应业务逻辑<br>4) `src/worldbox_writer/prompts/` 加 yaml<br>5) `src/worldbox_writer/config/agent_profiles.yaml` 加 profile_id |
+| 新的 Agent | 1) `src/worldbox_writer/agents/` 加新文件（参考 `actor.py:49` 类骨架）<br>2) `src/worldbox_writer/engine/graph.py:399-405` `add_node` 注册<br>3) `src/worldbox_writer/engine/services/` 加对应业务逻辑<br>4) `src/worldbox_writer/prompts/<role>/` 加 markdown（frontmatter + body）<br>5) `src/worldbox_writer/config/agent_profiles.yaml` 加 profile_id |
 | 新的 State 字段 | `engine/state.py:20` `SimulationState` 加字段，**所有** graph node 函数的返回 dict 都要更新 |
 | 新的 LLM provider | `utils/llm.py` 加 `_build_client` 分支 + `_chat_completion_<provider>` 传输 |
 | 新的 LLM 路由策略 | `utils/llm.py` 改 `_should_fallback` |
 | 新的约束类型 | `core/models.py:42` `ConstraintType` enum |
-| 新的渲染风格 | `prompts/narrator_system.yaml` 加 `system_variants` 键 |
+| 新的渲染风格 | `prompts/narrator/narrator_system.md` frontmatter 里加 `variants.<name>` 块 |
 | 新的 SSE 事件类型 | `engine/services/telemetry_service.py` 加 emit + `frontend/src/types/index.ts` 加类型 |
 | 新的 SQLite 表 | `storage/db.py:42-96` 加 `CREATE TABLE`，记得加迁移逻辑（无 auto-migration framework）|
 

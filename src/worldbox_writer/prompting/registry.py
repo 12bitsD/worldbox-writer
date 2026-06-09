@@ -1,14 +1,12 @@
-"""Prompt template registry with markdown + YAML fallback and hot reload.
+"""Prompt catalog: markdown files with YAML frontmatter, indexed by id.
 
 Public API
 ----------
 - :class:`PromptCatalog` — discovers ``.md`` prompt files under a directory,
   optionally backed by a ``catalog.json`` agent→prompt mapping.
-- :func:`load_prompt_template` — convenience shim preserved for the previous
-  YAML registry. Looks up a prompt by ``id`` (with optional ``variant``)
-  and returns the rendered ``system`` string. Hot-reloads on file mtime
-  change. Falls back to the legacy YAML loader when the markdown file is
-  missing, so existing call sites keep working during the migration.
+- :func:`load_prompt_template` — convenience helper that looks up a prompt
+  by ``id`` (with optional ``variant``) and returns the rendered ``system``
+  string. Hot-reloads on file mtime change.
 - :class:`PromptTemplate` / :class:`PromptRef` — value objects.
 
 Markdown file layout
@@ -26,16 +24,17 @@ followed by the body which is the system prompt verbatim::
     variants:
       standard:
         description: standard planning
-        patch: |
-          - extra line appended to the main body
+        body: |
+          main body used when this variant is selected
     ---
 
     你是 WorldBox Writer 多智能体小说创作系统的导演 Agent。 ...
 
 Variant behaviour
 -----------------
-A variant is a *patch* (text appended after a marker). Variants keep the
-main body untouched so the diff is small and human-reviewable.
+A variant is either a full body replacement (``body:``) or an append
+(``patch:`` appended to the main body). The body is otherwise preserved
+verbatim — including any trailing newline the markdown file ends with.
 
 Files starting with ``_`` (e.g. ``_notes.md``) are ignored at scan time.
 The catalog is hot-reloaded: on every call we re-stat the file and
@@ -46,7 +45,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
@@ -54,14 +53,6 @@ from typing import Any
 import yaml  # type: ignore[import-untyped]
 
 from worldbox_writer.config.settings import get_settings
-
-
-# Legacy YAML loader is imported lazily inside the fallback paths below.
-
-
-# ---------------------------------------------------------------------------
-# Value objects
-# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -74,7 +65,7 @@ class PromptRef:
 
 @dataclass(frozen=True)
 class PromptTemplate:
-    """Versioned prompt asset loaded from a markdown (or yaml) file."""
+    """Versioned prompt asset loaded from a markdown file."""
 
     id: str
     version: str
@@ -86,10 +77,6 @@ class PromptTemplate:
     source_path: Path | None = None
     variants: tuple[str, ...] = ()
 
-
-# ---------------------------------------------------------------------------
-# Frontmatter parser
-# ---------------------------------------------------------------------------
 
 _FRONTMATTER_RE = re.compile(
     r"\A---[ \t]*\r?\n(?P<yaml>.*?)\r?\n---[ \t]*(?:\r?\n|\Z)",
@@ -106,27 +93,19 @@ def parse_markdown_frontmatter(text: str) -> tuple[dict[str, Any], str]:
     if match is None:
         raise ValueError("Prompt markdown missing '---' frontmatter delimiters")
 
-    raw = match.group("yaml")
-    parsed = yaml.safe_load(raw)
+    parsed = yaml.safe_load(match.group("yaml"))
     if parsed is None:
         parsed = {}
     if not isinstance(parsed, dict):
         raise ValueError("Prompt frontmatter must be a YAML mapping")
 
     body = text[match.end() :]
-    # strip a single leading newline so the body starts with the first real char
     if body.startswith("\n"):
         body = body[1:]
     return parsed, body
 
 
-# ---------------------------------------------------------------------------
-# Catalog
-# ---------------------------------------------------------------------------
-
-
 def _default_prompts_dir() -> Path:
-    """Resolve the packaged prompts directory."""
     return Path(str(files("worldbox_writer").joinpath("prompts")))
 
 
@@ -141,8 +120,7 @@ class PromptCatalog:
     ----------
     prompts_dir
         Directory to scan. Defaults to the packaged ``prompts/`` directory,
-        overridable via the ``PROMPT_TEMPLATE_DIR`` env var (kept for
-        backwards compatibility with the old YAML registry).
+        overridable via the ``PROMPT_TEMPLATE_DIR`` env var.
     catalog_overrides
         Optional ``catalog.json`` content (dict). When ``None``, we attempt
         to load it from ``prompts_dir/catalog.json``. When supplied (or
@@ -160,21 +138,12 @@ class PromptCatalog:
         override = prompts_dir or settings.prompt.template_dir
         self.prompts_dir: Path = Path(override) if override else _default_prompts_dir()
 
-        # id → (path, mtime_ns, parsed_template)
         self._index: dict[str, tuple[Path, int, PromptTemplate]] = {}
-        # catalog.json content
         self._catalog: dict[str, Any] = {}
         self._catalog_mtime_ns: int | None = None
-
-        # External (overriding) catalog passed in by the caller (e.g. tests).
         self._external_catalog = catalog_overrides
 
-        # initial scan
         self.reload()
-
-    # ------------------------------------------------------------------
-    # public API
-    # ------------------------------------------------------------------
 
     def reload(self) -> None:
         """Re-scan the prompts directory and reload the catalog.
@@ -195,8 +164,9 @@ class PromptCatalog:
     def get(self, ref: PromptRef | str) -> PromptTemplate:
         """Return the template referenced by ``ref``.
 
-        If a variant is requested, append the variant patch to the body.
-        Raises ``KeyError`` when the id is unknown.
+        If a variant is requested, replace the body with the variant's
+        ``body:`` value (or append ``patch:`` to the main body). Raises
+        ``KeyError`` when the id is unknown.
         """
         if isinstance(ref, str):
             ref = PromptRef(id=ref)
@@ -207,11 +177,7 @@ class PromptCatalog:
         if path is not None and path.exists():
             current_mtime = path.stat().st_mtime_ns
             if current_mtime != mtime_ns:
-                template = (
-                    self._parse_file(path)
-                    if path.suffix == ".md"
-                    else self._parse_legacy_yaml(path)
-                )
+                template = self._parse_file(path)
                 self._index[ref.id] = (path, current_mtime, template)
         if ref.variant is not None and ref.variant not in template.variants:
             raise KeyError(
@@ -219,13 +185,7 @@ class PromptCatalog:
                 f"available: {list(template.variants)}"
             )
         if ref.variant is not None:
-            if path is not None and path.suffix == ".yaml":
-                # Legacy source: re-resolve through the YAML loader so the
-                # `system_variants` block is consulted, not the markdown
-                # frontmatter `variants:` map.
-                patched = self._system_text_for_legacy(path, ref.id, variant=ref.variant)
-            else:
-                patched = _apply_variant_patch(template.system, ref.variant, template)
+            patched = _resolve_variant(template, ref.variant)
             return PromptTemplate(
                 id=template.id,
                 version=template.version,
@@ -269,40 +229,32 @@ class PromptCatalog:
             return self.get(PromptRef(id=ids[0]))
         return self.get(PromptRef(id=entry["primary"]))
 
-    # ------------------------------------------------------------------
-    # internals
-    # ------------------------------------------------------------------
-
     def _scan_markdown_files(self) -> None:
         if not self.prompts_dir.exists():
-            # Packaged default always exists; if not we silently no-op.
             return
         seen: set[str] = set()
-        # Prefer .md; fall back to legacy .yaml so existing override tests
-        # and the cutover window both work without explicit switching.
-        for pattern in ("*.md", "*.yaml"):
-            for path in sorted(self.prompts_dir.rglob(pattern)):
-                if any(
-                    part.startswith("_")
-                    for part in path.relative_to(self.prompts_dir).parts
-                ):
-                    # _notes/, _examples/ — ignored.
-                    continue
-                stem = path.stem
-                if stem in seen:
-                    # .md already registered; skip the .yaml twin.
-                    continue
-                seen.add(stem)
-                try:
-                    mtime_ns = path.stat().st_mtime_ns
-                except FileNotFoundError:
-                    continue
-                template = (
-                    self._parse_file(path)
-                    if path.suffix == ".md"
-                    else self._parse_legacy_yaml(path)
+        for path in sorted(self.prompts_dir.rglob("*.md")):
+            if any(
+                part.startswith("_")
+                for part in path.relative_to(self.prompts_dir).parts
+            ):
+                continue
+            stem = path.stem
+            if stem in seen:
+                raise ValueError(
+                    f"Duplicate prompt id {stem!r} (found multiple files ending in "
+                    f"{stem}.md under {self.prompts_dir})"
                 )
-                self._index[stem] = (path, mtime_ns, template)
+            seen.add(stem)
+            try:
+                mtime_ns = path.stat().st_mtime_ns
+            except FileNotFoundError:
+                continue
+            existing = self._index.get(stem)
+            if existing is not None and existing[1] == mtime_ns:
+                continue
+            template = self._parse_file(path)
+            self._index[stem] = (path, mtime_ns, template)
 
     def _parse_file(self, path: Path) -> PromptTemplate:
         text = path.read_text(encoding="utf-8")
@@ -328,11 +280,6 @@ class PromptCatalog:
         if not body.strip():
             raise ValueError(f"Prompt {path.name}: empty body")
 
-        # Preserve the body verbatim. The trailing newline that every
-        # .md file ends with matches the legacy yaml loader's
-        # ``system: |`` clip-chomping behaviour; yaml files that used
-        # ``|-`` strip chomping have already been normalised to markdown
-        # by the migration script, which drops the trailing newline.
         return PromptTemplate(
             id=prompt_id,
             version=version,
@@ -344,56 +291,6 @@ class PromptCatalog:
             source_path=path,
             variants=variants,
         )
-
-    def _parse_legacy_yaml(self, path: Path) -> PromptTemplate:
-        """Parse a legacy ``.yaml`` prompt file into a :class:`PromptTemplate`.
-
-        Used during the migration window when a prompt id has not yet been
-        converted to markdown. Variants land in ``system_variants:`` and
-        are re-emitted as the ``variants`` tuple of *names* — patches are
-        not re-applied, callers fall through to the legacy YAML loader.
-        """
-        text = path.read_text(encoding="utf-8")
-        raw = yaml.safe_load(text)
-        if not isinstance(raw, dict):
-            raise ValueError(f"Prompt YAML {path.name!r} must be a mapping")
-        prompt_id = _required_str(raw, "id", path.name)
-        version = str(_required_str(raw, "version", path.name))
-        role = _required_str(raw, "role", path.name)
-        changelog = _required_list(raw, "changelog", path.name)
-        variants = tuple((raw.get("system_variants") or {}).keys())
-        user_template_vars = tuple(raw.get("user_template_vars") or ())
-        notes = raw.get("notes")
-        system = self._system_text_for_legacy(path, prompt_id, variant=None)
-        return PromptTemplate(
-            id=prompt_id,
-            version=version,
-            role=role,
-            changelog=tuple(changelog),
-            system=system,
-            user_template_vars=user_template_vars,
-            notes=str(notes) if notes is not None else None,
-            source_path=path,
-            variants=variants,
-        )
-
-    def _system_text_for_legacy(
-        self, path: Path, prompt_id: str, *, variant: str | None
-    ) -> str:
-        """Resolve the ``system`` field of a legacy yaml file from disk.
-
-        Reads the file's own directory instead of going through
-        :func:`load_yaml_template`, which uses the env-var override. This
-        keeps callers like ``PromptRegistry(template_dir=tmp_path)`` working
-        during the migration.
-        """
-        from worldbox_writer.prompting import _legacy_yaml
-
-        text = path.read_text(encoding="utf-8")
-        raw = yaml.safe_load(text)
-        if not isinstance(raw, dict):
-            raise ValueError(f"Prompt YAML {path.name!r} must be a mapping")
-        return _legacy_yaml._system_text(raw, prompt_id, variant=variant)
 
     def _load_catalog_json(self) -> None:
         path = _catalog_path(self.prompts_dir)
@@ -434,43 +331,32 @@ class PromptCatalog:
                     )
 
 
-# ---------------------------------------------------------------------------
-# Variant patch application
-# ---------------------------------------------------------------------------
-
-
-def _apply_variant_patch(base: str, variant: str, template: PromptTemplate) -> str:
+def _resolve_variant(template: PromptTemplate, variant: str) -> str:
     """Resolve a variant to its full system-prompt text.
 
     Two frontmatter shapes are supported:
 
-    1. ``body:`` — full replacement (matches the legacy yaml
-       ``system_variants.<name>`` semantic).
+    1. ``body:`` — full replacement of the main body.
     2. ``patch:`` — text appended to the main body, separated by a blank
        line. Useful for small additions to a long base prompt.
     """
     if template.source_path is None:
-        return base
+        return template.system
     text = template.source_path.read_text(encoding="utf-8")
     front, _ = parse_markdown_frontmatter(text)
     variants = front.get("variants") or {}
     entry = variants.get(variant)
     if not isinstance(entry, dict):
-        return base
-    body_raw = entry.get("body")
-    if isinstance(body_raw, str) and body_raw:
-        return body_raw
-    patch_raw = entry.get("patch")
-    if not isinstance(patch_raw, str) or not patch_raw:
-        return base
-    if not base.endswith("\n"):
-        return f"{base}\n\n{patch_raw.rstrip()}\n"
-    return f"{base}\n{patch_raw.rstrip()}\n"
-
-
-# ---------------------------------------------------------------------------
-# Backwards-compatible shim
-# ---------------------------------------------------------------------------
+        return template.system
+    body = entry.get("body")
+    if isinstance(body, str) and body:
+        return body
+    patch = entry.get("patch")
+    if not isinstance(patch, str) or not patch:
+        return template.system
+    if not template.system.endswith("\n"):
+        return f"{template.system}\n\n{patch.rstrip()}\n"
+    return f"{template.system}\n{patch.rstrip()}\n"
 
 
 _catalog_singleton: PromptCatalog | None = None
@@ -491,27 +377,18 @@ def reset_catalog_singleton() -> None:
 
 
 def load_prompt_template(
-    name: str, *, default: str = "", variant: str | None = None
+    name: str, *, variant: str | None = None
 ) -> str:
     """Load a prompt system string by id (with optional variant).
 
-    Hot-reloads on file change. Falls back to the legacy YAML loader when
-    the markdown file is missing (so the migration can roll out
-    incrementally).
+    Hot-reloads on file change. Returns an empty string when the id is
+    unknown (callers historically tolerated a missing prompt).
     """
     catalog = get_catalog()
     try:
         return catalog.get(PromptRef(id=name, variant=variant)).system
     except KeyError:
-        # Legacy YAML fallback (used during the cutover window).
-        from worldbox_writer.prompting._legacy_yaml import load_yaml_template
-
-        return load_yaml_template(name, default=default, variant=variant)
-
-
-# ---------------------------------------------------------------------------
-# Tiny validation helpers (kept private — moved to dedicated module if reused)
-# ---------------------------------------------------------------------------
+        return ""
 
 
 def _required_str(raw: dict[str, Any], field: str, name: str) -> str:
@@ -534,42 +411,9 @@ def _required_list(raw: dict[str, Any], field: str, name: str) -> list[str]:
     return value
 
 
-# ---------------------------------------------------------------------------
-# Legacy compatibility: the old `PromptRegistry` class
-# ---------------------------------------------------------------------------
-#
-# Tests in test_registry.py and a handful of agent call sites still
-# instantiate ``PromptRegistry(template_dir=...)``. We re-export a thin
-# wrapper that points at the markdown catalog.
-
-
-class PromptRegistry:  # pragma: no cover - thin compat shim
-    """Backwards-compat wrapper around :class:`PromptCatalog`."""
-
-    def __init__(self, template_dir: str | None = None) -> None:
-        self._catalog = PromptCatalog(prompts_dir=template_dir) if template_dir else get_catalog()
-
-    def load(self, name: str, *, default: str = "", variant: str | None = None) -> str:
-        try:
-            return self._catalog.get(PromptRef(id=name, variant=variant)).system
-        except KeyError:
-            from worldbox_writer.prompting._legacy_yaml import load_yaml_template
-
-            return load_yaml_template(name, default=default, variant=variant)
-
-    def load_template(
-        self, name: str, *, variant: str | None = None
-    ) -> PromptTemplate | None:
-        try:
-            return self._catalog.get(PromptRef(id=name, variant=variant))
-        except KeyError:
-            return None
-
-
 __all__ = [
     "PromptCatalog",
     "PromptRef",
-    "PromptRegistry",
     "PromptTemplate",
     "get_catalog",
     "load_prompt_template",
