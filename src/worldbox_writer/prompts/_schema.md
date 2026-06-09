@@ -1,92 +1,70 @@
-# Prompt YAML Schema
+# Prompt Catalog Schema
 
-Sprint 26 makes production system prompts versioned assets. New or migrated
-system prompts must live in `src/worldbox_writer/prompts/*.yaml`; Python code
-may reference prompt ids, but must not define system prompts as string literals
-in agents, engine, or eval modules.
+This directory contains prompt assets written as **markdown files with YAML
+frontmatter**. The catalog is the source of truth for which prompt maps to
+which agent.
 
-## File Naming
+## Markdown file layout
 
-- Use `<role>_system.yaml` for the primary system prompt of a role.
-- Use `<role>_<purpose>_system.yaml` when one role has multiple distinct
-  system prompts, for example narrator fast-forward or title generation.
-- Do not create placeholder prompt files for deterministic components such as
-  GM.
-
-## Required Fields
-
-```yaml
-id: actor_system
+```
+---
+id: director_init
 version: 2.0
-role: actor
+role: director
 changelog:
-  - v2.0 - 2026-05-11 - Consolidate actor system prompt into YAML.
-system: |-
-  ...
+  - v2.0 - 2026-06-15 - tighten premise length
+default_variant: standard
+variants:
+  standard:
+    description: standard planning
+    patch: |
+      extra text appended to the main body
+---
+
+Main body. This is the system prompt that goes verbatim into the LLM call.
+Markdown formatting (headers, code blocks, lists) is preserved.
 ```
 
-| Field | Required | Contract |
-| --- | --- | --- |
-| `id` | yes | Stable prompt id used by code and reports. It must match the file stem unless a migration note explains otherwise. |
-| `version` | yes | Semantic `major.minor` version. Any prompt text change must bump this value. |
-| `role` | yes | True agent identity, not a borrowed routing role. |
-| `changelog` | yes | Ordered list of version entries. Every prompt text change appends one line. |
-| `system` | yes | Complete system prompt text. Registry loading must preserve intentional content and fail if empty. |
-| `system_variants` | optional | Mapping of named system prompt variants for one role when migration must preserve multiple legacy branches in one YAML asset. |
-| `user_template` | optional | User prompt template for branch-specific wrapper text when needed. Sprint 26 primarily migrates system prompts. |
-| `user_template_vars` | optional | Variable names expected by `user_template` or by the surrounding f-string user prompt. |
-| `notes` | optional | Human-only migration or review notes. Runtime code must not depend on this field. |
+### Required frontmatter fields
 
-## Version And Changelog Rules
+- `id` — unique prompt identifier; matches the agent's call site
+- `version` — semver string
+- `role` — agent role (director, actor, narrator, ...)
+- `changelog` — non-empty list of strings
 
-- `version` starts at the existing production prompt's semantic migration
-  version. Use `1.0` only when there is no previous versioned prompt.
-- Pure relocation with byte-identical text may keep the logical behavior
-  version, but the changelog must still record the migration.
-- Prompt wording changes require both a version bump and a baseline report in
-  the PR description.
-- Changelog entries use:
+### Optional frontmatter fields
 
-```text
-vX.Y - YYYY-MM-DD - concise change summary
+- `default_variant` — which variant the catalog picks when no override
+- `variants.<name>.description` — human description
+- `variants.<name>.patch` — text appended after the main body
+- `user_template_vars` — list of variable names used in the user message
+- `notes` — free-form notes for human readers
+
+## Catalog (`catalog.json`)
+
+A JSON file mapping each agent to its available prompts:
+
+```json
+{
+  "schema_version": 1,
+  "agents": {
+    "director": {
+      "primary": "director_init",
+      "prompts": [
+        { "id": "director_init" },
+        { "id": "director_intervention" }
+      ]
+    }
+  }
+}
 ```
 
-## Template Variable Rules
+The catalog is validated on every reload. Every `id` referenced must
+resolve to a `.md` file on disk.
 
-- `user_template_vars` is the source of truth for variables expected by a
-  prompt template or by the f-string call site that pairs with this system
-  prompt.
-- User prompts may remain f-strings during Sprint 26, but variable names at the
-  call site must match `user_template_vars`.
-- Missing template variables are programmer errors and must raise. Production
-  code must not silently substitute placeholder values.
+## Adding a new prompt (4 steps)
 
-## Runtime And Validation Rules
-
-- YAML parsing or schema validation failures must raise. Do not fall back to a
-  default prompt for malformed YAML.
-- If `system_variants` is present, callers must request a known variant. Missing
-  variants are programmer errors and must raise.
-- The registry may keep `.txt` compatibility only for explicit rollback paths
-  during migration. New production prompts must be YAML.
-- Registry caching may use file mtime, but must reload when the underlying file
-  changes.
-- Prompt text migration PRs must prove behavior preservation with a baseline
-  comparison: byte-identical, or difference below `0.5%` with no axis
-  regression and explicit reviewer sign-off.
-
-## Sprint 26 PR Mapping
-
-- PR-02 migrates the production narrator prompt currently in `engine/graph.py`
-  and consolidates the actor dual prompt paths into `actor_system.yaml`.
-- PR-03 migrates the remaining LLM system prompts.
-- PR-06 is the first intentional prompt behavior change: narrator v2 adds
-  explicit `ai_prose_ticks` rules and must include evaluation reports.
-
-## PR Description Checklist
-
-- Control plane touched: prompt.
-- Prompt ids and versions changed.
-- Baseline comparison path and result.
-- Calibration rerun status, if judge behavior changed.
-- Mock/fake fallback introduced: must be `No`.
+1. Create `prompts/<role>/<your_prompt>.md` with frontmatter + body.
+2. (Optional) add an entry under the matching role in `catalog.json`.
+3. The loader picks it up on the next call (hot reload via mtime).
+4. Run `make test-backend` to confirm.

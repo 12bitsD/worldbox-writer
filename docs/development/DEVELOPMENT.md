@@ -623,6 +623,89 @@ make typecheck
 
 ---
 
+## 13. 加一个新 Prompt（4 步，不改 Python 代码）
+
+Prompt 现在以 **markdown + YAML frontmatter** 存放在 `src/worldbox_writer/prompts/<role>/<id>.md`，
+agent ↔ prompt 映射在 `prompts/catalog.json`。加新 prompt **不需要改任何 Python 代码**。
+
+### 13.1 标准流程
+
+```bash
+# 1. 在对应 role 子目录下创建 .md 文件
+$EDITOR src/worldbox_writer/prompts/director/director_cool_mode.md
+```
+
+文件结构：
+
+```markdown
+---
+id: director_cool_mode
+version: 1.0
+role: director
+changelog:
+  - v1.0 - 2026-06-09 - initial cool-mode prompt
+default_variant: standard
+variants:
+  standard:
+    description: standard cool-mode planning
+    body: |
+      你是 WorldBox Writer 的导演 Agent，目标是写一个**冷硬派**故事。
+      强调冲突、个人代价、非典型主角。
+---
+
+主 body 内容。
+可以是 markdown 格式（标题、列表、代码块都会保留）。
+```
+
+```bash
+# 2. （可选）注册到 catalog.json
+# 编辑 src/worldbox_writer/prompts/catalog.json，在 director 的 prompts 列表里加：
+#   { "id": "director_cool_mode" }
+# 不加也行：catalog 不存在时 catalog.json 是软依赖，agent 直接按 id 查文件即可
+```
+
+```python
+# 3. agent 代码调
+from worldbox_writer.prompting.registry import load_prompt_template
+
+system = load_prompt_template("director_cool_mode")
+# 或选 variant：
+system = load_prompt_template("director_cool_mode", variant="standard")
+```
+
+```bash
+# 4. 下次 LLM 调用时生效（mtime 缓存触发 reload）
+# 不需要重启服务
+make test-backend   # 跑测试确认没回归
+git add src/worldbox_writer/prompts/director/director_cool_mode.md
+git commit -m "prompt(director): add cool-mode variant"
+```
+
+### 13.2 本地试调（不进 git）
+
+```bash
+mkdir /tmp/prompts
+cp src/worldbox_writer/prompts/director/director_cool_mode.md /tmp/prompts/
+# 改 /tmp/prompts/director_cool_mode.md
+PROMPT_TEMPLATE_DIR=/tmp/prompts make dev-api
+```
+
+### 13.3 Catalog 校验
+
+启动时 `PromptCatalog.reload()` 校验：
+- 每个 `*.md` 文件必须有合法 frontmatter（`id` / `version` / `role` / `changelog`）
+- `catalog.json` 引用的每个 `id` 必须能在磁盘上找到对应 `.md`
+- 启动失败会 fail-fast 并打印**哪个文件/字段**出错
+
+### 13.4 注意事项
+
+- **`_` 前缀的文件/目录被忽略** — 用 `_notes/` / `_examples/` 放本地笔记，不进 catalog
+- **variant 两种形式**：`body:`（完整替换，匹配旧 yaml `system_variants` 语义）/ `patch:`（追加到主 body 后）
+- **改 profile（temperature / max_tokens）要重启服务** — 见 gotcha #13。**改 prompt 内容**不需要重启
+- **多个 variant 互不干扰**：每个 .md 文件独立 reload，跨文件不会相互污染
+
+---
+
 ## 相关文档
 
 - [架构设计](../architecture/DESIGN.md)

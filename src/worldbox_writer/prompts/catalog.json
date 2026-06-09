@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "description": "Agent → Prompt mapping. New prompts: drop a .md file under the matching role subdir and add an entry here. The catalog is validated on every reload — references must resolve on disk.",
+  "agents": {
+    "actor": {
+      "prompts": [
+        {
+          "id": "actor_system"
+        }
+      ],
+      "primary": "actor_system"
+    },
+    "critic": {
+      "prompts": [
+        {
+          "id": "critic_system"
+        }
+      ],
+      "primary": "critic_system"
+    },
+    "director": {
+      "prompts": [
+        {
+          "id": "director_system"
+        }
+      ],
+      "primary": "director_system"
+    },
+    "engine": {
+      "prompts": [
+        {
+          "id": "graph_system"
+        }
+      ],
+      "primary": "graph_system"
+    },
+    "eval": {
+      "prompts": [
+        {
+          "id": "model_eval_system"
+        }
+      ],
+      "primary": "model_eval_system"
+    },
+    "gate_keeper": {
+      "prompts": [
+        {
+          "id": "gate_keeper_system"
+        }
+      ],
+      "primary": "gate_keeper_system"
+    },
+    "memory": {
+      "prompts": [
+        {
+          "id": "memory_system"
+        }
+      ],
+      "primary": "memory_system"
+    },
+    "narrator": {
+      "prompts": [
+        {
+          "id": "narrator_system"
+        }
+      ],
+      "primary": "narrator_system"
+    },
+    "node_detector": {
+      "prompts": [
+        {
+          "id": "node_detector_system"
+        }
+      ],
+      "primary": "node_detector_system"
+    },
+    "world_builder": {
+      "prompts": [
+        {
+          "id": "world_builder_system"
+        }
+      ],
+      "primary": "world_builder_system"
+    }
+  }
+}
