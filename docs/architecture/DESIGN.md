@@ -273,6 +273,21 @@ memory_trace, metadata
 
 **SSE 事件类型**（从 `engine/services/telemetry_service.py`）：节点提交、telemetry、LLM 路由、渲染进度。前端不轮询，全由服务端 push。
 
+### 类型生成与契约测试（Sprint 29）
+
+新增/修改 REST 路由或 SSE 事件名后，前端 TypeScript 类型不能手维护：
+
+```bash
+make openapi-snapshot   # 写 frontend/src/types/openapi.snapshot.json
+cd frontend && pnpm run gen-types   # 写 api-generated.ts（不入仓）
+```
+
+守护不变量：
+- `tests/test_contracts/test_sse_strings.py` — 校验 `core.constants.SSE_EVENT_*` 与 `simulationTransport.ts` 的字符串字面量对齐。
+- `tests/test_api/test_openapi_snapshot.py` — 校验 `/openapi.json` 暴露全部 21 个路由。
+- LLM 调用失败时，`failed_reason` 枚举（`core/constants.py`）会被写入 `last_llm_call` metadata；非流式路径会自动重试（5xx / 429 / timeout），可由 `LLM_RETRY_*` env 调参。
+
+
 ---
 
 ## 9. 10 个前端组件

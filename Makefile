@@ -3,7 +3,7 @@ BOOTSTRAP_PYTHON ?= python3
 PNPM_VERSION ?= 9.15.9
 MODEL_EVAL_PROVIDERS ?= all
 
-.PHONY: help setup setup-backend setup-frontend fmt lint lint-backend lint-frontend typecheck test test-backend test-frontend check integration model-eval intermediate-eval perf dev-api dev-web clean-reports
+.PHONY: help setup setup-backend setup-frontend fmt lint lint-backend lint-frontend typecheck test test-backend test-frontend check integration model-eval intermediate-eval perf dev-api dev-web openapi-snapshot clean-reports
 
 help:
 	@printf '%s\n' \
@@ -19,7 +19,8 @@ help:
 		'  intermediate-eval Run P0 intermediate node LLM-as-judge eval' \
 		'  perf             Run the Sprint 9 capacity gate' \
 		'  dev-api          Start the FastAPI server' \
-		'  dev-web          Start the Vite dev server'
+		'  dev-web          Start the Vite dev server' \
+		'  openapi-snapshot Write the FastAPI OpenAPI JSON to frontend/src/types/'
 
 setup: setup-backend setup-frontend
 
@@ -73,6 +74,9 @@ dev-api:
 
 dev-web:
 	cd frontend && pnpm dev
+
+openapi-snapshot:
+	$(PYTHON) scripts/dev/export_openapi.py
 
 clean-reports:
 	rm -rf artifacts/reports

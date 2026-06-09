@@ -20,9 +20,16 @@ from uuid import uuid4
 
 import httpx
 from openai import OpenAI
+from tenacity import (
+    Retrying,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from worldbox_writer.config.profiles import load_sampling_profile
 from worldbox_writer.config.settings import get_settings
+from worldbox_writer.core.constants import LLMFailedReason
 
 _llm_routing = get_settings().llm_routing
 MIMO_BASE_URL = _llm_routing.mimo_base_url
@@ -522,6 +529,75 @@ def _extract_anthropic_text(payload: dict[str, Any]) -> str:
     return "".join(chunks)
 
 
+# ---------------------------------------------------------------------------
+# Sprint 29: retry policy + failure classification
+# ---------------------------------------------------------------------------
+
+
+def _is_retryable_http_error(exc: BaseException) -> bool:
+    """Decide whether ``tenacity`` should retry the wrapped httpx call.
+
+    Retry on transient provider failures (5xx, 429 rate limit, network
+    errors). 4xx is a code bug, not a flake — do not retry unless the
+    operator explicitly opts in via ``LLM_RETRY_RETRY_ON_4XX=1``.
+    """
+    if isinstance(exc, (httpx.TimeoutException, httpx.ConnectError)):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        code = exc.response.status_code
+        if code == 429 or 500 <= code < 600:
+            return True
+        if 400 <= code < 500:
+            return get_settings().runtime.llm_retry_retry_on_4xx
+    return False
+
+
+def _retrying_decorator() -> Retrying:
+    """Build a :class:`Retrying` policy from ``RuntimeSettings``."""
+    s = get_settings().runtime
+    return Retrying(
+        stop=stop_after_attempt(s.llm_retry_max_attempts),
+        wait=wait_exponential(
+            multiplier=s.llm_retry_backoff_initial_s, max=s.llm_retry_backoff_max_s
+        ),
+        retry=retry_if_exception(_is_retryable_http_error),
+        reraise=True,
+    )
+
+
+def _classify_failed_reason(exc: BaseException) -> LLMFailedReason:
+    """Map an LLM-call exception to a :class:`LLMFailedReason` enum value."""
+    if isinstance(exc, (httpx.TimeoutException, httpx.ConnectError)):
+        return LLMFailedReason.TIMEOUT
+    if isinstance(exc, httpx.HTTPStatusError):
+        code = exc.response.status_code
+        if code == 429:
+            return LLMFailedReason.RATE_LIMIT
+        if 500 <= code < 600:
+            return LLMFailedReason.FIVE_XX
+        if 400 <= code < 500:
+            return LLMFailedReason.FOUR_XX
+    if isinstance(exc, EmptyLLMResponseError):
+        return LLMFailedReason.PARSE_ERROR
+    if isinstance(exc, (json.JSONDecodeError, ValueError)):
+        return LLMFailedReason.PARSE_ERROR
+    if isinstance(exc, Exception) and exc.__class__.__name__.endswith("ValidationError"):
+        return LLMFailedReason.VALIDATION_ERROR
+    return LLMFailedReason.UNKNOWN
+
+
+def _retry_attempt_count(exc: BaseException) -> int:
+    """Inspect the exception's tenacity state for the actual attempt count.
+
+    Returns 1 if tenacity didn't annotate the exception (streaming path,
+    or failure was not retried).
+    """
+    state = getattr(exc, "_retry_state", None)
+    if state is None:
+        return 1
+    return max(1, getattr(state, "attempt_number", 1))
+
+
 def _chat_completion_anthropic_messages(
     messages: list[dict[str, Any]],
     *,
@@ -555,6 +631,10 @@ def _chat_completion_anthropic_messages(
     if on_token is not None or stream:
         payload["stream"] = True
         collected: list[str] = []
+        # Sprint 29: retry is intentionally skipped on the streaming path.
+        # Mid-stream reconnect would duplicate tokens already emitted to
+        # the consumer; the streaming client must surface the first error
+        # verbatim. The non-streaming path below is the one that retries.
         with httpx.Client(timeout=120.0) as client:
             with client.stream(
                 "POST", endpoint, headers=headers, json=payload
@@ -579,10 +659,17 @@ def _chat_completion_anthropic_messages(
                             on_token(token)
         return "".join(collected)
 
-    with httpx.Client(timeout=120.0) as client:
-        response = client.post(endpoint, headers=headers, json=payload)
-        response.raise_for_status()
-        return _extract_anthropic_text(response.json())
+    # Sprint 29: wrap non-streaming call in tenacity retry. The retry only
+    # covers transient provider failures (5xx, 429, timeout) — see
+    # _is_retryable_http_error. The final raise re-raises the original
+    # exception, which is then classified in the except below.
+    for attempt in _retrying_decorator():
+        with attempt:
+            with httpx.Client(timeout=120.0) as client:
+                response = client.post(endpoint, headers=headers, json=payload)
+                response.raise_for_status()
+                return _extract_anthropic_text(response.json())
+    raise RuntimeError("unreachable: tenacity exhausted without raising")
 
 
 def _load_price_overrides() -> dict[str, dict[str, float]]:
@@ -719,10 +806,12 @@ def _execute_chat_completion(
                 ),
                 "duration_ms": int((time.perf_counter() - started_at) * 1000),
                 "status": "completed",
+                "failed_reason": None,
+                "retry_attempts": 1,
             }
         )
         return text
-    except Exception:
+    except Exception as exc:
         _set_last_llm_call_metadata(
             {
                 "request_id": request_id,
@@ -745,6 +834,8 @@ def _execute_chat_completion(
                 ),
                 "duration_ms": int((time.perf_counter() - started_at) * 1000),
                 "status": "failed",
+                "failed_reason": _classify_failed_reason(exc).value,
+                "retry_attempts": _retry_attempt_count(exc),
             }
         )
         raise

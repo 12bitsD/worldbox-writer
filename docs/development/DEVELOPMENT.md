@@ -750,6 +750,31 @@ PROMPT_TEMPLATE_DIR=/tmp/prompts make dev-api
 
 ---
 
+## 15. 添加一个新的类型化 API 路由（Sprint 29 工作流）
+
+新增/修改 REST 路由后，前端 TypeScript 类型需要与后端 Pydantic 同步。流程：
+
+```bash
+# 1) 在 src/worldbox_writer/api/... 下加路由 + Pydantic schema
+
+# 2) 重新生成 OpenAPI 快照（无需启动服务器）
+make openapi-snapshot
+
+# 3) 重新生成 TypeScript 类型
+cd frontend && pnpm run gen-types
+
+# 4) 提交
+git add frontend/src/types/openapi.snapshot.json src/...
+```
+
+要点：
+- 快照（`openapi.snapshot.json`）**入仓**，是 CI 的稳定基线。
+- 生成的 TS 文件（`api-generated.ts`）**不入仓**（`.gitignore` 已排除），每台机器本地重新生成。
+- SSE 事件名字符串必须同时存在于：`worldbox_writer.core.constants.SSE_EVENT_*` 与 `frontend/src/hooks/simulationTransport.ts` 的 if/else 链。Sprint 29 引入契约测试 `tests/test_contracts/test_sse_strings.py` 守护此不变量。
+- 修 LLM 调用稳定性时，关注 `LLM_RETRY_*` 设置（`LLMRoutingSettings`）与 `LLMFailedReason` 枚举（在 `core/constants.py`）—— 这两处是 retry 策略与失败分类的真相源。
+
+---
+
 ## 相关文档
 
 - [架构设计](../architecture/DESIGN.md)

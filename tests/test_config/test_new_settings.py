@@ -62,6 +62,11 @@ def test_runtime_settings_defaults() -> None:
     assert s.runtime.llm_cache_size == 16
     assert s.runtime.api_threadpool_workers == 4
     assert s.runtime.intervention_poll_interval_s == 0.2
+    # Sprint 29: retry policy defaults
+    assert s.runtime.llm_retry_max_attempts == 3
+    assert s.runtime.llm_retry_backoff_initial_s == 1.0
+    assert s.runtime.llm_retry_backoff_max_s == 10.0
+    assert s.runtime.llm_retry_retry_on_4xx is False
 
 
 def test_simulation_settings_defaults() -> None:
@@ -180,3 +185,38 @@ def test_get_settings_uncached(monkeypatch) -> None:
     assert get_settings().simulation.max_ticks == 5
     monkeypatch.setenv("SIM_MAX_TICKS", "9")
     assert get_settings().simulation.max_ticks == 9
+
+
+# ---------------------------------------------------------------------------
+# Sprint 29: LLM retry settings
+# ---------------------------------------------------------------------------
+
+
+def test_llm_retry_settings_env_overrides(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_RETRY_MAX_ATTEMPTS", "5")
+    monkeypatch.setenv("LLM_RETRY_BACKOFF_INITIAL_S", "0.5")
+    monkeypatch.setenv("LLM_RETRY_BACKOFF_MAX_S", "20.0")
+    monkeypatch.setenv("LLM_RETRY_RETRY_ON_4XX", "1")
+    s = get_settings()
+    assert s.runtime.llm_retry_max_attempts == 5
+    assert s.runtime.llm_retry_backoff_initial_s == 0.5
+    assert s.runtime.llm_retry_backoff_max_s == 20.0
+    assert s.runtime.llm_retry_retry_on_4xx is True
+
+
+def test_llm_retry_max_attempts_rejects_below_one(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_RETRY_MAX_ATTEMPTS", "0")
+    with pytest.raises(ValidationError):
+        get_settings()
+
+
+def test_llm_retry_backoff_initial_rejects_non_positive(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_RETRY_BACKOFF_INITIAL_S", "0")
+    with pytest.raises(ValidationError):
+        get_settings()
+
+
+def test_llm_retry_backoff_max_rejects_non_positive(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_RETRY_BACKOFF_MAX_S", "-1.0")
+    with pytest.raises(ValidationError):
+        get_settings()

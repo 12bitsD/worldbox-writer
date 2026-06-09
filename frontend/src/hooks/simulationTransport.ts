@@ -95,6 +95,11 @@ export function useSimulationTransport({
                 ),
               };
             });
+          } else if (type === "narrator_end") {
+            // Streaming finished for the active narrator node. Future
+            // sprints can mark a node as "complete" or surface render
+            // progress here; for now we no-op so the contract test
+            // doesn't fail when the backend emits this event.
           } else if (type === "token") {
             const content = event.content as string;
             const nodeId = event.node_id as string | undefined;

@@ -13,6 +13,8 @@ Tunable knobs live in ``worldbox_writer.config.settings``.
 
 from __future__ import annotations
 
+from enum import Enum
+
 # -- App version -------------------------------------------------------------
 APP_VERSION = "0.5.0"
 
@@ -97,6 +99,33 @@ EXPORT_ARTIFACT_KINDS: frozenset[str] = frozenset(
     }
 )
 
+# -- LLM failure taxonomy (Sprint 29) ---------------------------------------
+LLM_FAILED_REASON_TIMEOUT = "timeout"
+LLM_FAILED_REASON_4XX = "4xx"
+LLM_FAILED_REASON_5XX = "5xx"
+LLM_FAILED_REASON_429_RATE_LIMIT = "429_rate_limit"
+LLM_FAILED_REASON_PARSE_ERROR = "parse_error"
+LLM_FAILED_REASON_VALIDATION_ERROR = "validation_error"
+LLM_FAILED_REASON_UNKNOWN = "unknown"
+
+
+class LLMFailedReason(str, Enum):
+    """LLM-call failure taxonomy surfaced on the LLM-call metadata.
+
+    Each member is the string value written to
+    ``last_call_metadata["failed_reason"]`` so operators can break down
+    failure rates by reason without parsing the original exception type.
+    """
+
+    TIMEOUT = "timeout"
+    FOUR_XX = "4xx"
+    FIVE_XX = "5xx"
+    RATE_LIMIT = "429_rate_limit"
+    PARSE_ERROR = "parse_error"
+    VALIDATION_ERROR = "validation_error"
+    UNKNOWN = "unknown"
+
+
 __all__ = [
     "APP_VERSION",
     "DUAL_LOOP_CONTRACT_VERSION",
@@ -150,4 +179,12 @@ __all__ = [
     "EXPORT_ARTIFACT_TIMELINE_JSON",
     "EXPORT_ARTIFACT_MANIFEST_JSON",
     "EXPORT_ARTIFACT_KINDS",
+    "LLM_FAILED_REASON_TIMEOUT",
+    "LLM_FAILED_REASON_4XX",
+    "LLM_FAILED_REASON_5XX",
+    "LLM_FAILED_REASON_429_RATE_LIMIT",
+    "LLM_FAILED_REASON_PARSE_ERROR",
+    "LLM_FAILED_REASON_VALIDATION_ERROR",
+    "LLM_FAILED_REASON_UNKNOWN",
+    "LLMFailedReason",
 ]

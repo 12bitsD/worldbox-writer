@@ -1,0 +1,1423 @@
+{
+  "components": {
+    "schemas": {
+      "AddConstraintRequest": {
+        "properties": {
+          "constraint_type": {
+            "default": "narrative",
+            "title": "Constraint Type",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "rule": {
+            "title": "Rule",
+            "type": "string"
+          },
+          "severity": {
+            "default": "hard",
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "rule"
+        ],
+        "title": "AddConstraintRequest",
+        "type": "object"
+      },
+      "CreateBranchRequest": {
+        "properties": {
+          "continue_simulation": {
+            "default": true,
+            "title": "Continue Simulation",
+            "type": "boolean"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "pacing": {
+            "default": "balanced",
+            "title": "Pacing",
+            "type": "string"
+          },
+          "source_node_id": {
+            "title": "Source Node Id",
+            "type": "string"
+          },
+          "switch_immediately": {
+            "default": true,
+            "title": "Switch Immediately",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source_node_id"
+        ],
+        "title": "CreateBranchRequest",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "InterveneRequest": {
+        "properties": {
+          "instruction": {
+            "title": "Instruction",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instruction"
+        ],
+        "title": "InterveneRequest",
+        "type": "object"
+      },
+      "SaveWikiRequest": {
+        "properties": {
+          "characters": {
+            "items": {
+              "$ref": "#/components/schemas/WikiCharacterPayload"
+            },
+            "title": "Characters",
+            "type": "array"
+          },
+          "factions": {
+            "items": {
+              "$ref": "#/components/schemas/WikiEntityPayload"
+            },
+            "title": "Factions",
+            "type": "array"
+          },
+          "locations": {
+            "items": {
+              "$ref": "#/components/schemas/WikiEntityPayload"
+            },
+            "title": "Locations",
+            "type": "array"
+          },
+          "premise": {
+            "title": "Premise",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "world_rules": {
+            "items": {
+              "type": "string"
+            },
+            "title": "World Rules",
+            "type": "array"
+          }
+        },
+        "required": [
+          "title",
+          "premise"
+        ],
+        "title": "SaveWikiRequest",
+        "type": "object"
+      },
+      "SimulationResponse": {
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "sim_id": {
+            "title": "Sim Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sim_id",
+          "status",
+          "message"
+        ],
+        "title": "SimulationResponse",
+        "type": "object"
+      },
+      "StartSimulationRequest": {
+        "properties": {
+          "max_ticks": {
+            "default": 8,
+            "title": "Max Ticks",
+            "type": "integer"
+          },
+          "premise": {
+            "title": "Premise",
+            "type": "string"
+          }
+        },
+        "required": [
+          "premise"
+        ],
+        "title": "StartSimulationRequest",
+        "type": "object"
+      },
+      "SwitchBranchRequest": {
+        "properties": {
+          "branch_id": {
+            "title": "Branch Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "branch_id"
+        ],
+        "title": "SwitchBranchRequest",
+        "type": "object"
+      },
+      "UpdateBranchPacingRequest": {
+        "properties": {
+          "branch_id": {
+            "title": "Branch Id",
+            "type": "string"
+          },
+          "pacing": {
+            "title": "Pacing",
+            "type": "string"
+          }
+        },
+        "required": [
+          "branch_id",
+          "pacing"
+        ],
+        "title": "UpdateBranchPacingRequest",
+        "type": "object"
+      },
+      "UpdateCharacterRequest": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "goals": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goals"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "personality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Personality"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "title": "UpdateCharacterRequest",
+        "type": "object"
+      },
+      "UpdateNodeRenderedTextRequest": {
+        "properties": {
+          "rendered_html": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rendered Html"
+          },
+          "rendered_text": {
+            "title": "Rendered Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rendered_text"
+        ],
+        "title": "UpdateNodeRenderedTextRequest",
+        "type": "object"
+      },
+      "UpdateRelationshipRequest": {
+        "properties": {
+          "affinity": {
+            "default": 0,
+            "title": "Affinity",
+            "type": "integer"
+          },
+          "bidirectional": {
+            "default": true,
+            "title": "Bidirectional",
+            "type": "boolean"
+          },
+          "label": {
+            "default": "unknown",
+            "title": "Label",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "source_character_id": {
+            "title": "Source Character Id",
+            "type": "string"
+          },
+          "target_character_id": {
+            "title": "Target Character Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_character_id",
+          "target_character_id"
+        ],
+        "title": "UpdateRelationshipRequest",
+        "type": "object"
+      },
+      "UpdateWorldRequest": {
+        "properties": {
+          "premise": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Premise"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "world_rules": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "World Rules"
+          }
+        },
+        "title": "UpdateWorldRequest",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "WikiCharacterPayload": {
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "goals": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Goals",
+            "type": "array"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "personality": {
+            "default": "",
+            "title": "Personality",
+            "type": "string"
+          },
+          "status": {
+            "default": "alive",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "WikiCharacterPayload",
+        "type": "object"
+      },
+      "WikiEntityPayload": {
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "WikiEntityPayload",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Agent \u96c6\u7fa4\u9a71\u52a8\u7684\u6c99\u76d2\u5c0f\u8bf4\u521b\u4f5c\u7cfb\u7edf",
+    "title": "WorldBox Writer API",
+    "version": "0.5.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/health": {
+      "get": {
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/api/sessions": {
+      "get": {
+        "operationId": "list_sessions_api_sessions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Sessions"
+      }
+    },
+    "/api/simulate/start": {
+      "post": {
+        "operationId": "start_simulation_api_simulate_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartSimulationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Simulation"
+      }
+    },
+    "/api/simulate/{sim_id}": {
+      "get": {
+        "operationId": "get_simulation_api_simulate__sim_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sim_id",
+            "required": true,
+            "schema": {
+              "title": "Sim Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "branch",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Branch"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Simulation"
+      }
+    },
+    "/api/simulate/{sim_id}/branch": {
+      "post": {
+        "operationId": "create_branch_api_simulate__sim_id__branch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sim_id",
+            "required": true,
+            "schema": {
+              "title": "Sim Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBranchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Branch"
+      }
+    },
+    "/api/simulate/{sim_id}/branch/compare": {
+      "get": {
+        "operationId": "compare_branches_api_simulate__sim_id__branch_compare_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sim_id",
+            "required": true,
+            "schema": {
+              "title": "Sim Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Compare Branches"
+      }
+    },
+    "/api/simulate/{sim_id}/branch/pacing": {
+      "post": {
+        "operationId": "update_branch_pacing_api_simulate__sim_id__branch_pacing_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sim_id",
+            "required": true,
+            "schema": {
+              "title": "Sim Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateBranchPacingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Branch Pacing"
+      }
+    },
+    "/api/simulate/{sim_id}/branch/switch": {
+      "post": {
+        "operationId": "switch_branch_api_simulate__sim_id__branch_switch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sim_id",
+            "required": true,
+            "schema": {
+              "title": "Sim Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SwitchBranchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Switch Branch"
+      }
+    },
+    "/api/simulate/{sim_id}/characters/{character_id}": {
+      "patch": {
+        "operationId": "update_character_api_simulate__sim_id__characters__character_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sim_id",
+            "required": true,
+            "schema": {
+              "title": "Sim Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "character_id",
+            "required": true,
+            "schema": {
+              "title": "Character Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCharacterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Character"
+      }
+    },
+    "/api/simulate/{sim_id}/constraints": {
+      "post": {
+        "operationId": "add_constraint_api_simulate__sim_id__constraints_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sim_id",
+            "required": true,
+            "schema": {
+              "title": "Sim Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddConstraintRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Constraint"
+      }
+    },
+    "/api/simulate/{sim_id}/diagnostics": {
+      "get": {
+        "operationId": "get_simulation_diagnostics_api_simulate__sim_id__diagnostics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sim_id",
+            "required": true,
+            "schema": {
+              "title": "Sim Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Simulation Diagnostics"
+      }
+    },
+    "/api/simulate/{sim_id}/dual-loop/compare": {
+      "get": {
+        "operationId": "compare_dual_loop_rollout_api_simulate__sim_id__dual_loop_compare_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sim_id",
+            "required": true,
+            "schema": {
+              "title": "Sim Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Compare Dual Loop Rollout"
+      }
+    },
+    "/api/simulate/{sim_id}/export": {
+      "get": {
+        "operationId": "export_simulation_api_simulate__sim_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sim_id",
+            "required": true,
+            "schema": {
+              "title": "Sim Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "branch",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Branch"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Simulation"
+      }
+    },
+    "/api/simulate/{sim_id}/export/file": {
+      "get": {
+        "operationId": "export_simulation_file_api_simulate__sim_id__export_file_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sim_id",
+            "required": true,
+            "schema": {
+              "title": "Sim Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "branch",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Branch"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Simulation File"
+      }
+    },
+    "/api/simulate/{sim_id}/inspector": {
+      "get": {
+        "operationId": "get_simulation_inspector_api_simulate__sim_id__inspector_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sim_id",
+            "required": true,
+            "schema": {
+              "title": "Sim Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Simulation Inspector"
+      }
+    },
+    "/api/simulate/{sim_id}/intervene": {
+      "post": {
+        "operationId": "intervene_api_simulate__sim_id__intervene_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sim_id",
+            "required": true,
+            "schema": {
+              "title": "Sim Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InterveneRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Intervene"
+      }
+    },
+    "/api/simulate/{sim_id}/nodes/{node_id}/rendered-text": {
+      "patch": {
+        "operationId": "update_rendered_text_api_simulate__sim_id__nodes__node_id__rendered_text_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sim_id",
+            "required": true,
+            "schema": {
+              "title": "Sim Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "title": "Node Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNodeRenderedTextRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Rendered Text"
+      }
+    },
+    "/api/simulate/{sim_id}/relationships": {
+      "patch": {
+        "operationId": "update_relationship_api_simulate__sim_id__relationships_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sim_id",
+            "required": true,
+            "schema": {
+              "title": "Sim Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRelationshipRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Relationship"
+      }
+    },
+    "/api/simulate/{sim_id}/stream": {
+      "get": {
+        "operationId": "stream_simulation_api_simulate__sim_id__stream_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sim_id",
+            "required": true,
+            "schema": {
+              "title": "Sim Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stream Simulation"
+      }
+    },
+    "/api/simulate/{sim_id}/wiki": {
+      "put": {
+        "operationId": "save_wiki_api_simulate__sim_id__wiki_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sim_id",
+            "required": true,
+            "schema": {
+              "title": "Sim Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveWikiRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Wiki"
+      }
+    },
+    "/api/simulate/{sim_id}/world": {
+      "patch": {
+        "operationId": "update_world_api_simulate__sim_id__world_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sim_id",
+            "required": true,
+            "schema": {
+              "title": "Sim Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateWorldRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update World"
+      }
+    }
+  }
+}

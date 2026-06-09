@@ -130,17 +130,36 @@ class RuntimeSettings(_DomainSettings):
     intervention_poll_interval_s: float = Field(
         0.2, validation_alias="INTERVENTION_POLL_INTERVAL_S"
     )
+    llm_retry_max_attempts: int = Field(3, validation_alias="LLM_RETRY_MAX_ATTEMPTS")
+    llm_retry_backoff_initial_s: float = Field(
+        1.0, validation_alias="LLM_RETRY_BACKOFF_INITIAL_S"
+    )
+    llm_retry_backoff_max_s: float = Field(
+        10.0, validation_alias="LLM_RETRY_BACKOFF_MAX_S"
+    )
+    llm_retry_retry_on_4xx: bool = Field(
+        False, validation_alias="LLM_RETRY_RETRY_ON_4XX"
+    )
 
     @field_validator(
         "llm_call_timeout_s",
         "llm_cache_size",
         "api_threadpool_workers",
         "intervention_poll_interval_s",
+        "llm_retry_backoff_initial_s",
+        "llm_retry_backoff_max_s",
     )
     @classmethod
     def _positive_runtime(cls, value: float) -> float:
         if value <= 0:
             raise ValueError("runtime numeric settings must be > 0")
+        return value
+
+    @field_validator("llm_retry_max_attempts")
+    @classmethod
+    def _positive_retry_attempts(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("llm_retry_max_attempts must be >= 1")
         return value
 
 
@@ -433,6 +452,10 @@ ENV_EXAMPLE_ROWS: tuple[tuple[str, str], ...] = (
     ("LLM_CACHE_SIZE", "16"),
     ("API_THREADPOOL_WORKERS", "4"),
     ("INTERVENTION_POLL_INTERVAL_S", "0.2"),
+    ("LLM_RETRY_MAX_ATTEMPTS", "3"),
+    ("LLM_RETRY_BACKOFF_INITIAL_S", "1.0"),
+    ("LLM_RETRY_BACKOFF_MAX_S", "10.0"),
+    ("LLM_RETRY_RETRY_ON_4XX", "0"),
     ("SIM_MAX_TICKS", "8"),
     ("SIM_MAX_ACTORS", "3"),
     ("SIM_MAX_SPOTLIGHT_CHARACTERS", "3"),

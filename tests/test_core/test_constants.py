@@ -108,6 +108,6 @@ def test_constants_dunder_all_complete() -> None:
     from worldbox_writer.core import constants as K
 
     public_attrs = {
-        n for n in dir(K) if not n.startswith("_") and n != "annotations"
+        n for n in dir(K) if not n.startswith("_") and n not in ("annotations", "Enum")
     }
     assert set(K.__all__) == public_attrs

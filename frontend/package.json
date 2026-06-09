@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test": "vitest run",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "gen-types": "openapi-typescript src/types/openapi.snapshot.json --output src/types/api-generated.ts"
   },
   "dependencies": {
     "react": "^19.2.4",
@@ -27,6 +28,7 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
     "jsdom": "^27.0.1",
+    "openapi-typescript": "^7.13.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.0",
     "vite": "^8.0.4",

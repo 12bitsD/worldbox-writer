@@ -12,6 +12,8 @@ dist/
 
 # Virtual Environments
 .env
+# Local test secrets (template is tests/.env.test.example)
+tests/.env.test
 .venv
 env/
 venv/
