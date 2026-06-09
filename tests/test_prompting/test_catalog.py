@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import re
 import textwrap
+import time
 from pathlib import Path
 
 import pytest
@@ -11,9 +14,25 @@ from worldbox_writer.prompting.registry import (
     PromptCatalog,
     PromptRef,
     get_catalog,
+    load_prompt_template,
     parse_markdown_frontmatter,
     reset_catalog_singleton,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SRC_ROOT = REPO_ROOT / "src" / "worldbox_writer"
+PROMPT_ROOT = SRC_ROOT / "prompts"
+
+
+@pytest.fixture(autouse=True)
+def _reset_singleton() -> None:
+    """Each test starts from a clean catalog state."""
+    reset_catalog_singleton()
+
+
+# ---------------------------------------------------------------------------
+# Frontmatter parser
+# ---------------------------------------------------------------------------
 
 
 def test_parse_markdown_frontmatter_splits_yaml_and_body() -> None:
@@ -48,46 +67,64 @@ def test_parse_markdown_frontmatter_raises_without_delimiters() -> None:
         parse_markdown_frontmatter("just a body, no delimiters")
 
 
-def test_catalog_loads_packaged_markdown_prompts() -> None:
-    """The 10 migrated prompts are discoverable from the catalog."""
-    reset_catalog_singleton()
-    catalog = get_catalog()
-    ids = catalog.list_ids()
-    assert "director_system" in ids
-    assert "narrator_system" in ids
-    assert "actor_system" in ids
+def test_catalog_raises_for_malformed_markdown(tmp_path: Path) -> None:
+    (tmp_path / "actor_system.md").write_text("no frontmatter here", encoding="utf-8")
+    with pytest.raises(ValueError, match="frontmatter"):
+        PromptCatalog(prompts_dir=tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# Catalog API
+# ---------------------------------------------------------------------------
+
+
+def test_catalog_discovers_packaged_prompts() -> None:
+    ids = get_catalog().list_ids()
     assert len(ids) == 10
+    assert {"director_system", "narrator_system", "actor_system"} <= set(ids)
 
 
-def test_catalog_get_returns_expected_body() -> None:
-    reset_catalog_singleton()
-    catalog = get_catalog()
-    template = catalog.get(PromptRef("director_system"))
-    assert "导演 Agent" in template.system or "导演" in template.system
+def test_catalog_get_returns_template() -> None:
+    template = get_catalog().get(PromptRef("director_system"))
+    assert "导演" in template.system
     assert template.role == "director"
     assert template.variants == ("world_init", "intent_update")
 
 
-def test_catalog_resolves_variants_via_body_field() -> None:
-    """Variant `body:` is a full replacement, matching legacy yaml semantic."""
-    reset_catalog_singleton()
+def test_catalog_resolves_variant_body() -> None:
     catalog = get_catalog()
-    main = catalog.get(PromptRef("narrator_system")).system
     strict = catalog.get(PromptRef("narrator_system", variant="strict")).system
     scene_script = catalog.get(
         PromptRef("narrator_system", variant="scene_script")
     ).system
-    # strict and scene_script are *replacements*, not appends — they should
-    # not contain the long default body verbatim.
-    assert "改稿编辑" in strict or "strict" in strict
-    assert "scene_script" in scene_script or "SceneScript" in scene_script
+    # Variants are full replacements, not appends.
+    assert "改稿编辑" in strict
+    assert "SceneScript" in scene_script or "scene_script" in scene_script
+
+
+def test_catalog_resolve_default_returns_primary() -> None:
+    for role in ("director", "narrator", "actor", "critic"):
+        template = get_catalog().resolve_default(role)
+        assert template.role == role
 
 
 def test_catalog_unknown_id_raises_keyerror() -> None:
-    reset_catalog_singleton()
-    catalog = get_catalog()
     with pytest.raises(KeyError, match="Unknown prompt id"):
-        catalog.get(PromptRef("nope_does_not_exist"))
+        get_catalog().get(PromptRef("nope_does_not_exist"))
+
+
+def test_load_prompt_template_returns_empty_for_unknown_id() -> None:
+    """Function-form helper returns '' for unknown ids (legacy contract)."""
+    assert load_prompt_template("definitely_not_a_real_prompt") == ""
+
+
+def test_get_catalog_singleton() -> None:
+    assert get_catalog() is get_catalog()
+
+
+# ---------------------------------------------------------------------------
+# Hot reload
+# ---------------------------------------------------------------------------
 
 
 def test_catalog_hot_reloads_on_mtime_change(tmp_path: Path) -> None:
@@ -111,11 +148,7 @@ def test_catalog_hot_reloads_on_mtime_change(tmp_path: Path) -> None:
     catalog = PromptCatalog(prompts_dir=tmp_path)
     assert catalog.get(PromptRef("demo")).system.strip() == "version one"
 
-    # bump mtime to force a fresh read
-    import os
-    import time
-
-    time.sleep(0.01)
+    time.sleep(0.01)  # ensure mtime advances on filesystems with second resolution
     md_path.write_text(
         textwrap.dedent(
             """\
@@ -132,25 +165,68 @@ def test_catalog_hot_reloads_on_mtime_change(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    # Trigger explicit reload (in real usage, the next get() will detect mtime)
     catalog.reload()
     assert catalog.get(PromptRef("demo")).system.strip() == "version two"
     assert catalog.get(PromptRef("demo")).version == "2.0"
 
 
-def test_catalog_validates_catalog_json() -> None:
-    """catalog.json entries must resolve to real .md files."""
-    reset_catalog_singleton()
-    catalog = get_catalog()
-    # The shipped catalog.json should validate cleanly (no exception).
-    catalog.reload()
+# ---------------------------------------------------------------------------
+# File-shape invariants (cheap regression net)
+# ---------------------------------------------------------------------------
 
 
-def test_catalog_role_grouped_listing() -> None:
-    """resolve_default returns the primary prompt declared in catalog.json."""
-    reset_catalog_singleton()
-    catalog = get_catalog()
-    # Pick a role that has a primary; all of ours do.
-    for role in ("director", "narrator", "actor", "critic"):
-        template = catalog.resolve_default(role)
-        assert template.role == role
+def test_no_system_prompt_constants_in_production_code() -> None:
+    """No ``_XXX_SYSTEM_PROMPT =`` constants leaking into production code."""
+    pattern = re.compile(r"_[A-Z0-9_]*SYSTEM_PROMPT\s*=")
+    offenders: list[str] = []
+
+    for path in SRC_ROOT.rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        if pattern.search(text):
+            offenders.append(str(path.relative_to(REPO_ROOT)))
+
+    assert offenders == []
+
+
+def test_prompt_markdown_assets_have_required_schema_fields() -> None:
+    """Every prompt ``.md`` file has the required frontmatter keys and a body."""
+    md_paths = sorted(PROMPT_ROOT.rglob("*.md"))
+    md_paths = [
+        p
+        for p in md_paths
+        if not any(part.startswith("_") for part in p.relative_to(PROMPT_ROOT).parts)
+    ]
+    assert md_paths, "no .md prompt files found"
+
+    for path in md_paths:
+        text = path.read_text(encoding="utf-8")
+        try:
+            front, body = parse_markdown_frontmatter(text)
+        except ValueError as exc:
+            raise AssertionError(f"{path.name}: {exc}") from exc
+        assert isinstance(front, dict), path.name
+        assert isinstance(front.get("id"), str) and front["id"].strip(), path.name
+        assert (
+            isinstance(front.get("version"), str) and front["version"].strip()
+        ), path.name
+        assert isinstance(front.get("role"), str) and front["role"].strip(), path.name
+        assert body.strip(), f"{path.name}: empty body"
+        changelog = front.get("changelog")
+        assert isinstance(changelog, list) and changelog, path.name
+        assert all(
+            isinstance(item, str) and item.strip() for item in changelog
+        ), path.name
+
+
+def test_catalog_json_references_resolve() -> None:
+    """Every id in catalog.json points to a real .md file on disk."""
+    catalog_path = PROMPT_ROOT / "catalog.json"
+    if not catalog_path.exists():
+        return  # catalog is optional during the cutover window
+
+    catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+    md_stems = {p.stem for p in PROMPT_ROOT.rglob("*.md")}
+    for role, entry in (catalog.get("agents") or {}).items():
+        for item in entry.get("prompts", []):
+            pid = item.get("id")
+            assert pid in md_stems, f"catalog.json: {role!r} refs missing {pid!r}"
