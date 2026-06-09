@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from worldbox_writer.core import constants as K
 from worldbox_writer.core.dual_loop import ScenePlan
 from worldbox_writer.core.models import (
     Character,
@@ -144,7 +145,7 @@ class DirectorAgent:
         )
         pressure_guidance = self._pressure_guidance(narrative_pressure)
         scene_plan = ScenePlan(
-            branch_id=world.active_branch_id or "main",
+            branch_id=world.active_branch_id or K.MAIN_BRANCH_ID,
             tick=world.tick,
             title=title,
             objective=objective,
@@ -187,8 +188,8 @@ class DirectorAgent:
                 "request_id": "injected-director-call",
                 "provider": "injected",
                 "model": "injected",
-                "role": "director",
-                "status": "completed",
+                "role": K.AGENT_DIRECTOR,
+                "status": K.STAGE_COMPLETED,
             }
             return response.content
         content = chat_completion_with_profile(profile_id, messages)
@@ -419,7 +420,7 @@ class DirectorAgent:
         return names
 
     def _resolve_narrative_pressure(self, world: WorldState) -> str:
-        branch_meta = world.branches.get(world.active_branch_id or "main", {})
+        branch_meta = world.branches.get(world.active_branch_id or K.MAIN_BRANCH_ID, {})
         return pacing_or_default(str(branch_meta.get("pacing", "")))
 
     def _derive_scene_title(

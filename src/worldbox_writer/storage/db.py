@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from worldbox_writer.config.settings import get_settings
+from worldbox_writer.core import constants as K
 from worldbox_writer.core.models import WorldState
 
 
@@ -308,7 +309,7 @@ def save_session(
                         sim_id,
                         world.current_node_id,
                         world.active_branch_id,
-                        "world_state_v1",
+                        K.WORLD_STATE_SEED_KIND,
                         world.tick,
                         world.model_dump_json(),
                         now,

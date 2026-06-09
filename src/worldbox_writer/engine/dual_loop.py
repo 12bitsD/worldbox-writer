@@ -15,9 +15,11 @@ from pydantic import BaseModel
 
 from worldbox_writer.agents.director import DirectorAgent
 from worldbox_writer.config.settings import get_settings
-from worldbox_writer.core.dual_loop import (
+from worldbox_writer.core.constants import (
     DUAL_LOOP_ADAPTER_MODE,
     DUAL_LOOP_CONTRACT_VERSION,
+)
+from worldbox_writer.core.dual_loop import (
     ActionIntent,
     DualLoopCompatibilitySnapshot,
     IntentCritique,
@@ -51,8 +53,12 @@ def build_dual_loop_snapshot(
     world: WorldState,
     *,
     memory: Optional[MemoryManager] = None,
-    max_spotlight_characters: int = 3,
+    max_spotlight_characters: int | None = None,
 ) -> DualLoopCompatibilitySnapshot:
+    if max_spotlight_characters is None:
+        max_spotlight_characters = (
+            get_settings().simulation.max_spotlight_characters
+        )
     scene_plan = build_scene_plan(
         world, max_spotlight_characters=max_spotlight_characters
     )
@@ -95,8 +101,12 @@ def build_dual_loop_snapshot(
 def build_scene_plan(
     world: WorldState,
     *,
-    max_spotlight_characters: int = 3,
+    max_spotlight_characters: int | None = None,
 ) -> ScenePlan:
+    if max_spotlight_characters is None:
+        max_spotlight_characters = (
+            get_settings().simulation.max_spotlight_characters
+        )
     stored_scene_plan = world.metadata.get("current_scene_plan")
     if isinstance(stored_scene_plan, dict):
         try:
@@ -135,9 +145,11 @@ def run_isolated_actor_runtime(
     memory: MemoryManager,
     *,
     scene_plan: ScenePlan,
-    max_actors: int = 3,
+    max_actors: int | None = None,
 ) -> IsolatedActorRuntimeResult:
     """Run spotlight actors independently and collect structured intents."""
+    if max_actors is None:
+        max_actors = get_settings().simulation.max_actors
     return _isolated_actor.run_isolated_actor_runtime(
         world,
         memory,

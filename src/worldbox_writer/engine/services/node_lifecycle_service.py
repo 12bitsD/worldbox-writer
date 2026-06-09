@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Optional, Protocol
 
+from worldbox_writer.core import constants as K
 from worldbox_writer.core.dual_loop import (
     ActionIntent,
     IntentCritique,
@@ -12,6 +13,7 @@ from worldbox_writer.core.dual_loop import (
     ScenePlan,
     SceneScript,
 )
+from worldbox_writer.config.settings import get_settings
 from worldbox_writer.core.models import NodeType, StoryNode, WorldState
 from worldbox_writer.engine.services.node_commit_service import (
     ApplyRelationshipUpdatesFunc,
@@ -29,6 +31,14 @@ from worldbox_writer.memory.memory_manager import MemoryManager
 INTERVENTION_FREQUENCY_MODULUS = 3
 INTERVENTION_FREQUENCY_REMAINDER = 1
 INTERVENTION_TRIGGER_URGENCIES = {"high", "critical"}
+
+
+def _get_intervention_modulus_remainder() -> tuple[int, int]:
+    settings = get_settings().simulation
+    return (
+        settings.intervention_frequency_modulus,
+        settings.intervention_frequency_remainder,
+    )
 
 
 class InterventionSignal(Protocol):
@@ -88,7 +98,8 @@ class NodeLifecycleResult:
 
 
 def intervention_allowed_for_tick(tick: int) -> bool:
-    return tick % INTERVENTION_FREQUENCY_MODULUS == INTERVENTION_FREQUENCY_REMAINDER
+    modulus, remainder = _get_intervention_modulus_remainder()
+    return tick % modulus == remainder
 
 
 def signal_requires_intervention(
@@ -130,7 +141,7 @@ def run_node_lifecycle(
         world.advance_tick()
         telemetry_events.append(
             NodeLifecycleTelemetryEvent(
-                agent="node_detector",
+                agent=K.AGENT_NODE_DETECTOR,
                 stage="skipped",
                 level="warning",
                 message="当前 tick 未固化故事节点",
@@ -162,8 +173,8 @@ def run_node_lifecycle(
     node_type = new_node.node_type
     telemetry_events.append(
         NodeLifecycleTelemetryEvent(
-            agent="node_detector",
-            stage="node_committed",
+            agent=K.AGENT_NODE_DETECTOR,
+            stage=K.STAGE_NODE_COMMITTED,
             message="新故事节点已固化",
             payload={
                 "node_id": str(new_node.id),
@@ -185,8 +196,8 @@ def run_node_lifecycle(
     if commit_result.relationships_changed:
         telemetry_events.append(
             NodeLifecycleTelemetryEvent(
-                agent="node_detector",
-                stage="relationships_updated",
+                agent=K.AGENT_NODE_DETECTOR,
+                stage=K.STAGE_RELATIONSHIPS_UPDATED,
                 message="角色关系已根据事件结果更新",
                 payload={"characters": commit_result.involved_character_ids},
             )
@@ -201,8 +212,8 @@ def run_node_lifecycle(
         if reflection_entries:
             telemetry_events.append(
                 NodeLifecycleTelemetryEvent(
-                    agent="memory",
-                    stage="reflective_writeback",
+                    agent=K.AGENT_MEMORY,
+                    stage=K.STAGE_REFLECTIVE_WRITEBACK,
                     message="认知记忆已写回角色反思层",
                     payload={
                         "scene_id": scene_script.scene_id,
@@ -227,8 +238,8 @@ def run_node_lifecycle(
             world.metadata["intervention_options"] = signal.suggested_options
         telemetry_events.append(
             NodeLifecycleTelemetryEvent(
-                agent="node_detector",
-                stage="intervention_requested",
+                agent=K.AGENT_NODE_DETECTOR,
+                stage=K.STAGE_INTERVENTION_REQUESTED,
                 level="warning",
                 message="检测到高优先级分歧，等待用户干预",
                 payload={"context": signal.context},

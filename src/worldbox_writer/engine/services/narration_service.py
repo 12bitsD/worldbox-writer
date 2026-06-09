@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional, Protocol
 
+from worldbox_writer.core import constants as K
 from worldbox_writer.core.dual_loop import NarratorInput, SceneScript
 from worldbox_writer.core.models import StoryNode
 from worldbox_writer.engine.services.telemetry_service import emit_telemetry
@@ -300,8 +301,8 @@ class NarrationService:
             self.emit_telemetry_func(
                 state,
                 tick=world.tick,
-                agent="narrator",
-                stage="started",
+                agent=K.AGENT_NARRATOR,
+                stage=K.STAGE_STARTED,
                 message="开始渲染小说文本",
                 payload={
                     "node_id": str(current_node.id),
@@ -333,8 +334,8 @@ class NarrationService:
         self.emit_telemetry_func(
             state,
             tick=world.tick,
-            agent="narrator",
-            stage="completed",
+            agent=K.AGENT_NARRATOR,
+            stage=K.STAGE_COMPLETED,
             message="小说文本渲染完成",
             payload={
                 "node_id": str(current_node.id),

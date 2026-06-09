@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional, Protocol
 
+from worldbox_writer.core import constants as K
 from worldbox_writer.core.dual_loop import (
     ActionIntent,
     IntentCritique,
@@ -157,8 +158,8 @@ def runtime_actor_turn(
         },
         telemetry_events=[
             ActorTurnTelemetryEvent(
-                agent="actor",
-                stage="isolated_intents_generated",
+                agent=K.AGENT_ACTOR,
+                stage=K.STAGE_ISOLATED_INTENTS_GENERATED,
                 message="隔离 Actor 运行时已生成结构化意图",
                 payload={
                     "runtime_mode": runtime_mode,
@@ -171,8 +172,8 @@ def runtime_actor_turn(
                 },
             ),
             ActorTurnTelemetryEvent(
-                agent="critic",
-                stage="intents_reviewed",
+                agent=K.AGENT_CRITIC,
+                stage=K.STAGE_INTENTS_REVIEWED,
                 message="Critic 已完成角色意图审查",
                 payload={
                     "scene_id": scene_plan.scene_id,
@@ -190,7 +191,7 @@ def runtime_actor_turn(
                 ),
             ),
             ActorTurnTelemetryEvent(
-                agent="actor",
+                agent=K.AGENT_ACTOR,
                 stage="proposal_generated",
                 message="隔离 Actor 意图已桥接为候选事件",
                 payload={
@@ -205,7 +206,7 @@ def runtime_actor_turn(
             ),
             ActorTurnTelemetryEvent(
                 agent="gm",
-                stage="scene_settled",
+                stage=K.STAGE_SCENE_SETTLED,
                 message="GM 已将合法角色意图结算为 Scene Script",
                 payload={
                     "scene_id": scene_plan.scene_id,
@@ -258,7 +259,7 @@ def legacy_actor_turn(
         },
         telemetry_events=[
             ActorTurnTelemetryEvent(
-                agent="actor",
+                agent=K.AGENT_ACTOR,
                 stage="proposal_generated",
                 message="生成了新的候选事件",
                 payload={

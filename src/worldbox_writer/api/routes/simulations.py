@@ -18,6 +18,7 @@ from worldbox_writer.api.schemas import (
     StartSimulationRequest,
 )
 from worldbox_writer.api.session import feature_payload
+from worldbox_writer.config.settings import get_settings
 from worldbox_writer.engine.dual_loop import (
     DUAL_LOOP_ADAPTER_MODE,
     DUAL_LOOP_CONTRACT_VERSION,
@@ -43,7 +44,7 @@ def build_simulation_router(deps: ApiRouteDeps) -> APIRouter:
     async def health():
         return {
             "status": "ok",
-            "version": "0.5.0",
+            "version": get_settings().app.app_version,
             "llm": get_provider_info(),
         }
 

@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional, Protocol
 
+from worldbox_writer.config.settings import get_settings
+from worldbox_writer.core import constants as K
 from worldbox_writer.core.models import NodeType, StoryNode, WorldState
 
 DEFAULT_SELF_HEAL_ATTEMPTS = 2
@@ -68,8 +70,10 @@ def validate_candidate_event(
     revise_candidate_func: ReviseCandidateFunc,
     llm_telemetry_fields_func: LlmTelemetryFieldsFunc,
     metadata_func: MetadataFunc,
-    max_self_heal_attempts: int = DEFAULT_SELF_HEAL_ATTEMPTS,
+    max_self_heal_attempts: int | None = None,
 ) -> BoundaryValidationResult:
+    if max_self_heal_attempts is None:
+        max_self_heal_attempts = get_settings().simulation.default_self_heal_attempts
     validator = validator_factory()
     telemetry_events: list[BoundaryTelemetryEvent] = []
 
@@ -81,7 +85,7 @@ def validate_candidate_event(
     if result.is_valid:
         telemetry_events.append(
             BoundaryTelemetryEvent(
-                stage="passed",
+                stage=K.STAGE_PASSED,
                 message="候选事件通过边界校验",
                 llm_fields=llm_fields,
             )
@@ -93,9 +97,9 @@ def validate_candidate_event(
         )
 
     telemetry_events.append(
-        BoundaryTelemetryEvent(
-            stage="rejected",
-            level="warning",
+            BoundaryTelemetryEvent(
+                stage=K.STAGE_REJECTED,
+                level="warning",
             message="候选事件被边界层拒绝",
             payload={
                 "reason": result.rejection_reason,
@@ -126,8 +130,8 @@ def validate_candidate_event(
         result, llm_fields = validate(candidate)
         if result.is_valid:
             telemetry_events.append(
-                BoundaryTelemetryEvent(
-                    stage="self_heal_passed",
+            BoundaryTelemetryEvent(
+                stage=K.STAGE_SELF_HEAL_PASSED,
                     message="候选事件在自动修正后通过边界校验",
                     payload={"attempt": attempts},
                     llm_fields=llm_fields,
@@ -141,7 +145,7 @@ def validate_candidate_event(
 
         telemetry_events.append(
             BoundaryTelemetryEvent(
-                stage="self_heal_rejected",
+                stage=K.STAGE_SELF_HEAL_REJECTED,
                 level="warning",
                 message="自动修正后的候选事件仍未通过边界校验",
                 payload={

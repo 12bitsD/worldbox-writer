@@ -19,6 +19,18 @@ import os
 import sys
 from pathlib import Path
 
+from worldbox_writer.config.settings import get_settings
+from worldbox_writer.core.constants import (
+    EXPORT_ARTIFACT_KINDS,
+    EXPORT_ARTIFACT_MANIFEST_JSON,
+    EXPORT_ARTIFACT_NOVEL_DOCX,
+    EXPORT_ARTIFACT_NOVEL_HTML,
+    EXPORT_ARTIFACT_NOVEL_MARKDOWN,
+    EXPORT_ARTIFACT_NOVEL_PDF,
+    EXPORT_ARTIFACT_NOVEL_TXT,
+    EXPORT_ARTIFACT_TIMELINE_JSON,
+    EXPORT_ARTIFACT_WORLD_SETTINGS_JSON,
+)
 from worldbox_writer.core.models import WorldState
 from worldbox_writer.engine.graph import run_simulation
 from worldbox_writer.exporting.story_export import (
@@ -167,14 +179,14 @@ def export_results(world: WorldState, output_dir: Path) -> None:
         ],
     )
     artifact_kinds = [
-        "novel_txt",
-        "novel_markdown",
-        "novel_html",
-        "novel_docx",
-        "novel_pdf",
-        "world_settings_json",
-        "timeline_json",
-        "manifest_json",
+        EXPORT_ARTIFACT_NOVEL_TXT,
+        EXPORT_ARTIFACT_NOVEL_MARKDOWN,
+        EXPORT_ARTIFACT_NOVEL_HTML,
+        EXPORT_ARTIFACT_NOVEL_DOCX,
+        EXPORT_ARTIFACT_NOVEL_PDF,
+        EXPORT_ARTIFACT_WORLD_SETTINGS_JSON,
+        EXPORT_ARTIFACT_TIMELINE_JSON,
+        EXPORT_ARTIFACT_MANIFEST_JSON,
     ]
 
     for kind in artifact_kinds:
@@ -203,8 +215,8 @@ def main() -> None:
     parser.add_argument(
         "--ticks",
         type=int,
-        default=6,
-        help="最大推演步数（默认 6）",
+        default=get_settings().simulation.max_ticks,
+        help="最大推演步数",
     )
     parser.add_argument(
         "--output",

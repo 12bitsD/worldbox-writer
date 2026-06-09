@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional, Protocol
 
+from worldbox_writer.config.settings import get_settings
+from worldbox_writer.core.constants import ISOLATED_ACTOR_RUNTIME_MODE
 from worldbox_writer.core.dual_loop import (
     ActionIntent,
     PromptTrace,
@@ -25,8 +27,6 @@ from worldbox_writer.evals.sample_collector import collect_sample
 from worldbox_writer.memory.memory_manager import MemoryManager
 from worldbox_writer.prompting.registry import load_prompt_template
 from worldbox_writer.utils.json_parsing import parse_json_object
-
-ISOLATED_ACTOR_RUNTIME_MODE = "isolated-actor-runtime-v1"
 
 __all__ = [
     "ISOLATED_ACTOR_RUNTIME_MODE",
@@ -123,9 +123,11 @@ def run_isolated_actor_runtime(
     collect_sample_func: CollectSampleFunc = collect_sample,
     load_prompt_template_func: LoadPromptTemplateFunc = load_prompt_template,
     invoke_intent_func: InvokeActorIntentFunc = _default_invoke_actor_intent,
-    max_actors: int = 3,
+    max_actors: int | None = None,
 ) -> IsolatedActorRuntimeResult:
     """Run spotlight actors independently and collect structured intents."""
+    if max_actors is None:
+        max_actors = get_settings().simulation.max_actors
     selected_characters = select_spotlight_characters(
         world,
         scene_plan,

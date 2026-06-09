@@ -45,8 +45,6 @@ from worldbox_writer.evals.dimension_prompts import (
 )
 from worldbox_writer.utils.llm import chat_completion_with_profile
 
-DEFAULT_JUDGE_MODEL = "gpt-5.5"
-
 
 def _resolve_judge_model(model: str | None) -> str:
     return model or get_settings().model_eval.judge_model
@@ -106,12 +104,13 @@ def parse_judge_response(raw: str) -> dict[str, Any]:
 
 
 COMMITTEE_SCHEMA_VERSION = "committee-v0.2"
+_judge_settings = get_settings().judge
 COMMITTEE_AXIS_WEIGHTS: dict[str, float] = {
-    "emotion_axis": 0.4,
-    "structure_axis": 0.3,
-    "prose_axis": 0.3,
+    "emotion_axis": _judge_settings.emotion_axis_weight,
+    "structure_axis": _judge_settings.structure_axis_weight,
+    "prose_axis": _judge_settings.prose_axis_weight,
 }
-COMMITTEE_TOXIC_VETO_THRESHOLD = 8.0
+COMMITTEE_TOXIC_VETO_THRESHOLD = _judge_settings.toxic_veto_threshold
 _AI_PROSE_TRANSLATION_MARKERS = ("哦，我的天", "天哪", "上帝啊", "这真是")
 _FORCED_STUPIDITY_SETUP_MARKERS = ("智将", "老祖", "谋主")
 _FORCED_STUPIDITY_EVIDENCE_MARKERS = (
@@ -286,9 +285,9 @@ def _committee_call_one(
     if isinstance(raw_score, (int, float)) and not isinstance(raw_score, bool):
         score = round(min(10.0, max(0.0, float(raw_score))), 2)
 
-    evidence_quote = _string_field(parsed, "evidence_quote", max_length=240)
-    setup_quote = _string_field(parsed, "setup_quote", max_length=240)
-    rule_hit = _string_field(parsed, "rule_hit", max_length=240)
+    evidence_quote = _string_field(parsed, "evidence_quote", max_length=get_settings().judge.max_continuity_chars)
+    setup_quote = _string_field(parsed, "setup_quote", max_length=get_settings().judge.max_continuity_chars)
+    rule_hit = _string_field(parsed, "rule_hit", max_length=get_settings().judge.max_continuity_chars)
     coercions: list[str] = []
 
     if dim.dim_id == "ai_prose_ticks":
@@ -336,8 +335,11 @@ def _committee_call_one(
     if evidence_quote.strip() and not _evidence_in_text(text, evidence_quote):
         evidence_invalid = True
         coercions.append("evidence_quote_not_in_source")
-        if isinstance(score, (int, float)) and score >= 5:
-            score = 4.0
+        if (
+            isinstance(score, (int, float))
+            and score >= get_settings().judge.fabricated_evidence_demote_min
+        ):
+            score = get_settings().judge.fabricated_evidence_demote_to
             coercions.append("score_demoted_due_to_fabricated_evidence")
 
     setup_invalid = False
@@ -361,7 +363,7 @@ def _committee_call_one(
         "setup_quote": setup_quote,
         "setup_invalid": setup_invalid,
         "rule_hit": rule_hit,
-        "reasoning": _string_field(parsed, "reasoning", max_length=120),
+        "reasoning": _string_field(parsed, "reasoning", max_length=get_settings().judge.max_response_chars),
         "raw_excerpt": raw[:240],
         "parse_status": parse_status,
         "error": error,
@@ -653,8 +655,8 @@ def _multichapter_call_one(
     coercions: list[str] = []
     if invalid_quotes:
         coercions.append("evidence_quotes_not_in_source")
-        if score is not None and score >= 5:
-            score = 4.0
+        if score is not None and score >= get_settings().judge.fabricated_evidence_demote_min:
+            score = get_settings().judge.fabricated_evidence_demote_to
             coercions.append("score_demoted_due_to_fabricated_evidence")
 
     elapsed_ms = int((_time.time() - started) * 1000)
@@ -665,8 +667,8 @@ def _multichapter_call_one(
         "score": score,
         "evidence_quotes": evidence_quotes,
         "invalid_evidence_quotes": invalid_quotes,
-        "rule_hit": _string_field(parsed, "rule_hit", max_length=240),
-        "reasoning": _string_field(parsed, "reasoning", max_length=200),
+        "rule_hit": _string_field(parsed, "rule_hit", max_length=get_settings().judge.max_continuity_chars),
+        "reasoning": _string_field(parsed, "reasoning", max_length=get_settings().judge.max_excerpt_chars),
         "raw_excerpt": raw[:240],
         "parse_status": parse_status,
         "error": error,

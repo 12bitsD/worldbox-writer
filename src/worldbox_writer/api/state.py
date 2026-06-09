@@ -11,7 +11,7 @@ from worldbox_writer.core.pacing import VALID_PACING_VALUES
 if TYPE_CHECKING:
     from worldbox_writer.api.session import SimulationSession
 
-_executor = ThreadPoolExecutor(max_workers=4)
+_executor = ThreadPoolExecutor(max_workers=get_settings().runtime.api_threadpool_workers)
 
 # sim_id -> SimulationSession
 _sessions: Dict[str, "SimulationSession"] = {}

@@ -106,3 +106,24 @@ The existing `LLM_*` routing layer remains in `utils/llm.py` until Sprint 27.
 - Startup validation should fail fast for invalid values and for future
   required fields without defaults.
 - Defaults should preserve current local development behavior.
+
+## Sprint 28 status (Sprint 28 governance rollout)
+
+The following hardcoded constants have been consolidated:
+
+- **To `LLMRoutingSettings`** (knobs): `DEFAULT_LLM_PROVIDER`, `MIMO_BASE_URL`, `KIMI_BASE_URL`, `OLLAMA_BASE_URL`, user-agent string, anthropic-version header. The LLM env vars themselves (`LLM_PROVIDER`, `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`, and per-role variants) remain in `utils/llm.py` per the original `llm-route-later` decision.
+- **To `JudgeSettings`** (knobs): `COMMITTEE_AXIS_WEIGHTS` (emotion/structure/prose), `COMMITTEE_TOXIC_VETO_THRESHOLD`, fabricated-evidence demote (`>=` floor + score), `intermediate_temperature` / `intermediate_max_tokens` / `intermediate_retry_count`, max char caps.
+- **To `SimulationSettings`** (knobs): `max_ticks`, `max_actors`, `max_spotlight_characters`, `periodic_tick_interval`, `default_self_heal_attempts`, `intervention_frequency_modulus` / `_remainder`, `affinity_min` / `affinity_max` / `affinity_max_targets` / `affinity_max_chars`.
+- **To `MemoryRuntimeSettings`** (knobs): `short_term_limit`, `archive_threshold`, `archive_keep_recent`, four `top_k_*` values, five `importance_*` thresholds, `reflection_recent_window`, `reflection_top_keys`.
+- **To `RuntimeSettings`** (knobs): LLM HTTP timeout, `lru_cache` size, API threadpool workers, intervention poll interval.
+- **To `AppSettings`** (knobs): `app_version` (was duplicated 3x as `"0.5.0"`).
+- **To `core/constants.py`** (Python literals, NOT env): `MAIN_BRANCH_ID` (22+ sites), 4 contract versions, 8 agent identities, 13 stage labels, 7 SSE event types, 3 statuses, 8 export artifact kinds, 5 memory entry kinds/tags, `WORLD_STATE_SEED_KIND`.
+
+Unchanged:
+
+- API route paths, HTTP header protocol constants — public/protocol contracts.
+- LLM routing env vars (`LLM_PROVIDER` / `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` and per-role variants) — Sprint 27 deliverable.
+- Pydantic `Field(default=...)` field defaults — Pydantic serialization requires static values.
+- SQL DDL defaults in `storage/db.py` — SQL strings, not Python.
+
+See `docs/proposals/unified-config-governance.md` for the full plan and `tests/test_config/test_new_settings.py` + `tests/test_core/test_constants.py` for verification.

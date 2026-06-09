@@ -88,7 +88,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="WorldBox Writer API",
     description="Agent 集群驱动的沙盒小说创作系统",
-    version="0.5.0",
+    version=get_settings().app.app_version,
     lifespan=lifespan,
 )
 

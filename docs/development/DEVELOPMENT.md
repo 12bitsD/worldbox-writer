@@ -706,6 +706,50 @@ PROMPT_TEMPLATE_DIR=/tmp/prompts make dev-api
 
 ---
 
+## 14. 加一个新配置项（不改 Python 业务代码）
+
+可调值按"是否要 env 驱动"分两类：
+
+### 14.1 可调数值（→ Pydantic settings）
+
+每个领域有一个 `_DomainSettings` 子类，加新字段 3 步：
+
+1. 在 `src/worldbox_writer/config/settings.py` 选对应的 domain class（`RuntimeSettings` / `SimulationSettings` / `MemoryRuntimeSettings` / `JudgeSettings` / `LLMRoutingSettings` / `AppSettings`），加字段：
+   ```python
+   my_knob: int = Field(7, validation_alias="SIM_MY_KNOB")
+   
+   @field_validator("my_knob")
+   @classmethod
+   def _positive_my_knob(cls, value: int) -> int:
+       if value <= 0:
+           raise ValueError("my_knob must be > 0")
+       return value
+   ```
+2. 把 `(env_var, default_value)` 加到 `ENV_EXAMPLE_ROWS` tuple
+3. 跑 `python -m worldbox_writer.config.settings --emit-env-example > .env.example` 重新生成
+
+调用方读 `get_settings().simulation.my_knob`（在函数体内 lazy 读，不要放 module load 时）。
+
+### 14.2 不可调 magic string（→ `core/constants.py`）
+
+合约版本、branch id、telemetry label、SSE event type、status 字符串、export kind —— 这些**不是**配置，但是单点修改比 grep 替换更稳。加新值 2 步：
+
+1. 在 `src/worldbox_writer/core/constants.py` 加 Python 常量
+2. 加到 `__all__` tuple
+
+调用方用 `from worldbox_writer.core import constants as K` + `K.MY_CONSTANT`。
+
+### 14.3 显式 out-of-scope（不要往 settings/constants 塞）
+
+- API 路由 path（`/api/simulate/...`）—— 公开 HTTP 契约
+- HTTP header 协议常量（`text/event-stream`、`application/json`）
+- Pydantic `Field(default=...)` 的字段值（schema 序列化限制）
+- SQL DDL 默认值（`DEFAULT 'main'` 等）
+- 业务流程中的 magic（LLM 内的 prompt 文本 → 在 `prompts/<role>/*.md` 里）
+- LLM 路由 env var（`LLM_PROVIDER` / `LLM_API_KEY`）—— Sprint 27 work；**只**硬编码默认常量在本期被抽到 `LLMRoutingSettings`
+
+---
+
 ## 相关文档
 
 - [架构设计](../architecture/DESIGN.md)

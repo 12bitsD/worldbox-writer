@@ -16,6 +16,14 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, cast
 from uuid import uuid4
 
 from worldbox_writer.config.settings import get_settings
+from worldbox_writer.core.constants import (
+    EVENT_ENTRY_KIND,
+    MAIN_BRANCH_ID,
+    REFLECTION_ENTRY_KIND,
+    REFLECTION_TAG,
+    SUMMARY_ARCHIVE_TAG,
+    SUMMARY_ENTRY_KIND,
+)
 from worldbox_writer.core.models import Character, StoryNode, WorldState
 from worldbox_writer.prompting.registry import load_prompt_template
 from worldbox_writer.storage.db import (
@@ -25,11 +33,6 @@ from worldbox_writer.storage.db import (
 )
 from worldbox_writer.utils.llm import chat_completion_with_profile
 
-SUMMARY_ARCHIVE_TAG = "summary_archive"
-SUMMARY_ENTRY_KIND = "summary"
-EVENT_ENTRY_KIND = "event"
-REFLECTION_ENTRY_KIND = "reflection"
-REFLECTION_TAG = "reflection"
 SIMPLE_VECTOR_BACKEND = "simple"
 AUTO_VECTOR_BACKEND = "auto"
 DEFAULT_VECTOR_BACKEND = AUTO_VECTOR_BACKEND
@@ -99,9 +102,9 @@ def _ordered_lineage_nodes(world: WorldState) -> List[StoryNode]:
 
 
 def _branch_cutoffs(world: WorldState) -> Dict[str, float]:
-    branch_id = world.active_branch_id or "main"
-    if branch_id == "main":
-        return {"main": float("inf")}
+    branch_id = world.active_branch_id or MAIN_BRANCH_ID
+    if branch_id == MAIN_BRANCH_ID:
+        return {MAIN_BRANCH_ID: float("inf")}
 
     cutoffs: Dict[str, float] = {branch_id: float("inf")}
     cursor = branch_id
@@ -113,7 +116,7 @@ def _branch_cutoffs(world: WorldState) -> Dict[str, float]:
         cutoffs[parent_branch_id] = float(branch_meta.get("created_at_tick", 0))
         cursor = str(parent_branch_id)
 
-    cutoffs.setdefault("main", float("inf"))
+    cutoffs.setdefault(MAIN_BRANCH_ID, float("inf"))
     return cutoffs
 
 
@@ -243,10 +246,12 @@ class SimpleVectorStore:
         copy.embedding = self._text_to_vector(copy.content)
         self._entries.append(copy)
 
-    def search(self, query: str, top_k: int = 5) -> List[MemoryEntry]:
+    def search(self, query: str, top_k: Optional[int] = None) -> List[MemoryEntry]:
         """Find the most relevant memories for a query."""
         if not self._entries:
             return []
+        if top_k is None:
+            top_k = get_settings().memory_runtime.top_k_default
 
         query_vec = self._text_to_vector(query)
         scored = [
@@ -262,15 +267,21 @@ class SimpleVectorStore:
         scored.sort(key=lambda item: item[1], reverse=True)
         return [entry for entry, _ in scored[:top_k]]
 
-    def get_by_character(self, character_id: str, limit: int = 10) -> List[MemoryEntry]:
+    def get_by_character(
+        self, character_id: str, limit: Optional[int] = None
+    ) -> List[MemoryEntry]:
         """Get recent memories involving a specific character."""
+        if limit is None:
+            limit = get_settings().memory_runtime.top_k_recall
         relevant = [
             entry for entry in self._entries if character_id in entry.character_ids
         ]
         return sorted(relevant, key=lambda entry: entry.tick, reverse=True)[:limit]
 
-    def get_recent(self, limit: int = 10) -> List[MemoryEntry]:
+    def get_recent(self, limit: Optional[int] = None) -> List[MemoryEntry]:
         """Get the most recent long-term memory entries."""
+        if limit is None:
+            limit = get_settings().memory_runtime.top_k_recall
         return sorted(self._entries, key=lambda entry: entry.tick, reverse=True)[:limit]
 
     def __len__(self) -> int:
@@ -317,7 +328,9 @@ class SimpleVectorStore:
 class _HashedEmbeddingFunction:
     """Deterministic local embedding for optional ChromaDB integration."""
 
-    def __init__(self, dimensions: int = DEFAULT_CHROMA_DIMENSIONS) -> None:
+    def __init__(self, dimensions: Optional[int] = None) -> None:
+        if dimensions is None:
+            dimensions = get_settings().memory.vector_dimensions
         self._dimensions = max(32, dimensions)
 
     def __call__(self, input: Sequence[str]) -> List[List[float]]:
@@ -408,9 +421,11 @@ class ChromaVectorStore:
             ],
         )
 
-    def search(self, query: str, top_k: int = 5) -> List[MemoryEntry]:
+    def search(self, query: str, top_k: Optional[int] = None) -> List[MemoryEntry]:
         if not query.strip() or not self._entries:
             return []
+        if top_k is None:
+            top_k = get_settings().memory_runtime.top_k_default
 
         result = self._collection.query(query_texts=[query], n_results=max(1, top_k))
         ids = result.get("ids", [[]])
@@ -421,7 +436,11 @@ class ChromaVectorStore:
             if entry_id in self._entries
         ]
 
-    def get_by_character(self, character_id: str, limit: int = 10) -> List[MemoryEntry]:
+    def get_by_character(
+        self, character_id: str, limit: Optional[int] = None
+    ) -> List[MemoryEntry]:
+        if limit is None:
+            limit = get_settings().memory_runtime.top_k_recall
         relevant = [
             entry
             for entry in self._entries.values()
@@ -429,7 +448,9 @@ class ChromaVectorStore:
         ]
         return sorted(relevant, key=lambda entry: entry.tick, reverse=True)[:limit]
 
-    def get_recent(self, limit: int = 10) -> List[MemoryEntry]:
+    def get_recent(self, limit: Optional[int] = None) -> List[MemoryEntry]:
+        if limit is None:
+            limit = get_settings().memory_runtime.top_k_recall
         return sorted(
             self._entries.values(), key=lambda entry: entry.tick, reverse=True
         )[:limit]
@@ -457,14 +478,21 @@ class MemoryManager:
 
     def __init__(
         self,
-        short_term_limit: int = 15,
+        short_term_limit: Optional[int] = None,
         *,
         sim_id: Optional[str] = None,
-        archive_threshold: int = 50,
-        archive_keep_recent: int = 20,
+        archive_threshold: Optional[int] = None,
+        archive_keep_recent: Optional[int] = None,
         initial_entries: Optional[Sequence[MemoryEntry]] = None,
         vector_backend: Optional[str] = None,
     ) -> None:
+        mr = get_settings().memory_runtime
+        if short_term_limit is None:
+            short_term_limit = mr.short_term_limit
+        if archive_threshold is None:
+            archive_threshold = mr.archive_threshold
+        if archive_keep_recent is None:
+            archive_keep_recent = mr.archive_keep_recent
         self.short_term_limit = short_term_limit
         self.sim_id = sim_id
         self.archive_threshold = max(archive_threshold, archive_keep_recent + 1)
@@ -508,10 +536,17 @@ class MemoryManager:
         world: WorldState,
         *,
         sim_id: Optional[str] = None,
-        short_term_limit: int = 15,
-        archive_threshold: int = 50,
-        archive_keep_recent: int = 20,
+        short_term_limit: Optional[int] = None,
+        archive_threshold: Optional[int] = None,
+        archive_keep_recent: Optional[int] = None,
     ) -> "MemoryManager":
+        mr = get_settings().memory_runtime
+        if short_term_limit is None:
+            short_term_limit = mr.short_term_limit
+        if archive_threshold is None:
+            archive_threshold = mr.archive_threshold
+        if archive_keep_recent is None:
+            archive_keep_recent = mr.archive_keep_recent
         if sim_id:
             persisted = load_memory_entries_for_world(sim_id, world)
             if persisted:
@@ -525,11 +560,11 @@ class MemoryManager:
 
         entries: List[MemoryEntry] = []
         for index, node in enumerate(_ordered_lineage_nodes(world), start=1):
-            importance = 0.5
+            importance = mr.importance_low
             if node.node_type.value in {"climax", "branch"}:
-                importance = 0.9
+                importance = mr.importance_vital
             elif node.node_type.value == "setup":
-                importance = 0.8
+                importance = mr.importance_strong
 
             tick = int(node.metadata.get("tick", index))
             entries.append(
@@ -557,9 +592,11 @@ class MemoryManager:
         self,
         node: StoryNode,
         world: WorldState,
-        importance: float = 0.5,
+        importance: Optional[float] = None,
     ) -> None:
         """Record a newly committed story node into durable memory."""
+        if importance is None:
+            importance = get_settings().memory_runtime.importance_low
         entry = MemoryEntry(
             entry_id=f"mem_{uuid4().hex[:12]}",
             content=f"{node.title}: {node.description}",
@@ -567,7 +604,7 @@ class MemoryManager:
             tick=world.tick,
             importance=importance,
             tags=[node.node_type.value],
-            branch_id=world.active_branch_id or "main",
+            branch_id=world.active_branch_id or MAIN_BRANCH_ID,
             entry_kind=EVENT_ENTRY_KIND,
         )
 
@@ -583,11 +620,13 @@ class MemoryManager:
         *,
         character_id: str,
         content: str,
-        importance: float = 0.7,
+        importance: Optional[float] = None,
         source_entry_ids: Optional[Sequence[str]] = None,
         tags: Optional[Sequence[str]] = None,
     ) -> MemoryEntry:
         """Record one character-facing reflective memory."""
+        if importance is None:
+            importance = get_settings().memory_runtime.importance_med
         reflection_tags = [] if tags is None else list(tags)
         reflection_source_entry_ids = (
             [] if source_entry_ids is None else list(source_entry_ids)
@@ -599,7 +638,7 @@ class MemoryManager:
             tick=world.tick,
             importance=importance,
             tags=list(dict.fromkeys([REFLECTION_TAG, *reflection_tags])),
-            branch_id=world.active_branch_id or "main",
+            branch_id=world.active_branch_id or MAIN_BRANCH_ID,
             entry_kind=REFLECTION_ENTRY_KIND,
             source_entry_ids=reflection_source_entry_ids,
         )
@@ -653,17 +692,22 @@ class MemoryManager:
         self,
         query: str = "",
         character_id: Optional[str] = None,
-        max_entries: int = 8,
+        max_entries: Optional[int] = None,
     ) -> str:
         """Build a prompt-ready memory context string for an agent."""
+        mr = get_settings().memory_runtime
+        if max_entries is None:
+            max_entries = mr.top_k_long
         entries: List[MemoryEntry] = []
-        entries.extend(self._short_term[-5:])
+        entries.extend(self._short_term[-mr.top_k_default:])
 
         if character_id:
-            entries.extend(self._long_term.get_by_character(character_id, limit=3))
+            entries.extend(
+                self._long_term.get_by_character(character_id, limit=mr.top_k_reflection)
+            )
 
         if query and len(self._long_term) > 0:
-            entries.extend(self._long_term.search(query, top_k=3))
+            entries.extend(self._long_term.search(query, top_k=mr.top_k_reflection))
 
         seen_ids: set[str] = set()
         unique_entries: List[MemoryEntry] = []
@@ -692,11 +736,12 @@ class MemoryManager:
         self, proposed_event: str, world: WorldState
     ) -> Tuple[bool, str]:
         """Check if a proposed event is consistent with story memory."""
-        if len(self._long_term) == 0 and len(self._short_term) < 3:
+        mr = get_settings().memory_runtime
+        if len(self._long_term) == 0 and len(self._short_term) < mr.top_k_reflection:
             return True, "记忆不足，无法评估一致性"
 
-        relevant = self._long_term.search(proposed_event, top_k=5)
-        recent = self._short_term[-5:]
+        relevant = self._long_term.search(proposed_event, top_k=mr.top_k_default)
+        recent = self._short_term[-mr.top_k_default:]
         all_relevant = list(
             {entry.entry_id: entry for entry in relevant + recent}.values()
         )
@@ -730,7 +775,10 @@ class MemoryManager:
 
     def get_character_arc(self, character: Character) -> str:
         """Summarize a character's story arc from memory."""
-        char_memories = self._long_term.get_by_character(str(character.id), limit=10)
+        mr = get_settings().memory_runtime
+        char_memories = self._long_term.get_by_character(
+            str(character.id), limit=mr.top_k_recall
+        )
         char_memories += [
             entry
             for entry in self._short_term
@@ -742,7 +790,8 @@ class MemoryManager:
 
         events = sorted(char_memories, key=lambda entry: entry.tick)
         events_text = "\n".join(
-            f"- [第{entry.tick}步] {entry.content}" for entry in events[-8:]
+            f"- [第{entry.tick}步] {entry.content}"
+            for entry in events[-mr.reflection_recent_window:]
         )
 
         messages = [
@@ -816,6 +865,7 @@ class MemoryManager:
     def _rehydrate_runtime_layers(self) -> None:
         self._short_term = []
         self._long_term = self._build_vector_store()
+        importance_med = get_settings().memory_runtime.importance_med
         for entry in sorted(
             self._active_entries, key=lambda item: (item.tick, item.entry_id)
         ):
@@ -823,7 +873,7 @@ class MemoryManager:
             if len(self._short_term) > self.short_term_limit:
                 evicted = self._short_term.pop(0)
                 self._long_term.add(evicted)
-            if entry.importance >= 0.7 or entry.entry_kind == SUMMARY_ENTRY_KIND:
+            if entry.importance >= importance_med or entry.entry_kind == SUMMARY_ENTRY_KIND:
                 self._long_term.add(entry)
 
     def _build_vector_store(self) -> Any:
@@ -917,7 +967,10 @@ class MemoryManager:
             content=self._summarize_entries(world, entries),
             character_ids=character_ids,
             tick=max(entry.tick for entry in entries),
-            importance=max(0.75, max(entry.importance for entry in entries)),
+            importance=max(
+                get_settings().memory_runtime.importance_high,
+                max(entry.importance for entry in entries),
+            ),
             tags=list(dict.fromkeys(tags)),
             branch_id=branch_id,
             entry_kind=SUMMARY_ENTRY_KIND,
@@ -960,7 +1013,7 @@ class MemoryManager:
             entries,
             key=lambda entry: (entry.importance, entry.tick),
             reverse=True,
-        )[:4]
+        )[: get_settings().memory_runtime.reflection_top_keys]
         bullets = [
             f"- 第{entry.tick}步：{entry.content}"
             for entry in sorted(key_entries, key=lambda entry: entry.tick)

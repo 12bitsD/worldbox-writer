@@ -116,6 +116,246 @@ class ModelEvalSettings(_DomainSettings):
         return value
 
 
+# ---------------------------------------------------------------------------
+# New domain classes (Sprint 28 governance rollout)
+# ---------------------------------------------------------------------------
+
+
+class RuntimeSettings(_DomainSettings):
+    """Process-level runtime knobs not specific to a single domain."""
+
+    llm_call_timeout_s: float = Field(120.0, validation_alias="LLM_CALL_TIMEOUT_S")
+    llm_cache_size: int = Field(16, validation_alias="LLM_CACHE_SIZE")
+    api_threadpool_workers: int = Field(4, validation_alias="API_THREADPOOL_WORKERS")
+    intervention_poll_interval_s: float = Field(
+        0.2, validation_alias="INTERVENTION_POLL_INTERVAL_S"
+    )
+
+    @field_validator(
+        "llm_call_timeout_s",
+        "llm_cache_size",
+        "api_threadpool_workers",
+        "intervention_poll_interval_s",
+    )
+    @classmethod
+    def _positive_runtime(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("runtime numeric settings must be > 0")
+        return value
+
+
+class SimulationSettings(_DomainSettings):
+    """Engine-loop ceilings and pacing knobs."""
+
+    max_ticks: int = Field(8, validation_alias="SIM_MAX_TICKS")
+    max_actors: int = Field(3, validation_alias="SIM_MAX_ACTORS")
+    max_spotlight_characters: int = Field(
+        3, validation_alias="SIM_MAX_SPOTLIGHT_CHARACTERS"
+    )
+    periodic_tick_interval: int = Field(
+        5, validation_alias="SIM_PERIODIC_TICK_INTERVAL"
+    )
+    default_self_heal_attempts: int = Field(
+        2, validation_alias="SIM_DEFAULT_SELF_HEAL_ATTEMPTS"
+    )
+    intervention_frequency_modulus: int = Field(
+        3, validation_alias="SIM_INTERVENTION_FREQ_MODULUS"
+    )
+    intervention_frequency_remainder: int = Field(
+        1, validation_alias="SIM_INTERVENTION_FREQ_REMAINDER"
+    )
+    affinity_min: int = Field(-100, validation_alias="SIM_AFFINITY_MIN")
+    affinity_max: int = Field(100, validation_alias="SIM_AFFINITY_MAX")
+    affinity_max_targets: int = Field(3, validation_alias="SIM_AFFINITY_MAX_TARGETS")
+    affinity_max_chars: int = Field(3, validation_alias="SIM_AFFINITY_MAX_CHARS")
+
+    @field_validator(
+        "max_ticks",
+        "max_actors",
+        "max_spotlight_characters",
+        "periodic_tick_interval",
+        "default_self_heal_attempts",
+        "intervention_frequency_modulus",
+        "affinity_max_targets",
+        "affinity_max_chars",
+    )
+    @classmethod
+    def _positive_sim(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("simulation numeric settings must be > 0")
+        return value
+
+    @field_validator("intervention_frequency_remainder")
+    @classmethod
+    def _non_negative_remainder(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("intervention_frequency_remainder must be >= 0")
+        return value
+
+
+class MemoryRuntimeSettings(_DomainSettings):
+    """Memory subsystem runtime knobs (complements MemorySettings' vector config)."""
+
+    short_term_limit: int = Field(15, validation_alias="MEMORY_SHORT_TERM_LIMIT")
+    archive_threshold: int = Field(50, validation_alias="MEMORY_ARCHIVE_THRESHOLD")
+    archive_keep_recent: int = Field(
+        20, validation_alias="MEMORY_ARCHIVE_KEEP_RECENT"
+    )
+    top_k_default: int = Field(5, validation_alias="MEMORY_TOP_K_DEFAULT")
+    top_k_recall: int = Field(10, validation_alias="MEMORY_TOP_K_RECALL")
+    top_k_reflection: int = Field(3, validation_alias="MEMORY_TOP_K_REFLECTION")
+    top_k_long: int = Field(8, validation_alias="MEMORY_TOP_K_LONG")
+    importance_low: float = Field(0.5, validation_alias="MEMORY_IMPORTANCE_LOW")
+    importance_med: float = Field(0.7, validation_alias="MEMORY_IMPORTANCE_MED")
+    importance_high: float = Field(0.75, validation_alias="MEMORY_IMPORTANCE_HIGH")
+    importance_strong: float = Field(0.8, validation_alias="MEMORY_IMPORTANCE_STRONG")
+    importance_vital: float = Field(0.9, validation_alias="MEMORY_IMPORTANCE_VITAL")
+    reflection_recent_window: int = Field(
+        8, validation_alias="MEMORY_REFLECTION_RECENT_WINDOW"
+    )
+    reflection_top_keys: int = Field(4, validation_alias="MEMORY_REFLECTION_TOP_KEYS")
+
+    @field_validator(
+        "short_term_limit",
+        "archive_threshold",
+        "archive_keep_recent",
+        "top_k_default",
+        "top_k_recall",
+        "top_k_reflection",
+        "top_k_long",
+        "reflection_recent_window",
+        "reflection_top_keys",
+    )
+    @classmethod
+    def _positive_memory(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("memory numeric settings must be > 0")
+        return value
+
+    @field_validator(
+        "importance_low",
+        "importance_med",
+        "importance_high",
+        "importance_strong",
+        "importance_vital",
+    )
+    @classmethod
+    def _importance_in_unit_interval(cls, value: float) -> float:
+        if not 0.0 <= value <= 1.0:
+            raise ValueError("importance must be in [0, 1]")
+        return value
+
+
+class JudgeSettings(_DomainSettings):
+    """LLM-as-judge evaluation tunables (does NOT replace ModelEvalSettings)."""
+
+    emotion_axis_weight: float = Field(
+        0.4, validation_alias="JUDGE_EMOTION_AXIS_WEIGHT"
+    )
+    structure_axis_weight: float = Field(
+        0.3, validation_alias="JUDGE_STRUCTURE_AXIS_WEIGHT"
+    )
+    prose_axis_weight: float = Field(
+        0.3, validation_alias="JUDGE_PROSE_AXIS_WEIGHT"
+    )
+    toxic_veto_threshold: float = Field(
+        8.0, validation_alias="JUDGE_TOXIC_VETO_THRESHOLD"
+    )
+    fabricated_evidence_demote_min: int = Field(
+        5, validation_alias="JUDGE_FAB_DEMOTE_MIN"
+    )
+    fabricated_evidence_demote_to: float = Field(
+        4.0, validation_alias="JUDGE_FAB_DEMOTE_TO"
+    )
+    max_response_chars: int = Field(120, validation_alias="JUDGE_MAX_RESPONSE_CHARS")
+    max_excerpt_chars: int = Field(200, validation_alias="JUDGE_MAX_EXCERPT_CHARS")
+    max_continuity_chars: int = Field(
+        240, validation_alias="JUDGE_MAX_CONTINUITY_CHARS"
+    )
+    intermediate_temperature: float = Field(
+        0.2, validation_alias="JUDGE_INTERMEDIATE_TEMPERATURE"
+    )
+    intermediate_max_tokens: int = Field(
+        320, validation_alias="JUDGE_INTERMEDIATE_MAX_TOKENS"
+    )
+    intermediate_retry_count: int = Field(
+        2, validation_alias="JUDGE_INTERMEDIATE_RETRY_COUNT"
+    )
+
+    @field_validator(
+        "emotion_axis_weight",
+        "structure_axis_weight",
+        "prose_axis_weight",
+    )
+    @classmethod
+    def _axis_weight_in_unit(cls, value: float) -> float:
+        if not 0.0 <= value <= 1.0:
+            raise ValueError("judge axis weights must be in [0, 1]")
+        return value
+
+    @field_validator("toxic_veto_threshold", "intermediate_temperature")
+    @classmethod
+    def _positive_judge(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("judge numeric settings must be > 0")
+        return value
+
+    @field_validator(
+        "max_response_chars",
+        "max_excerpt_chars",
+        "max_continuity_chars",
+        "intermediate_max_tokens",
+    )
+    @classmethod
+    def _positive_judge_int(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("judge int settings must be > 0")
+        return value
+
+    @field_validator("intermediate_retry_count", "fabricated_evidence_demote_min")
+    @classmethod
+    def _non_negative_judge_int(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("judge int settings must be >= 0")
+        return value
+
+
+class LLMRoutingSettings(_DomainSettings):
+    """Provider/base-URL routing defaults (the env vars stay in ``utils.llm``)."""
+
+    default_provider: str = Field("kimi", validation_alias="LLM_DEFAULT_PROVIDER")
+    mimo_base_url: str = Field(
+        "https://token-plan-cn.xiaomimimo.com/v1", validation_alias="LLM_MIMO_BASE_URL"
+    )
+    kimi_base_url: str = Field(
+        "https://api.kimi.com/coding/", validation_alias="LLM_KIMI_BASE_URL"
+    )
+    ollama_base_url: str = Field(
+        "http://localhost:11434/v1", validation_alias="LLM_OLLAMA_BASE_URL"
+    )
+    user_agent: str = Field(
+        "worldbox-writer/0.5.0", validation_alias="LLM_USER_AGENT"
+    )
+    anthropic_version: str = Field(
+        "2023-06-01", validation_alias="LLM_ANTHROPIC_VERSION"
+    )
+
+    @field_validator(
+        "default_provider", "user_agent", "anthropic_version",
+    )
+    @classmethod
+    def _non_empty_string(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("LLM routing string settings must be non-empty")
+        return value
+
+
+class AppSettings(_DomainSettings):
+    """Single source for app version and user-facing metadata strings."""
+
+    app_version: str = Field("0.5.0", validation_alias="APP_VERSION")
+
+
 class Settings:
     """Container for domain settings.
 
@@ -133,6 +373,12 @@ class Settings:
         self.prompt = _load_domain_settings(PromptSettings)
         self.perf = _load_domain_settings(PerfSettings)
         self.model_eval = _load_domain_settings(ModelEvalSettings)
+        self.runtime = _load_domain_settings(RuntimeSettings)
+        self.simulation = _load_domain_settings(SimulationSettings)
+        self.memory_runtime = _load_domain_settings(MemoryRuntimeSettings)
+        self.judge = _load_domain_settings(JudgeSettings)
+        self.llm_routing = _load_domain_settings(LLMRoutingSettings)
+        self.app = _load_domain_settings(AppSettings)
 
 
 def _load_domain_settings(settings_cls: type[T]) -> T:
@@ -183,6 +429,54 @@ ENV_EXAMPLE_ROWS: tuple[tuple[str, str], ...] = (
     ("MODEL_EVAL_CREATIVE_THRESHOLD", "0.72"),
     ("MODEL_EVAL_DEFAULT_THRESHOLD", "0.75"),
     ("MODEL_EVAL_OUTPUT", "artifacts/model-eval/report.json"),
+    ("LLM_CALL_TIMEOUT_S", "120.0"),
+    ("LLM_CACHE_SIZE", "16"),
+    ("API_THREADPOOL_WORKERS", "4"),
+    ("INTERVENTION_POLL_INTERVAL_S", "0.2"),
+    ("SIM_MAX_TICKS", "8"),
+    ("SIM_MAX_ACTORS", "3"),
+    ("SIM_MAX_SPOTLIGHT_CHARACTERS", "3"),
+    ("SIM_PERIODIC_TICK_INTERVAL", "5"),
+    ("SIM_DEFAULT_SELF_HEAL_ATTEMPTS", "2"),
+    ("SIM_INTERVENTION_FREQ_MODULUS", "3"),
+    ("SIM_INTERVENTION_FREQ_REMAINDER", "1"),
+    ("SIM_AFFINITY_MIN", "-100"),
+    ("SIM_AFFINITY_MAX", "100"),
+    ("SIM_AFFINITY_MAX_TARGETS", "3"),
+    ("SIM_AFFINITY_MAX_CHARS", "3"),
+    ("MEMORY_SHORT_TERM_LIMIT", "15"),
+    ("MEMORY_ARCHIVE_THRESHOLD", "50"),
+    ("MEMORY_ARCHIVE_KEEP_RECENT", "20"),
+    ("MEMORY_TOP_K_DEFAULT", "5"),
+    ("MEMORY_TOP_K_RECALL", "10"),
+    ("MEMORY_TOP_K_REFLECTION", "3"),
+    ("MEMORY_TOP_K_LONG", "8"),
+    ("MEMORY_IMPORTANCE_LOW", "0.5"),
+    ("MEMORY_IMPORTANCE_MED", "0.7"),
+    ("MEMORY_IMPORTANCE_HIGH", "0.75"),
+    ("MEMORY_IMPORTANCE_STRONG", "0.8"),
+    ("MEMORY_IMPORTANCE_VITAL", "0.9"),
+    ("MEMORY_REFLECTION_RECENT_WINDOW", "8"),
+    ("MEMORY_REFLECTION_TOP_KEYS", "4"),
+    ("JUDGE_EMOTION_AXIS_WEIGHT", "0.4"),
+    ("JUDGE_STRUCTURE_AXIS_WEIGHT", "0.3"),
+    ("JUDGE_PROSE_AXIS_WEIGHT", "0.3"),
+    ("JUDGE_TOXIC_VETO_THRESHOLD", "8.0"),
+    ("JUDGE_FAB_DEMOTE_MIN", "5"),
+    ("JUDGE_FAB_DEMOTE_TO", "4.0"),
+    ("JUDGE_MAX_RESPONSE_CHARS", "120"),
+    ("JUDGE_MAX_EXCERPT_CHARS", "200"),
+    ("JUDGE_MAX_CONTINUITY_CHARS", "240"),
+    ("JUDGE_INTERMEDIATE_TEMPERATURE", "0.2"),
+    ("JUDGE_INTERMEDIATE_MAX_TOKENS", "320"),
+    ("JUDGE_INTERMEDIATE_RETRY_COUNT", "2"),
+    ("LLM_DEFAULT_PROVIDER", "kimi"),
+    ("LLM_MIMO_BASE_URL", "https://token-plan-cn.xiaomimimo.com/v1"),
+    ("LLM_KIMI_BASE_URL", "https://api.kimi.com/coding/"),
+    ("LLM_OLLAMA_BASE_URL", "http://localhost:11434/v1"),
+    ("LLM_USER_AGENT", "worldbox-writer/0.5.0"),
+    ("LLM_ANTHROPIC_VERSION", "2023-06-01"),
+    ("APP_VERSION", "0.5.0"),
 )
 
 

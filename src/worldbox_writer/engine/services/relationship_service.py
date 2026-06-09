@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from worldbox_writer.config.settings import get_settings
 from worldbox_writer.core.models import RelationshipLabel, WorldState
 
 POSITIVE_RELATIONSHIP_KEYWORDS = {
@@ -32,11 +33,13 @@ NEGATIVE_RELATIONSHIP_KEYWORDS = {
 def select_character_ids_for_event(
     world: WorldState,
     event_description: str,
-    max_chars: int = 3,
+    max_chars: int | None = None,
     *,
     allow_alive_fallback: bool = True,
 ) -> list[str]:
     """Infer the most likely involved characters from committed event text."""
+    if max_chars is None:
+        max_chars = get_settings().simulation.affinity_max_chars
     matched: list[tuple[int, str]] = []
     for char_id, char in world.characters.items():
         index = event_description.find(char.name)
@@ -58,8 +61,14 @@ def select_character_ids_for_event(
     return alive_ids[:max_chars]
 
 
-def clamp_affinity(value: int) -> int:
-    return max(-100, min(100, value))
+def clamp_affinity(
+    value: int, *, lo: int | None = None, hi: int | None = None
+) -> int:
+    if lo is None:
+        lo = get_settings().simulation.affinity_min
+    if hi is None:
+        hi = get_settings().simulation.affinity_max
+    return max(lo, min(hi, value))
 
 
 def relationship_signal(

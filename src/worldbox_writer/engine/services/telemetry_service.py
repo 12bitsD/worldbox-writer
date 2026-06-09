@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+from worldbox_writer.core.constants import MAIN_BRANCH_ID
 from worldbox_writer.core.models import WorldState
 from worldbox_writer.engine.state import SimulationState
 
 
 def resolve_branch_context(world: WorldState) -> Dict[str, Optional[str]]:
-    branch_id = world.active_branch_id or "main"
+    branch_id = world.active_branch_id or MAIN_BRANCH_ID
     branch_meta = world.branches.get(branch_id, {})
     return {
         "branch_id": branch_id,

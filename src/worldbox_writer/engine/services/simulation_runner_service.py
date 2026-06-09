@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Optional, Protocol, cast
 
+from worldbox_writer.config.settings import get_settings
 from worldbox_writer.core.models import StoryNode, WorldState
 from worldbox_writer.engine.state import SimulationState
 from worldbox_writer.memory.memory_manager import MemoryManager
@@ -98,7 +99,10 @@ def initial_simulation_state(
         world_builder_completed = bool(world.metadata.get("world_builder_completed"))
     else:
         world = WorldState(premise=premise, title=derive_title_func(premise))
-        memory = MemoryManager(short_term_limit=15, sim_id=sim_id or None)
+        memory = MemoryManager(
+            short_term_limit=get_settings().memory_runtime.short_term_limit,
+            sim_id=sim_id or None,
+        )
         initialized = False
         world_builder_completed = False
 

@@ -16,6 +16,7 @@ from worldbox_writer.api.session import (
     sync_rendered_nodes_from_world,
 )
 from worldbox_writer.api.state import _sessions
+from worldbox_writer.core.constants import MAIN_BRANCH_ID
 from worldbox_writer.core.models import TelemetryEvent, WorldState
 from worldbox_writer.storage.db import (
     BranchSeedNotFoundError,
@@ -37,7 +38,7 @@ def update_branch_meta(
         return
 
     session.world.branches = normalize_branch_registry(session.world.branches)
-    active_branch_id = branch_id or session.world.active_branch_id or "main"
+    active_branch_id = branch_id or session.world.active_branch_id or MAIN_BRANCH_ID
     session.world.active_branch_id = active_branch_id
     branch_meta = session.world.branches.get(active_branch_id, default_branch_meta())
 

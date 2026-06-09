@@ -33,6 +33,7 @@ from worldbox_writer.agents.gate_keeper import GateKeeperAgent
 from worldbox_writer.agents.gm import GMAgent
 from worldbox_writer.agents.node_detector import NodeDetector
 from worldbox_writer.agents.world_builder import WorldBuilderAgent
+from worldbox_writer.config.settings import get_settings
 from worldbox_writer.core.models import WorldState
 from worldbox_writer.engine.dual_loop import (
     ISOLATED_ACTOR_RUNTIME_MODE,
@@ -142,7 +143,7 @@ def director_node(state: SimulationState) -> Dict[str, Any]:
     result = _initialize_world_skeleton(
         world,
         initialized=state["initialized"],
-        director_factory=DirectorAgent,
+        director_factory=lambda: DirectorAgent(),  # type: ignore[arg-type,return-value]
         llm_telemetry_fields_func=_llm_telemetry_fields,
     )
     for event in result.telemetry_events:
@@ -166,7 +167,7 @@ def scene_director_node(state: SimulationState) -> Dict[str, Any]:
     result = _plan_next_scene(
         world,
         memory,
-        director_factory=DirectorAgent,
+        director_factory=lambda: DirectorAgent(),  # type: ignore[arg-type,return-value]
     )
     for event in result.telemetry_events:
         _emit_telemetry(
@@ -439,7 +440,7 @@ def build_simulation_graph():
 
 def run_simulation(
     premise: str,
-    max_ticks: int = 8,
+    max_ticks: int | None = None,
     sim_id: str = "",
     trace_id: str = "",
     initial_world: Optional[WorldState] = None,
@@ -466,6 +467,8 @@ def run_simulation(
     Returns:
         Final WorldState with all story nodes.
     """
+    if max_ticks is None:
+        max_ticks = get_settings().simulation.max_ticks
     return _run_simulation_service(
         premise=premise,
         max_ticks=max_ticks,

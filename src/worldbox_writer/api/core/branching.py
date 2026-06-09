@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 from typing import Any, Dict, List, Optional
 
+from worldbox_writer.core.constants import MAIN_BRANCH_ID
 from worldbox_writer.core.models import TelemetryEvent, WorldState
 from worldbox_writer.core.pacing import DEFAULT_PACING
 
@@ -68,8 +69,8 @@ def lineage_from_latest_node(
 def branch_cutoffs(
     branches: Dict[str, Dict[str, Any]], branch_id: str
 ) -> Dict[str, float]:
-    if branch_id == "main":
-        return {"main": float("inf")}
+    if branch_id == MAIN_BRANCH_ID:
+        return {MAIN_BRANCH_ID: float("inf")}
 
     cutoffs: Dict[str, float] = {branch_id: float("inf")}
     cursor = branch_id
@@ -97,15 +98,19 @@ def filter_nodes_for_branch(
     if lineage:
         return lineage
 
-    if branch_id == "main":
-        return [node for node in nodes if node.get("branch_id", "main") == "main"]
+    if branch_id == MAIN_BRANCH_ID:
+        return [
+            node
+            for node in nodes
+            if node.get("branch_id", MAIN_BRANCH_ID) == MAIN_BRANCH_ID
+        ]
 
     cutoffs = branch_cutoffs(branches, branch_id)
     return [
         node
         for node in nodes
-        if node.get("branch_id", "main") in cutoffs
-        and float(node.get("tick", 0)) <= cutoffs[node.get("branch_id", "main")]
+        if node.get("branch_id", MAIN_BRANCH_ID) in cutoffs
+        and float(node.get("tick", 0)) <= cutoffs[node.get("branch_id", MAIN_BRANCH_ID)]
     ]
 
 
@@ -120,8 +125,8 @@ def filter_telemetry_for_branch(
         event_branch_id = (
             event.branch_id
             if isinstance(event, TelemetryEvent)
-            else event.get("branch_id", "main")
-        ) or "main"
+            else event.get("branch_id", MAIN_BRANCH_ID)
+        ) or MAIN_BRANCH_ID
         event_tick = (
             event.tick if isinstance(event, TelemetryEvent) else event.get("tick", 0)
         )

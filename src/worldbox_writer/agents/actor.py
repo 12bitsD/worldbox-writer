@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
+from worldbox_writer.core import constants as K
 from worldbox_writer.core.models import Character, NodeType, StoryNode, WorldState
 from worldbox_writer.prompting.registry import load_prompt_template
 from worldbox_writer.utils.json_parsing import parse_json_object
@@ -168,8 +169,8 @@ class ActorAgent:
                 "request_id": "injected-actor-call",
                 "provider": "injected",
                 "model": "injected",
-                "role": "actor",
-                "status": "completed",
+                "role": K.AGENT_ACTOR,
+                "status": K.STAGE_COMPLETED,
             }
             return response.content
         content = chat_completion_with_profile(profile_id, messages)

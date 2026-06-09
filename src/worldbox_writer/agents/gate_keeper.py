@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
+from worldbox_writer.core import constants as K
 from worldbox_writer.core.models import (
     Constraint,
     ConstraintSeverity,
@@ -105,8 +106,8 @@ class GateKeeperAgent:
                 "request_id": "injected-gate-keeper-call",
                 "provider": "injected",
                 "model": "injected",
-                "role": "gate_keeper",
-                "status": "completed",
+                "role": K.AGENT_GATE_KEEPER,
+                "status": K.STAGE_COMPLETED,
             }
             return response.content
         content = chat_completion_with_profile(profile_id, messages)

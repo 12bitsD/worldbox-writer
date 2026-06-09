@@ -325,6 +325,40 @@ memory_trace, metadata
 3. agent 代码调 `load_prompt_template("<prompt_id>")` 或 `load_prompt_template("<prompt_id>", variant="<name>")`
 4. 下次 LLM 调用时生效（mtime 缓存触发 reload）
 
+### 10.5 配置治理（Sprint 28）
+
+代码库的所有可调值和不可调 magic string 集中在两处：
+
+**`config/settings.py`** — 13 个 Pydantic domain class（`get_settings()` 入口）：
+- 已有 7 个：`FeatureSettings` / `SampleSettings` / `StorageSettings` / `MemorySettings` / `PromptSettings` / `PerfSettings` / `ModelEvalSettings`
+- Sprint 28 新增 6 个：
+  - `RuntimeSettings` — LLM HTTP timeout、API threadpool、intervention poll
+  - `SimulationSettings` — `max_ticks` / `max_actors` / `max_spotlight_characters` / `self_heal_attempts` / `intervention_frequency_*` / `affinity_*`
+  - `MemoryRuntimeSettings` — `short_term_limit` / `archive_*` / `top_k_*` / `importance_*` / `reflection_*`
+  - `JudgeSettings` — axis weights / `toxic_veto_threshold` / `fabricated_evidence_demote_*` / max char caps / intermediate temperature + max_tokens + retry
+  - `LLMRoutingSettings` — `default_provider` / 3 个 base URL / `user_agent` / `anthropic_version`
+  - `AppSettings` — `app_version`（取代 3 处 `"0.5.0"` 重复定义）
+- 每个字段用 `Field(default=..., validation_alias="ENV_VAR_NAME")` 暴露成 env var
+- 修改需重启生效（无热加载；test 期间通过 `monkeypatch.setenv` 改 env）
+- 完整列表见 `.env.example`（由 `python -m worldbox_writer.config.settings --emit-env-example` 生成）
+
+**`core/constants.py`** — 不可调 magic string：
+- 4 个合约版本（`DUAL_LOOP_CONTRACT_VERSION` / `DUAL_LOOP_ADAPTER_MODE` / `NARRATOR_INPUT_CONTRACT_VERSION` / `ISOLATED_ACTOR_RUNTIME_MODE`）
+- `MAIN_BRANCH_ID = "main"`（取代 22+ 处字面量）
+- 8 个 agent identity + 13 个 stage 标签 + 7 个 SSE event type + 3 个 status
+- 8 个 export artifact kind（`EXPORT_ARTIFACT_KINDS` frozenset）
+- 5 个 memory entry kind / tag
+- `APP_VERSION = "0.5.0"`
+- 这些是 wire-protocol / 合约标识，**不是**配置——由代码控制，不走 env
+
+**governance 原则**：
+- **可调（环境差异）** → Pydantic settings + env
+- **不可调（wire-protocol / 标识）** → `core/constants.py` 里的 Python 常量
+- **DDL 默认值**（如 `branch_id TEXT DEFAULT 'main'`）→ 保留 SQL 字面量，加注释指向 `MAIN_BRANCH_ID`
+- **Pydantic `Field(default=...)` 值** → 保留 Python 字面量（Pydantic 序列化限制）
+- **API 路由 path**（`/api/simulate/...`）→ 公开 HTTP 契约，**不**提取
+- **LLM env vars**（`LLM_PROVIDER` / `LLM_API_KEY` 等）→ Sprint 27 work，本期**只动**硬编码默认常量
+
 ### Profile 列表（`src/worldbox_writer/config/agent_profiles.yaml`）
 Sprint 26 后剩 22 个 profile，按 role 分组：
 - **director** (3): `director_init` / `director_intervention` / `director_title`

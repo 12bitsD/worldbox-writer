@@ -13,8 +13,17 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-DUAL_LOOP_CONTRACT_VERSION = "dual-loop-v1"
-DUAL_LOOP_ADAPTER_MODE = "legacy-compatibility-v1"
+from worldbox_writer.core.constants import (
+    DUAL_LOOP_ADAPTER_MODE,
+    DUAL_LOOP_CONTRACT_VERSION,
+    NARRATOR_INPUT_CONTRACT_VERSION,
+)
+
+__all__ = [
+    "DUAL_LOOP_CONTRACT_VERSION",
+    "DUAL_LOOP_ADAPTER_MODE",
+    "NARRATOR_INPUT_CONTRACT_VERSION",
+]
 
 
 def _string_id(prefix: str) -> str:
@@ -151,7 +160,7 @@ class SceneScript(BaseModel):
 class NarratorInput(BaseModel):
     """Scene-aware input contract consumed by the prose rendering loop."""
 
-    contract_version: str = "narrator-input-v2"
+    contract_version: str = "narrator-input-v2"  # see core.constants.NARRATOR_INPUT_CONTRACT_VERSION
     source: str = "story_node"
     scene_id: Optional[str] = None
     script_id: Optional[str] = None

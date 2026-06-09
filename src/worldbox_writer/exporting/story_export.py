@@ -7,22 +7,23 @@ from html import escape
 from io import BytesIO
 from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
+from worldbox_writer.core.constants import (
+    EXPORT_ARTIFACT_KINDS,
+    EXPORT_ARTIFACT_NOVEL_DOCX,
+    EXPORT_ARTIFACT_NOVEL_HTML,
+    EXPORT_ARTIFACT_NOVEL_MARKDOWN,
+    EXPORT_ARTIFACT_NOVEL_PDF,
+    EXPORT_ARTIFACT_NOVEL_TXT,
+    EXPORT_ARTIFACT_MANIFEST_JSON,
+    EXPORT_ARTIFACT_TIMELINE_JSON,
+    EXPORT_ARTIFACT_WORLD_SETTINGS_JSON,
+)
 from worldbox_writer.core.models import WorldState
 
 DOCX_MIME_TYPE = (
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 )
 PDF_MIME_TYPE = "application/pdf"
-EXPORT_ARTIFACT_KINDS = {
-    "novel_txt",
-    "novel_markdown",
-    "novel_html",
-    "novel_docx",
-    "novel_pdf",
-    "world_settings_json",
-    "timeline_json",
-    "manifest_json",
-}
 
 
 def build_export_bundle(

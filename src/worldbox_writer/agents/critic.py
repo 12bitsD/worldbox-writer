@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional
 
+from worldbox_writer.core import constants as K
 from worldbox_writer.core.dual_loop import ActionIntent, IntentCritique, ScenePlan
 from worldbox_writer.core.models import WorldState
 from worldbox_writer.evals.sample_collector import collect_sample
@@ -89,8 +90,8 @@ class CriticAgent:
                     "request_id": "injected-critic-call",
                     "provider": "injected",
                     "model": "injected",
-                    "role": "critic",
-                    "status": "completed",
+                    "role": K.AGENT_CRITIC,
+                    "status": K.STAGE_COMPLETED,
                 }
                 raw = response.content
             else:
@@ -101,7 +102,7 @@ class CriticAgent:
                 "request_id": None,
                 "provider": None,
                 "model": None,
-                "role": "critic",
+                "role": K.AGENT_CRITIC,
                 "status": "fallback",
                 "error": str(exc)[:200],
             }
@@ -128,7 +129,7 @@ class CriticAgent:
             },
             parsed,
             metadata={
-                "role": "critic",
+                "role": K.AGENT_CRITIC,
                 "model": "" if model_value is None else str(model_value),
                 "llm_metadata": llm_metadata,
             },

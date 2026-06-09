@@ -30,6 +30,7 @@ from worldbox_writer.api.session_store import (
     restore_world_at_node,
 )
 from worldbox_writer.api.state import _executor, branching_enabled
+from worldbox_writer.core.constants import MAIN_BRANCH_ID
 from worldbox_writer.core.pacing import (
     PACING_DISPLAY_VALUES,
     is_valid_pacing,
@@ -98,7 +99,7 @@ class BranchService:
                 status_code=404, detail=f"历史节点 {request.source_node_id} 不存在"
             )
 
-        source_branch_id = str(source_node.get("branch_id", "main"))
+        source_branch_id = str(source_node.get("branch_id", MAIN_BRANCH_ID))
         try:
             restored_world = restore_world_at_node(
                 sim_id, request.source_node_id, source_branch_id

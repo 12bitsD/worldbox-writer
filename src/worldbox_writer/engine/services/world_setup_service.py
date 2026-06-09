@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional, Protocol
 
+from worldbox_writer.config.settings import get_settings
 from worldbox_writer.core.dual_loop import ScenePlan
 from worldbox_writer.core.models import WorldState
 
@@ -25,7 +26,7 @@ class ScenePlanner(Protocol):
         world: WorldState,
         *,
         memory_context: str = "",
-        max_spotlight_characters: int = 3,
+        max_spotlight_characters: int | None = None,
     ) -> ScenePlan: ...
 
 
@@ -101,7 +102,12 @@ def plan_next_scene(
 ) -> WorldSetupResult:
     query = scene_planning_query(world)
     memory_context = memory.get_context_for_agent(query=query, max_entries=6)
-    scene_plan = director_factory().plan_scene(world, memory_context=memory_context)
+    max_spotlight_characters = get_settings().simulation.max_spotlight_characters
+    scene_plan = director_factory().plan_scene(
+        world,
+        memory_context=memory_context,
+        max_spotlight_characters=max_spotlight_characters,
+    )
     return WorldSetupResult(
         state_update={"world": world, "scene_plan": scene_plan},
         telemetry_events=[

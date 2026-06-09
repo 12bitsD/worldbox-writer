@@ -22,11 +22,13 @@ import httpx
 from openai import OpenAI
 
 from worldbox_writer.config.profiles import load_sampling_profile
+from worldbox_writer.config.settings import get_settings
 
-MIMO_BASE_URL = "https://token-plan-cn.xiaomimimo.com/v1"
-KIMI_BASE_URL = "https://api.kimi.com/coding/"
-OLLAMA_BASE_URL = "http://localhost:11434/v1"
-DEFAULT_LLM_PROVIDER = "kimi"
+_llm_routing = get_settings().llm_routing
+MIMO_BASE_URL = _llm_routing.mimo_base_url
+KIMI_BASE_URL = _llm_routing.kimi_base_url
+OLLAMA_BASE_URL = _llm_routing.ollama_base_url
+DEFAULT_LLM_PROVIDER = _llm_routing.default_provider
 
 LOGIC_ROLES = {
     "director",
@@ -544,9 +546,9 @@ def _chat_completion_anthropic_messages(
 
     headers = {
         "x-api-key": route.api_key,
-        "anthropic-version": "2023-06-01",
+        "anthropic-version": get_settings().llm_routing.anthropic_version,
         "content-type": "application/json",
-        "user-agent": "worldbox-writer/0.5.0",
+        "user-agent": f"worldbox-writer/{get_settings().app.app_version}",
     }
     endpoint = _anthropic_messages_endpoint(route.base_url)
 

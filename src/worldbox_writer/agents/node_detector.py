@@ -14,6 +14,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, List, Optional
 
+from worldbox_writer.core import constants as K
+from worldbox_writer.config.settings import get_settings
 from worldbox_writer.core.models import NodeType, StoryNode, WorldState
 from worldbox_writer.prompting.registry import load_prompt_template
 from worldbox_writer.utils.json_parsing import parse_json_object
@@ -40,7 +42,7 @@ class InterventionSignal:
 # Constants
 # ---------------------------------------------------------------------------
 
-PERIODIC_TICK_INTERVAL = 5
+PERIODIC_TICK_INTERVAL = get_settings().simulation.periodic_tick_interval
 
 _HIGH_STAKES_KEYWORDS_ZH = {
     "死亡",
@@ -171,8 +173,8 @@ class NodeDetector:
                 "request_id": "injected-node-detector-call",
                 "provider": "injected",
                 "model": "injected",
-                "role": "node_detector",
-                "status": "completed",
+                "role": K.AGENT_NODE_DETECTOR,
+                "status": K.STAGE_COMPLETED,
             }
             return response.content
         content = chat_completion_with_profile(profile_id, messages)

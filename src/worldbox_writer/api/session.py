@@ -19,6 +19,7 @@ from worldbox_writer.api.core.serialization import (
     serialize_world,
 )
 from worldbox_writer.api.state import branching_enabled
+from worldbox_writer.core.constants import MAIN_BRANCH_ID
 from worldbox_writer.core.models import TelemetryEvent, WorldState
 from worldbox_writer.engine.dual_loop import dual_loop_enabled
 
@@ -61,7 +62,7 @@ def build_simulation_payload(
         }
 
     world.branches = normalize_branch_registry(world.branches)
-    selected_branch_id = branch_id or world.active_branch_id or "main"
+    selected_branch_id = branch_id or world.active_branch_id or MAIN_BRANCH_ID
     world.active_branch_id = selected_branch_id
     response_nodes = merge_rendered_nodes_from_world(world, nodes_rendered)
 

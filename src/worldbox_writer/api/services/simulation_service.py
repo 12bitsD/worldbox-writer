@@ -28,6 +28,7 @@ from worldbox_writer.api.session_store import (
     restore_world_at_node,
 )
 from worldbox_writer.api.state import _executor, _sessions
+from worldbox_writer.core import constants as K
 from worldbox_writer.core.models import (
     StoryNode,
     TelemetryEvent,
@@ -81,7 +82,7 @@ def append_telemetry_event(
     active_branch_id = (
         session.world.active_branch_id
         if session.world and session.world.active_branch_id
-        else "main"
+        else K.MAIN_BRANCH_ID
     )
     branch_meta = (
         session.world.branches.get(active_branch_id, {})
@@ -121,7 +122,7 @@ def append_telemetry_event(
     session.telemetry_events.append(telemetry)
     session.last_event_id = telemetry.event_id
     queue_event(
-        session, {"type": "telemetry", "data": telemetry.model_dump(mode="json")}
+        session, {"type": K.SSE_EVENT_TELEMETRY, "data": telemetry.model_dump(mode="json")}
     )
     persist_session(session)
     return telemetry
@@ -267,7 +268,7 @@ class SimulationService:
             session.status = "running"
             persist_session(session)
             queue_event(
-                session, {"type": "status", "status": session.status, "error": None}
+                session, {"type": K.SSE_EVENT_STATUS, "status": session.status, "error": None}
             )
 
             def on_node_rendered(node: StoryNode, world: WorldState) -> None:
@@ -277,7 +278,7 @@ class SimulationService:
                 queue_event(
                     session,
                     {
-                        "type": "node",
+                        "type": K.SSE_EVENT_NODE,
                         "data": node_dict,
                         "world": serialize_world(world),
                     },
@@ -291,7 +292,7 @@ class SimulationService:
                 queue_event(
                     session,
                     {
-                        "type": "intervention",
+                        "type": K.SSE_EVENT_INTERVENTION,
                         "context": context,
                         "status": session.status,
                     },
@@ -308,7 +309,7 @@ class SimulationService:
                 persist_session(session)
                 queue_event(
                     session,
-                    {"type": "status", "status": session.status, "error": None},
+                    {"type": K.SSE_EVENT_STATUS, "status": session.status, "error": None},
                 )
                 return result
 
@@ -316,7 +317,7 @@ class SimulationService:
                 queue_event(
                     session,
                     {
-                        "type": "token",
+                        "type": K.SSE_EVENT_TOKEN,
                         "content": token,
                         "node_id": session.active_stream_node_id,
                     },
@@ -334,7 +335,7 @@ class SimulationService:
                 queue_event(
                     session,
                     {
-                        "type": "narrator_start",
+                        "type": K.SSE_EVENT_NARRATOR_START,
                         "node": {
                             "id": node_id,
                             "title": title,
@@ -351,7 +352,7 @@ class SimulationService:
                 queue_event(
                     session,
                     {
-                        "type": "narrator_end",
+                        "type": K.SSE_EVENT_NARRATOR_END,
                         "node_id": session.active_stream_node_id,
                     },
                 )
@@ -378,8 +379,8 @@ class SimulationService:
             on_telemetry(
                 {
                     "tick": final_world.tick,
-                    "agent": "simulation",
-                    "stage": "completed",
+                    "agent": K.AGENT_SIMULATION,
+                    "stage": K.STAGE_COMPLETED,
                     "level": "info",
                     "span_kind": "system",
                     "message": "推演已完成",
@@ -388,7 +389,7 @@ class SimulationService:
             )
             queue_event(
                 session,
-                {"type": "status", "status": session.status, "error": None},
+                {"type": K.SSE_EVENT_STATUS, "status": session.status, "error": None},
             )
             persist_session(session)
 
@@ -399,7 +400,7 @@ class SimulationService:
                 session,
                 {
                     "tick": session.world.tick if session.world else 0,
-                    "agent": "simulation",
+                    "agent": K.AGENT_SIMULATION,
                     "stage": "failed",
                     "level": "error",
                     "span_kind": "system",
@@ -410,7 +411,7 @@ class SimulationService:
             queue_event(
                 session,
                 {
-                    "type": "status",
+                    "type": K.SSE_EVENT_STATUS,
                     "status": session.status,
                     "error": session.error,
                 },

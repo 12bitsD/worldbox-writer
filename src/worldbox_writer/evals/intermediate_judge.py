@@ -18,13 +18,13 @@ from dataclasses import dataclass
 from typing import Any, Mapping, TypedDict
 
 from worldbox_writer.evals.llm_judge import (
-    DEFAULT_JUDGE_MODEL,
     _evidence_in_text,
     _resolve_judge_model,
     _string_field,
     parse_judge_response,
 )
 from worldbox_writer.utils.llm import chat_completion_with_profile
+from worldbox_writer.config.settings import get_settings
 
 INTERMEDIATE_SCHEMA_VERSION = "intermediate-judge-v0.1"
 
@@ -260,7 +260,7 @@ def _judge_one_dimension(
     error: str | None = None
     retry_after_parse_error = False
     parsed: dict[str, Any] = {}
-    for attempt in range(2):
+    for attempt in range(get_settings().judge.intermediate_retry_count):
         user_content = (
             "请评测以下中间节点样本。input_context 是被裁判节点看到的上下文，"
             "output 是该节点产物：\n\n"
@@ -309,10 +309,10 @@ def _judge_one_dimension(
     if isinstance(raw_score, (int, float)) and not isinstance(raw_score, bool):
         score = round(min(10.0, max(0.0, float(raw_score))), 2)
 
-    evidence_quote = _string_field(parsed, "evidence_quote", max_length=240)
-    reasoning = _string_field(parsed, "reasoning", max_length=240)
+    evidence_quote = _string_field(parsed, "evidence_quote", max_length=get_settings().judge.max_continuity_chars)
+    reasoning = _string_field(parsed, "reasoning", max_length=get_settings().judge.max_continuity_chars)
     if not reasoning:
-        reasoning = _string_field(parsed, "reason", max_length=240)
+        reasoning = _string_field(parsed, "reason", max_length=get_settings().judge.max_continuity_chars)
     coercions: list[str] = []
     if retry_after_parse_error and parse_status == "ok":
         coercions.append("judge_retry_after_parse_error")
@@ -344,8 +344,8 @@ def judge_node_output(
     sample_id: str | None = None,
     judge_model: str | None = None,
     runtime_model: str = "",
-    temperature: float = 0.2,
-    max_tokens: int = 320,
+    temperature: float = get_settings().judge.intermediate_temperature,
+    max_tokens: int = get_settings().judge.intermediate_max_tokens,
 ) -> NodeJudgement:
     """Score one intermediate node output with node-specific judge dimensions."""
     started = _time.time()
@@ -416,7 +416,7 @@ def judge_node_output(
             for record in records
             if record["evidence_quote"].strip()
         ],
-        "judge_model": selected_model or DEFAULT_JUDGE_MODEL,
+        "judge_model": selected_model or get_settings().model_eval.judge_model,
         "runtime_model": runtime_model,
         "errors": errors,
         "elapsed_ms": elapsed_ms,

@@ -25,7 +25,7 @@ def _percentile(values: list[float], p: float) -> float:
 
 def _fake_run_simulation(
     premise: str,
-    max_ticks: int = 3,
+    max_ticks: int | None = None,
     sim_id: str = "",
     trace_id: str = "",
     initial_world: WorldState | None = None,
