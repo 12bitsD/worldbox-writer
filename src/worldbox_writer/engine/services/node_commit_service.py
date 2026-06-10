@@ -12,6 +12,7 @@ from worldbox_writer.core.dual_loop import (
     ScenePlan,
     SceneScript,
 )
+from worldbox_writer.core import metadata_keys as META
 from worldbox_writer.core.models import NodeType, StoryNode, WorldState
 from worldbox_writer.engine.services.relationship_service import (
     apply_relationship_updates,
@@ -133,11 +134,11 @@ def commit_story_node(
     if scene_plan is not None:
         scene_plan_payload = scene_plan.model_dump(mode="json")
         new_node.metadata["scene_plan"] = scene_plan_payload
-        world.metadata["last_committed_scene_plan"] = scene_plan_payload
+        world.metadata[META.META_LAST_COMMITTED_SCENE_PLAN] = scene_plan_payload
     if scene_script is not None:
         scene_script_payload = scene_script.model_dump(mode="json")
         new_node.metadata["scene_script"] = scene_script_payload
-        world.metadata["last_committed_scene_script"] = scene_script_payload
+        world.metadata[META.META_LAST_COMMITTED_SCENE_SCRIPT] = scene_script_payload
 
     action_intent_items = list(action_intents)
     if action_intent_items:

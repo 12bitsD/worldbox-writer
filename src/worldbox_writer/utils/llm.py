@@ -635,7 +635,7 @@ def _chat_completion_anthropic_messages(
         # Mid-stream reconnect would duplicate tokens already emitted to
         # the consumer; the streaming client must surface the first error
         # verbatim. The non-streaming path below is the one that retries.
-        with httpx.Client(timeout=120.0) as client:
+        with httpx.Client(timeout=get_settings().runtime.llm_call_timeout_s) as client:
             with client.stream(
                 "POST", endpoint, headers=headers, json=payload
             ) as response:
@@ -665,7 +665,7 @@ def _chat_completion_anthropic_messages(
     # exception, which is then classified in the except below.
     for attempt in _retrying_decorator():
         with attempt:
-            with httpx.Client(timeout=120.0) as client:
+            with httpx.Client(timeout=get_settings().runtime.llm_call_timeout_s) as client:
                 response = client.post(endpoint, headers=headers, json=payload)
                 response.raise_for_status()
                 return _extract_anthropic_text(response.json())

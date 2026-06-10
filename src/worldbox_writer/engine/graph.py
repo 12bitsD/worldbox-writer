@@ -89,7 +89,7 @@ from worldbox_writer.utils.llm import (
 # (the canonical location) rather than re-creating the indirection.
 # ---------------------------------------------------------------------------
 
-_GATE_KEEPER_SELF_HEAL_ATTEMPTS = _boundary_validation.DEFAULT_SELF_HEAL_ATTEMPTS
+_GATE_KEEPER_SELF_HEAL_ATTEMPTS = get_settings().simulation.default_self_heal_attempts
 NarrationService = _narration.NarrationService
 _load_scene_script_for_node = _narration.load_scene_script_for_node
 _select_character_ids_for_event = _relationships.select_character_ids_for_event

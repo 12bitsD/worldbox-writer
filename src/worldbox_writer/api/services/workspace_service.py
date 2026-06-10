@@ -23,6 +23,7 @@ from worldbox_writer.api.session_store import (
     persist_session,
 )
 from worldbox_writer.api.state import _WORKSPACE_MUTABLE_STATUSES
+from worldbox_writer.config.settings import get_settings
 from worldbox_writer.core.models import (
     Character,
     CharacterStatus,
@@ -273,7 +274,8 @@ class WorkspaceService:
                 ),
             )
 
-        affinity = max(-100, min(100, request.affinity))
+        sim = get_settings().simulation
+        affinity = max(sim.affinity_min, min(sim.affinity_max, request.affinity))
         source.update_relationship(
             str(target.id),
             label.value,

@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict, Optional
 import pytest
 
 from worldbox_writer.core.dual_loop import SceneScript
+from worldbox_writer.core import metadata_keys as META
 from worldbox_writer.core.models import Character, StoryNode, WorldState
 from worldbox_writer.engine.services.narration_service import NarrationService
 from worldbox_writer.memory.memory_manager import MemoryManager
@@ -159,8 +160,8 @@ def test_narration_service_consumes_scene_script_input_v2() -> None:
     assert "阿璃按下桥闸" in prompt
     assert "intent-rejected" in prompt
     assert rendered.rendered_text == "阿璃按下桥闸，潮雾吞没了追兵的火把。"
-    assert rendered.metadata["narrator_input"]["source"] == "scene_script"
-    assert rendered.metadata["narrator_input"]["scene_id"] == "scene-render"
+    assert rendered.metadata[META.META_NARRATOR_INPUT]["source"] == "scene_script"
+    assert rendered.metadata[META.META_NARRATOR_INPUT]["scene_id"] == "scene-render"
 
 
 def test_narration_service_empty_completion_raises() -> None:
@@ -339,3 +340,76 @@ def test_narration_service_keeps_render_when_ai_prose_judge_fails() -> None:
     assert check["initial_hit"] is False
     assert check["rerendered"] is False
     assert check["initial"]["error"] == "RuntimeError: judge unavailable"
+
+
+def test_narration_uses_prompt_budget_settings(monkeypatch) -> None:
+    """Sprint 30 Wave 4 Task 4.5: narrator budgets must read from settings.
+
+    Driving all three Sprint 30 narrator env vars to ``1`` and feeding the
+    service more characters / locations / memory entries than the budget
+    proves that ``get_settings().prompt_budget`` controls the slicing — not
+    the previously-hardcoded literals (3, 5, 2).
+    """
+    monkeypatch.setenv("PROMPT_NARRATOR_CHAR_LIMIT", "1")
+    monkeypatch.setenv("PROMPT_NARRATOR_TOP_K", "1")
+    monkeypatch.setenv("PROMPT_NARRATOR_LOCATION_LIMIT", "1")
+
+    captured: Dict[str, Any] = {}
+
+    def complete(
+        _profile_id: str,
+        messages: CompletionMessages,
+        *,
+        stream: bool = False,
+        on_token: Optional[Callable[[str], None]] = None,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        top_p: Optional[float] = None,
+    ) -> str:
+        captured["messages"] = messages
+        return (
+            '{"prose": "阿璃扣住铁链，桥闸落下。", "style_notes": "clean"}'
+        )
+
+    world = WorldState(title="测试世界", premise="断桥守卫战")
+    char_names = ["阿璃", "白夜", "老更夫", "桥吏", "雾客"]
+    for name in char_names:
+        world.add_character(Character(name=name, personality="冷静", goals=["守卫"]))
+    node = StoryNode(
+        title="断桥落闸",
+        description="阿璃按下断桥闸机。",
+        character_ids=[str(c.id) for c in world.characters.values()],
+    )
+    world.add_node(node)
+    world.current_node_id = str(node.id)
+    world.tick = 1
+    world.locations = [
+        {"name": "断桥"},
+        {"name": "雾岸"},
+        {"name": "王城"},
+        {"name": "旧码头"},
+        {"name": "潮洞"},
+    ]
+
+    memory = MemoryManager()
+
+    def tracking_get_context(*args: Any, **kwargs: Any) -> str:
+        captured["memory_kwargs"] = kwargs
+        return ""
+
+    memory.get_context_for_agent = tracking_get_context  # type: ignore[method-assign]
+    state = _state(world, memory=memory)
+
+    result = _service(complete).render_current_node(state)
+
+    rendered = result["world"].get_node(str(node.id))
+    assert rendered is not None
+    narrator_input = rendered.metadata[META.META_NARRATOR_INPUT]
+
+    # narrator_char_limit=1 caps chars_info at one entry
+    assert len(narrator_input["character_summaries"]) == 1
+    # narrator_location_limit=1 caps locations_text at one location
+    assert narrator_input["location_context"] == "断桥"
+    # top_k_narrator=1 propagates into memory.get_context_for_agent
+    assert captured["memory_kwargs"].get("max_entries") == 1

@@ -23,6 +23,7 @@ from worldbox_writer.core.models import (
     TelemetryLevel,
     TelemetrySpanKind,
 )
+from worldbox_writer.core import metadata_keys as META
 from worldbox_writer.storage.db import load_session as db_load_session, save_session as db_save_session
 from worldbox_writer.api.services.branch_service import BranchService, RunSimulationSync
 from worldbox_writer.api.services.simulation_service import (
@@ -50,7 +51,7 @@ def _rendered_node_payload(
     scene_script = node.metadata.get("scene_script")
     if not isinstance(scene_script, dict):
         scene_script = {}
-    narrator_input = node.metadata.get("narrator_input")
+    narrator_input = node.metadata.get(META.META_NARRATOR_INPUT)
     if not isinstance(narrator_input, dict):
         narrator_input = {}
 
@@ -670,7 +671,7 @@ class TestCreativeWorkspace:
             summary="GM 结算后的场景摘要。",
         )
         node.metadata["scene_script"] = scene_script.model_dump(mode="json")
-        node.metadata["narrator_input"] = {"source": "scene_script"}
+        node.metadata[META.META_NARRATOR_INPUT] = {"source": "scene_script"}
         session.nodes_rendered = [
             serialize_node(node, session.world),
         ]
@@ -712,7 +713,7 @@ class TestCreativeWorkspace:
             summary="GM 结算后的对比摘要。",
         )
         node.metadata["scene_script"] = scene_script.model_dump(mode="json")
-        node.metadata["narrator_input"] = {"source": "scene_script"}
+        node.metadata[META.META_NARRATOR_INPUT] = {"source": "scene_script"}
         node.metadata["intent_critiques"] = [
             {"intent_id": "intent-1", "accepted": False}
         ]

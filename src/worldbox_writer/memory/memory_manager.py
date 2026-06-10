@@ -24,6 +24,7 @@ from worldbox_writer.core.constants import (
     SUMMARY_ARCHIVE_TAG,
     SUMMARY_ENTRY_KIND,
 )
+from worldbox_writer.core import metadata_keys as META
 from worldbox_writer.core.models import Character, StoryNode, WorldState
 from worldbox_writer.prompting.registry import load_prompt_template
 from worldbox_writer.storage.db import (
@@ -37,8 +38,10 @@ SIMPLE_VECTOR_BACKEND = "simple"
 AUTO_VECTOR_BACKEND = "auto"
 DEFAULT_VECTOR_BACKEND = AUTO_VECTOR_BACKEND
 CHROMA_VECTOR_BACKEND = "chromadb"
-DEFAULT_CHROMA_COLLECTION = "worldbox-memory"
-DEFAULT_CHROMA_DIMENSIONS = 256
+
+
+def _default_chroma_dimensions() -> int:
+    return get_settings().memory.vector_dimensions
 
 
 # ---------------------------------------------------------------------------
@@ -349,7 +352,7 @@ class _HashedEmbeddingFunction:
     @staticmethod
     def build_from_config(config: Dict[str, Any]) -> "_HashedEmbeddingFunction":
         return _HashedEmbeddingFunction(
-            dimensions=int(config.get("dimensions", DEFAULT_CHROMA_DIMENSIONS))
+            dimensions=int(config.get("dimensions") or _default_chroma_dimensions())
         )
 
     def default_space(self) -> str:
@@ -665,13 +668,13 @@ class MemoryManager:
             note = (f"第{world.tick}步反思：{getattr(beat, 'summary', '')}").strip()
             if not note:
                 continue
-            reflection_notes = character.metadata.get("reflection_notes", [])
+            reflection_notes = character.metadata.get(META.META_REFLECTION_NOTES, [])
             if isinstance(reflection_notes, str):
                 reflection_notes = [reflection_notes]
             if not isinstance(reflection_notes, list):
                 reflection_notes = []
             reflection_notes.append(note)
-            character.metadata["reflection_notes"] = [
+            character.metadata[META.META_REFLECTION_NOTES] = [
                 str(item) for item in reflection_notes[-8:] if str(item).strip()
             ]
             source_intent_id = getattr(beat, "source_intent_id", None)

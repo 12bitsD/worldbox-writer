@@ -7,6 +7,7 @@ from typing import Any, Callable, Optional, Protocol
 
 from worldbox_writer.config.settings import get_settings
 from worldbox_writer.core.dual_loop import ScenePlan
+from worldbox_writer.core import metadata_keys as META
 from worldbox_writer.core.models import WorldState
 
 
@@ -139,7 +140,7 @@ def enrich_world_settings(
 
     agent = world_builder_factory()
     enriched_world = agent.expand_world(world)
-    enriched_world.metadata["world_builder_completed"] = True
+    enriched_world.metadata[META.META_WORLD_BUILDER_COMPLETED] = True
     return WorldSetupResult(
         state_update={"world": enriched_world, "world_built": True},
         telemetry_events=[

@@ -318,9 +318,10 @@ def _judge_one_dimension(
         coercions.append("judge_retry_after_parse_error")
     if evidence_quote.strip() and not _evidence_in_text(source_text, evidence_quote):
         coercions.append("evidence_quote_not_in_source")
-        if score is not None and score >= 5:
-            score = 4.0
-            coercions.append("score_demoted_due_to_fabricated_evidence")
+        judge = get_settings().judge
+        if score is not None and score >= judge.fabricated_evidence_demote_min:
+          score = judge.fabricated_evidence_demote_to
+          coercions.append("score_demoted_due_to_fabricated_evidence")
 
     elapsed_ms = int((_time.time() - started) * 1000)
     return {

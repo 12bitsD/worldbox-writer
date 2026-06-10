@@ -7,11 +7,12 @@ flags, storage paths, memory, prompt assets, perf gates, and model-eval knobs.
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
-from typing import Iterable, TypeVar
+from typing import Annotated, Iterable, List, TypeVar
 
-from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 DEFAULT_JUDGE_MODEL = "gpt-5.5"
 T = TypeVar("T", bound=BaseSettings)
@@ -339,6 +340,88 @@ class JudgeSettings(_DomainSettings):
         return value
 
 
+class PromptBudgetSettings(_DomainSettings):
+    """Per-prompt token / character budgets for actor and narrator prompts.
+
+    All defaults match the literals that the services used prior to Sprint 30.
+    Operators tune these for cost/quality tradeoffs without redeploying code.
+    """
+
+    # -- Actor prompts (engine/services/actor_event_service.py) ----------
+    actor_prompt_char_limit: int = Field(
+        4, validation_alias="PROMPT_ACTOR_CHAR_LIMIT"
+    )
+    actor_prompt_goal_limit: int = Field(
+        2, validation_alias="PROMPT_ACTOR_GOAL_LIMIT"
+    )
+    actor_prompt_constraint_limit: int = Field(
+        5, validation_alias="PROMPT_ACTOR_CONSTRAINT_LIMIT"
+    )
+    actor_prompt_faction_location_limit: int = Field(
+        3, validation_alias="PROMPT_ACTOR_FACTION_LOC_LIMIT"
+    )
+    actor_prompt_spotlight_fallback: int = Field(
+        3, validation_alias="PROMPT_ACTOR_SPOTLIGHT_FALLBACK"
+    )
+
+    # -- Actor memory recall (engine/services/actor_prompt_context_service.py) --
+    working_memory_window: int = Field(
+        3, validation_alias="PROMPT_ACTOR_WORKING_MEMORY_WINDOW"
+    )
+    top_k_episodic: int = Field(
+        6, validation_alias="PROMPT_ACTOR_TOP_K_EPISODIC"
+    )
+    top_k_reflective_actor: int = Field(
+        4, validation_alias="PROMPT_ACTOR_TOP_K_REFLECTIVE"
+    )
+    reflective_dedupe_window: int = Field(
+        6, validation_alias="PROMPT_ACTOR_REFLECTIVE_DEDUPE_WINDOW"
+    )
+
+    # -- Isolated actor fallback (engine/services/isolated_actor_service.py) --
+    actor_fallback_confidence: float = Field(
+        0.35, validation_alias="PROMPT_ACTOR_FALLBACK_CONFIDENCE"
+    )
+
+    # -- Narrator prompts (engine/services/narration_service.py) ----------
+    top_k_narrator: int = Field(
+        5, validation_alias="PROMPT_NARRATOR_TOP_K"
+    )
+    narrator_char_limit: int = Field(
+        3, validation_alias="PROMPT_NARRATOR_CHAR_LIMIT"
+    )
+    narrator_location_limit: int = Field(
+        2, validation_alias="PROMPT_NARRATOR_LOCATION_LIMIT"
+    )
+
+    @field_validator(
+        "actor_prompt_char_limit",
+        "actor_prompt_goal_limit",
+        "actor_prompt_constraint_limit",
+        "actor_prompt_faction_location_limit",
+        "actor_prompt_spotlight_fallback",
+        "working_memory_window",
+        "top_k_episodic",
+        "top_k_reflective_actor",
+        "reflective_dedupe_window",
+        "top_k_narrator",
+        "narrator_char_limit",
+        "narrator_location_limit",
+    )
+    @classmethod
+    def _positive_prompt_budget(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("prompt budget int settings must be > 0")
+        return value
+
+    @field_validator("actor_fallback_confidence")
+    @classmethod
+    def _confidence_in_unit(cls, value: float) -> float:
+        if not 0.0 <= value <= 1.0:
+            raise ValueError("actor_fallback_confidence must be in [0, 1]")
+        return value
+
+
 class LLMRoutingSettings(_DomainSettings):
     """Provider/base-URL routing defaults (the env vars stay in ``utils.llm``)."""
 
@@ -352,8 +435,8 @@ class LLMRoutingSettings(_DomainSettings):
     ollama_base_url: str = Field(
         "http://localhost:11434/v1", validation_alias="LLM_OLLAMA_BASE_URL"
     )
-    user_agent: str = Field(
-        "worldbox-writer/0.5.0", validation_alias="LLM_USER_AGENT"
+    user_agent: str | None = Field(
+        None, validation_alias="LLM_USER_AGENT"
     )
     anthropic_version: str = Field(
         "2023-06-01", validation_alias="LLM_ANTHROPIC_VERSION"
@@ -363,9 +446,49 @@ class LLMRoutingSettings(_DomainSettings):
         "default_provider", "user_agent", "anthropic_version",
     )
     @classmethod
-    def _non_empty_string(cls, value: str) -> str:
+    def _non_empty_string(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
         if not value.strip():
             raise ValueError("LLM routing string settings must be non-empty")
+        return value
+
+    @model_validator(mode="after")
+    def _derive_user_agent(self) -> "LLMRoutingSettings":
+        if self.user_agent is None:
+            # Read APP_VERSION at call time (not import time) so tests that
+            # monkeypatch the env between get_settings() calls see the latest
+            # value. A late get_settings() import would recurse since
+            # LLMRoutingSettings is constructed inside Settings().
+            version = os.environ.get("APP_VERSION", "0.5.0")
+            self.user_agent = f"worldbox-writer/{version}"
+        return self
+
+
+class ApiSettings(_DomainSettings):
+    """HTTP API surface settings (CORS lockdown, etc.)."""
+
+    cors_allow_origins: Annotated[List[str], NoDecode] = Field(
+        default_factory=lambda: ["*"],
+        validation_alias="API_CORS_ALLOW_ORIGINS",
+    )
+    cors_allow_credentials: bool = Field(
+        True, validation_alias="API_CORS_ALLOW_CREDENTIALS"
+    )
+    cors_allow_methods: Annotated[List[str], NoDecode] = Field(
+        default_factory=lambda: ["*"],
+        validation_alias="API_CORS_ALLOW_METHODS",
+    )
+    cors_allow_headers: Annotated[List[str], NoDecode] = Field(
+        default_factory=lambda: ["*"],
+        validation_alias="API_CORS_ALLOW_HEADERS",
+    )
+
+    @field_validator("cors_allow_origins", "cors_allow_methods", "cors_allow_headers", mode="before")
+    @classmethod
+    def _split_csv(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
         return value
 
 
@@ -396,7 +519,9 @@ class Settings:
         self.simulation = _load_domain_settings(SimulationSettings)
         self.memory_runtime = _load_domain_settings(MemoryRuntimeSettings)
         self.judge = _load_domain_settings(JudgeSettings)
+        self.prompt_budget = _load_domain_settings(PromptBudgetSettings)
         self.llm_routing = _load_domain_settings(LLMRoutingSettings)
+        self.api = _load_domain_settings(ApiSettings)
         self.app = _load_domain_settings(AppSettings)
 
 
@@ -493,12 +618,29 @@ ENV_EXAMPLE_ROWS: tuple[tuple[str, str], ...] = (
     ("JUDGE_INTERMEDIATE_TEMPERATURE", "0.2"),
     ("JUDGE_INTERMEDIATE_MAX_TOKENS", "320"),
     ("JUDGE_INTERMEDIATE_RETRY_COUNT", "2"),
+    ("PROMPT_ACTOR_CHAR_LIMIT", "4"),
+    ("PROMPT_ACTOR_GOAL_LIMIT", "2"),
+    ("PROMPT_ACTOR_CONSTRAINT_LIMIT", "5"),
+    ("PROMPT_ACTOR_FACTION_LOC_LIMIT", "3"),
+    ("PROMPT_ACTOR_SPOTLIGHT_FALLBACK", "3"),
+    ("PROMPT_ACTOR_WORKING_MEMORY_WINDOW", "3"),
+    ("PROMPT_ACTOR_TOP_K_EPISODIC", "6"),
+    ("PROMPT_ACTOR_TOP_K_REFLECTIVE", "4"),
+    ("PROMPT_ACTOR_REFLECTIVE_DEDUPE_WINDOW", "6"),
+    ("PROMPT_ACTOR_FALLBACK_CONFIDENCE", "0.35"),
+    ("PROMPT_NARRATOR_TOP_K", "5"),
+    ("PROMPT_NARRATOR_CHAR_LIMIT", "3"),
+    ("PROMPT_NARRATOR_LOCATION_LIMIT", "2"),
     ("LLM_DEFAULT_PROVIDER", "kimi"),
     ("LLM_MIMO_BASE_URL", "https://token-plan-cn.xiaomimimo.com/v1"),
     ("LLM_KIMI_BASE_URL", "https://api.kimi.com/coding/"),
     ("LLM_OLLAMA_BASE_URL", "http://localhost:11434/v1"),
-    ("LLM_USER_AGENT", "worldbox-writer/0.5.0"),
+    ("LLM_USER_AGENT", ""),
     ("LLM_ANTHROPIC_VERSION", "2023-06-01"),
+    ("API_CORS_ALLOW_ORIGINS", "*"),
+    ("API_CORS_ALLOW_CREDENTIALS", "1"),
+    ("API_CORS_ALLOW_METHODS", "*"),
+    ("API_CORS_ALLOW_HEADERS", "*"),
     ("APP_VERSION", "0.5.0"),
 )
 

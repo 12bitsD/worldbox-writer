@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional, Protocol
 
+from worldbox_writer.config.settings import get_settings
 from worldbox_writer.core import constants as K
+from worldbox_writer.core import metadata_keys as META
 from worldbox_writer.core.dual_loop import NarratorInput, SceneScript
 from worldbox_writer.core.models import StoryNode
 from worldbox_writer.engine.services.telemetry_service import emit_telemetry
@@ -265,17 +267,19 @@ class NarrationService:
         )
 
         chars_info = []
-        for cid in current_node.character_ids[:3]:
+        for cid in current_node.character_ids[: get_settings().prompt_budget.narrator_char_limit]:
             char = world.get_character(cid)
             if char:
                 chars_info.append(f"{char.name}（{char.personality}）")
 
         narrative_context = memory.get_context_for_agent(
-            query=narrative_query, max_entries=5
+            query=narrative_query, max_entries=get_settings().prompt_budget.top_k_narrator
         )
 
         locations_text = (
-            "、".join([loc.get("name", "") for loc in world.locations[:2]])
+            "、".join(
+                [loc.get("name", "") for loc in world.locations[: get_settings().prompt_budget.narrator_location_limit]]
+            )
             if world.locations
             else ""
         )
@@ -287,7 +291,7 @@ class NarrationService:
             chars_info=chars_info,
             locations_text=locations_text,
         )
-        current_node.metadata["narrator_input"] = narrator_input.model_dump(
+        current_node.metadata[META.META_NARRATOR_INPUT] = narrator_input.model_dump(
             mode="json"
         )
 
@@ -362,7 +366,7 @@ class NarrationService:
         if on_node_rendered_cb:
             on_node_rendered_cb(current_node, world)
 
-        for cid in current_node.character_ids[:3]:
+        for cid in current_node.character_ids[: get_settings().prompt_budget.narrator_char_limit]:
             char = world.get_character(cid)
             if char:
                 char.add_memory(narrator_input.summary[:80])

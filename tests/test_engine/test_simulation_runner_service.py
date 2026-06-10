@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from worldbox_writer.core.models import WorldState
+from worldbox_writer.core import metadata_keys as META
 from worldbox_writer.engine.services.simulation_runner_service import (
     initial_simulation_state,
     run_simulation_service,
@@ -60,7 +61,7 @@ def test_streaming_callbacks_payload_omits_missing_callbacks() -> None:
 
 def test_initial_simulation_state_resolves_pending_intervention_on_copy() -> None:
     initial_world = WorldState(title="测试世界", premise="测试前提")
-    initial_world.metadata["world_builder_completed"] = True
+    initial_world.metadata[META.META_WORLD_BUILDER_COMPLETED] = True
     initial_world.request_intervention("旧分歧")
     initial_memory = FalseyMemory()
     responses: list[str] = []
@@ -124,4 +125,4 @@ def test_run_simulation_service_resumes_after_intervention_and_enriches_world() 
     assert final_world.title == "《断桥试探》"
     assert final_world.pending_intervention is False
     assert final_world.locations == [{"name": "断桥"}]
-    assert final_world.metadata["world_builder_completed"] is True
+    assert final_world.metadata[META.META_WORLD_BUILDER_COMPLETED] is True

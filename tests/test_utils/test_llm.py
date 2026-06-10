@@ -1,6 +1,8 @@
 import json
 from types import SimpleNamespace
 
+import httpx
+
 from worldbox_writer.utils import llm as llm_module
 from worldbox_writer.utils.llm import (
     chat_completion_with_profile,
@@ -329,3 +331,105 @@ def test_chat_completion_with_profile_applies_sampling(monkeypatch):
     metadata = llm_module.get_last_llm_call_metadata()
     assert metadata["role"] == "critic"
     assert metadata["sampling"]["profile_id"] == "critic_review"
+
+
+# Sprint 30 — Task 2.2: both Anthropic httpx.Client call sites must read
+# their timeout from runtime.llm_call_timeout_s, not the literal 120.0.
+
+
+def _make_recording_client(seen: list[float]) -> type:
+    class _RecordingClient:
+        def __init__(self, *, timeout: float) -> None:
+            seen.append(timeout)
+
+        def __enter__(self) -> "_RecordingClient":
+            return self
+
+        def __exit__(self, exc_type, exc, traceback) -> None:  # noqa: ANN001
+            return None
+
+        def stream(self, method, endpoint, *, headers, json):  # noqa: ANN001
+            class _EmptyStream:
+                def __enter__(self_inner) -> "_EmptyStream":
+                    return self_inner
+
+                def __exit__(self_inner, exc_type, exc, traceback) -> None:
+                    return None
+
+                def raise_for_status(self_inner) -> None:
+                    return None
+
+                def iter_lines(self_inner):
+                    return iter([])
+
+            return _EmptyStream()
+
+        def post(self, url, **kwargs):  # noqa: ANN001
+            body = {
+                "content": [{"type": "text", "text": "ok"}],
+                "model": "kimi-k2-5",
+            }
+            return httpx.Response(
+                200, json=body, request=httpx.Request("POST", url)
+            )
+
+    return _RecordingClient
+
+
+def _anthropic_route() -> llm_module.ResolvedLLMRoute:
+    return llm_module.ResolvedLLMRoute(
+        role="narrator",
+        route_group="creative",
+        provider="kimi",
+        model="kimi-k2.5",
+        api_key="test-key",
+        base_url="https://api.kimi.com/coding/",
+    )
+
+
+def test_anthropic_streaming_client_uses_runtime_llm_call_timeout(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("LLM_CALL_TIMEOUT_S", "7.5")
+    seen: list[float] = []
+    monkeypatch.setattr(
+        llm_module.httpx, "Client", _make_recording_client(seen)
+    )
+
+    llm_module._chat_completion_anthropic_messages(
+        [{"role": "user", "content": "Continue"}],
+        route=_anthropic_route(),
+        temperature=0.7,
+        max_tokens=32,
+        stream=True,
+        on_token=None,
+        top_p=None,
+    )
+
+    assert seen == [7.5]
+
+
+def test_anthropic_retry_client_uses_runtime_llm_call_timeout(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_CALL_TIMEOUT_S", "13.25")
+    s = llm_module.get_settings()
+    s.runtime.llm_retry_max_attempts = 1
+    s.runtime.llm_retry_backoff_initial_s = 0.0
+    s.runtime.llm_retry_backoff_max_s = 0.0
+
+    seen: list[float] = []
+    monkeypatch.setattr(
+        llm_module.httpx, "Client", _make_recording_client(seen)
+    )
+
+    text = llm_module._chat_completion_anthropic_messages(
+        [{"role": "user", "content": "Continue"}],
+        route=_anthropic_route(),
+        temperature=0.7,
+        max_tokens=32,
+        stream=False,
+        on_token=None,
+        top_p=None,
+    )
+
+    assert text == "ok"
+    assert seen == [13.25]

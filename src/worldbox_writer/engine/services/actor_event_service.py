@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
+from worldbox_writer.config.settings import get_settings
 from worldbox_writer.core.dual_loop import ScenePlan
 from worldbox_writer.core.models import Character, WorldState
 from worldbox_writer.core.pacing import pacing_or_default, pacing_prompt_hint
@@ -50,11 +51,15 @@ def active_actor_characters(
     return spotlight_chars or alive
 
 
-def character_summary_lines(characters: list[Character], *, limit: int = 4) -> str:
+def character_summary_lines(
+    characters: list[Character], *, limit: int | None = None
+) -> str:
+    if limit is None:
+        limit = get_settings().prompt_budget.actor_prompt_char_limit
     return "\n".join(
         [
             f"- {character.name}（{character.personality}）目标："
-            f"{', '.join(character.goals[:2])}；"
+            f"{', '.join(character.goals[: get_settings().prompt_budget.actor_prompt_goal_limit])}；"
             f"记忆：{character.memory[-1] if character.memory else '无'}"
             for character in characters[:limit]
         ]
@@ -64,18 +69,29 @@ def character_summary_lines(characters: list[Character], *, limit: int = 4) -> s
 def constraint_summary_lines(world: WorldState, scene_plan: Optional[ScenePlan]) -> str:
     if scene_plan and scene_plan.constraints:
         return "\n".join(
-            [f"- [scene] {constraint}" for constraint in scene_plan.constraints[:5]]
+            [
+                f"- [scene] {constraint}"
+                for constraint in scene_plan.constraints[
+                    : get_settings().prompt_budget.actor_prompt_constraint_limit
+                ]
+            ]
         )
 
     return "\n".join(
         [
             f"- [{constraint.severity.value}] {constraint.rule}"
-            for constraint in world.active_constraints()[:5]
+            for constraint in world.active_constraints()[
+                : get_settings().prompt_budget.actor_prompt_constraint_limit
+            ]
         ]
     )
 
 
-def named_context(items: list[dict[str, object]], *, limit: int = 3) -> str:
+def named_context(
+    items: list[dict[str, object]], *, limit: int | None = None
+) -> str:
+    if limit is None:
+        limit = get_settings().prompt_budget.actor_prompt_faction_location_limit
     if not items:
         return "无"
     return "、".join([str(item.get("name", "")) for item in items[:limit]])
@@ -89,7 +105,15 @@ def scene_plan_prompt_section(
         return ""
 
     spotlight_names = (
-        "、".join([character.name for character in active_chars[:3]]) or "无"
+        "、".join(
+            [
+                character.name
+                for character in active_chars[
+                    : get_settings().prompt_budget.actor_prompt_spotlight_fallback
+                ]
+            ]
+        )
+        or "无"
     )
     pressure_guidance = str(scene_plan.metadata.get("pressure_guidance", "")).strip()
     plan_lines = [
@@ -133,8 +157,8 @@ def build_actor_event_prompt(
             "role": "user",
             "content": (
                 f"世界背景：{world.premise}\n\n"
-                f"主要势力：{named_context(world.factions)}\n"
-                f"主要地点：{named_context(world.locations)}\n\n"
+                f"主要势力：{named_context(world.factions, limit=get_settings().prompt_budget.actor_prompt_faction_location_limit)}\n"
+                f"主要地点：{named_context(world.locations, limit=get_settings().prompt_budget.actor_prompt_faction_location_limit)}\n\n"
                 f"{scene_section}"
                 f"当前角色状态：\n{character_summary_lines(active_chars)}\n\n"
                 f"故事记忆（按时间排序）：\n{memory_context}\n\n"
@@ -151,6 +175,10 @@ def build_actor_event_prompt(
         spotlight_count=(
             len(scene_plan.spotlight_character_ids)
             if scene_plan
-            else len(active_chars[:3])
+            else len(
+                active_chars[
+                    : get_settings().prompt_budget.actor_prompt_spotlight_fallback
+                ]
+            )
         ),
     )

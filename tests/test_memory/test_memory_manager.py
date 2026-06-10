@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from worldbox_writer.core.dual_loop import SceneBeat, SceneScript
+from worldbox_writer.core import metadata_keys as META
 from worldbox_writer.core.models import Character, NodeType, StoryNode, WorldState
 from worldbox_writer.memory.memory_manager import (
     REFLECTION_ENTRY_KIND,
@@ -259,7 +260,7 @@ class TestMemoryManagerPureLogic:
         assert len(entries) == 1
         assert entries[0].entry_kind == REFLECTION_ENTRY_KIND
         assert "李凌决定隐藏真实意图" in entries[0].content
-        assert world.get_character(char_id).metadata["reflection_notes"]
+        assert world.get_character(char_id).metadata[META.META_REFLECTION_NOTES]
         assert mm.get_stats()["reflection_entries"] == 1
 
     def test_record_reflection_preserves_falsey_sequences(self, world):

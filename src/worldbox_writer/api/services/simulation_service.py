@@ -28,6 +28,7 @@ from worldbox_writer.api.session_store import (
     restore_world_at_node,
 )
 from worldbox_writer.api.state import _executor, _sessions
+from worldbox_writer.config.settings import get_settings
 from worldbox_writer.core import constants as K
 from worldbox_writer.core.models import (
     StoryNode,
@@ -300,7 +301,7 @@ class SimulationService:
                 if session.loop:
                     session.loop.call_soon_threadsafe(session._intervention_event.set)
                 while session._intervention_result is None:
-                    time.sleep(0.2)
+                    time.sleep(get_settings().runtime.intervention_poll_interval_s)
                 result = session._intervention_result
                 session._intervention_result = None
                 session._intervention_event.clear()

@@ -6,10 +6,12 @@ from typing import Any
 import pytest
 
 import worldbox_writer.engine.services.isolated_actor_service as isolated_actor_module
-from worldbox_writer.core.dual_loop import ActionIntent, ScenePlan
+from worldbox_writer.config.settings import get_settings
+from worldbox_writer.core.dual_loop import ActionIntent, PromptTrace, ScenePlan
 from worldbox_writer.core.models import Character, WorldState
 from worldbox_writer.engine.services.isolated_actor_service import (
     ISOLATED_ACTOR_RUNTIME_MODE,
+    fallback_actor_intent,
     invoke_isolated_actor_intent,
     run_isolated_actor_runtime,
 )
@@ -243,3 +245,36 @@ def test_invoke_isolated_actor_intent_preserves_falsey_string_fields(
     assert intent.rationale == "她要确认伏击者。"
     assert intent.target_ids == [str(bob.id)]
     assert sample_recorder.samples[0]["output"] is intent
+
+
+def test_actor_fallback_confidence_is_setting_driven(monkeypatch) -> None:
+    monkeypatch.setenv("PROMPT_ACTOR_FALLBACK_CONFIDENCE", "0.1")
+    assert get_settings().prompt_budget.actor_fallback_confidence == 0.1
+
+    world = WorldState(title="测试世界", premise="测试前提")
+    alice = Character(name="阿璃", personality="谨慎", goals=["调查断桥"])
+    world.add_character(alice)
+    scene_plan = ScenePlan(
+        scene_id="scene-fallback-confidence",
+        branch_id="branch-fallback",
+        objective="让阿璃逼近伏击真相",
+        spotlight_character_ids=[str(alice.id)],
+    )
+    prompt_trace = PromptTrace(
+        trace_id="trace-fallback-confidence",
+        agent="actor_intent",
+        scene_id=scene_plan.scene_id,
+        character_id=str(alice.id),
+        system_prompt="ACTOR SYSTEM",
+        user_prompt="prompt",
+    )
+
+    intent = fallback_actor_intent(
+        alice,
+        scene_plan,
+        prompt_trace,
+        reason="unit-test failure",
+    )
+
+    assert intent.confidence == 0.1
+    assert intent.metadata["synthetic"] is True

@@ -287,6 +287,26 @@ cd frontend && pnpm run gen-types   # 写 api-generated.ts（不入仓）
 - `tests/test_api/test_openapi_snapshot.py` — 校验 `/openapi.json` 暴露全部 21 个路由。
 - LLM 调用失败时，`failed_reason` 枚举（`core/constants.py`）会被写入 `last_llm_call` metadata；非流式路径会自动重试（5xx / 429 / timeout），可由 `LLM_RETRY_*` env 调参。
 
+### 配置域分组（Sprint 30）
+
+`config/settings.py::Settings` 现在包含 8 个域，每个域都有自己的一组 env vars 和验证器：
+
+| 域 | 字段数 | 关键字段 | 用途 |
+|---|---|---|---|
+| `RuntimeSettings` | 7 | `llm_call_timeout_s`, `llm_retry_*`, `intervention_poll_interval_s` | 运行时调优（重试 / 超时 / 轮询） |
+| `SimulationSettings` | 11 | `max_ticks`, `affinity_min/max`, `default_self_heal_attempts` | 仿真行为（tick / 重生 / 干预频率） |
+| `MemoryRuntimeSettings` | 13 | `top_k_*`, `importance_*`, `reflection_*` | 记忆系统调优 |
+| `JudgeSettings` | 12 | `*_axis_weight`, `toxic_veto_threshold`, `fabricated_evidence_*` | 评测阈值 |
+| `LLMRoutingSettings` | 5 | `default_provider`, `mimo/kimi/ollama_base_url`, `user_agent` | LLM 路由 |
+| `AppSettings` | 1 | `app_version` | 运行时版本 |
+| **`ApiSettings`** (S30) | 4 | `cors_allow_origins`, `cors_allow_credentials`, `cors_allow_methods`, `cors_allow_headers` | HTTP API 表面（CORS lockdown） |
+| **`PromptBudgetSettings`** (S30) | 13 | `actor_prompt_char_limit`, `top_k_episodic`, `narrator_char_limit` 等 | Actor / narrator prompt 的 token / character 预算 |
+
+新增的 metadata 真相源模块：
+- `core/metadata_keys.py` — 9 个 `META_META_*` 常量（reflection_notes / narrator_input / last_*），替代散落在 engine / memory / api / evals 的 14 处字面量
+
+Sprint 30 还做了 5 个 drift 修复（settings 已定义但 call site 硬编码），现在所有 Sprint 28 settings 都真正生效。`user_agent` 派生自 `app.app_version`（避免两个版本号字面量漂移）。
+
 
 ---
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from worldbox_writer.core.dual_loop import ScenePlan, SceneScript
+from worldbox_writer.core import metadata_keys as META
 from worldbox_writer.core.models import Character, NodeType, StoryNode, WorldState
 from worldbox_writer.engine.services.node_commit_service import (
     commit_story_node,
@@ -97,8 +98,8 @@ def test_commit_story_node_updates_world_links_metadata_and_relationships() -> N
     assert committed.metadata["tick"] == 3
     assert committed.metadata["scene_plan"]["scene_id"] == "scene-commit"
     assert committed.metadata["scene_script"]["scene_id"] == "scene-commit"
-    assert world.metadata["last_committed_scene_plan"]["scene_id"] == "scene-commit"
-    assert world.metadata["last_committed_scene_script"]["scene_id"] == "scene-commit"
+    assert world.metadata[META.META_LAST_COMMITTED_SCENE_PLAN]["scene_id"] == "scene-commit"
+    assert world.metadata[META.META_LAST_COMMITTED_SCENE_SCRIPT]["scene_id"] == "scene-commit"
     assert result.involved_character_ids == [str(alice.id)]
     assert result.relationships_changed is True
     assert relationship_calls["select_calls"] == [(3, True), (3, False)]

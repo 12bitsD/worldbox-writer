@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 import worldbox_writer.evals.dual_loop_compare as compare_module
+from worldbox_writer.core import metadata_keys as META
 from worldbox_writer.core.models import Character, StoryNode, WorldState
 from worldbox_writer.evals.dual_loop_compare import build_dual_loop_compare_report
 
@@ -11,7 +12,7 @@ from worldbox_writer.evals.dual_loop_compare import build_dual_loop_compare_repo
 def _world_with_dual_loop_metadata() -> tuple[WorldState, StoryNode]:
     world = WorldState(title="测试世界", premise="测试前提")
     alice = Character(name="阿璃", personality="冷静", goals=["守住断桥"])
-    alice.metadata["reflection_notes"] = ["阿璃意识到守住入口更重要。"]
+    alice.metadata[META.META_REFLECTION_NOTES] = ["阿璃意识到守住入口更重要。"]
     world.add_character(alice)
     node = StoryNode(
         title="断桥落闸",
@@ -26,7 +27,7 @@ def _world_with_dual_loop_metadata() -> tuple[WorldState, StoryNode]:
         "scene_id": "scene-1",
         "summary": "阿璃守住断桥。",
     }
-    node.metadata["narrator_input"] = {"source": "scene_script"}
+    node.metadata[META.META_NARRATOR_INPUT] = {"source": "scene_script"}
     node.metadata["action_intents"] = [{"intent_id": "intent-1"}]
     node.metadata["intent_critiques"] = [
         {"intent_id": "intent-1", "accepted": True},

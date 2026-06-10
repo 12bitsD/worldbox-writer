@@ -10,6 +10,8 @@ from worldbox_writer.core.dual_loop import (
     PromptTrace,
     ScenePlan,
 )
+from worldbox_writer.core import metadata_keys as META
+from worldbox_writer.config.settings import get_settings
 from worldbox_writer.core.models import Character, WorldState
 from worldbox_writer.memory.memory_manager import (
     EVENT_ENTRY_KIND,
@@ -95,31 +97,31 @@ def build_memory_recall_trace(
     scene_plan: ScenePlan,
     memory: Optional[MemoryManager],
 ) -> MemoryRecallTrace:
-    working_memory = list(character.memory[-3:])
+    working_memory = list(character.memory[-get_settings().prompt_budget.working_memory_window:])
     episodic_memory_snippets: list[str] = []
     if memory is not None:
         episodic_memory_snippets = private_memory_snippets(
             memory,
             character_id=str(character.id),
-            max_entries=6,
+            max_entries=get_settings().prompt_budget.top_k_episodic,
             entry_kinds={EVENT_ENTRY_KIND, SUMMARY_ENTRY_KIND},
         )
         reflective_memory = private_memory_snippets(
             memory,
             character_id=str(character.id),
-            max_entries=4,
+            max_entries=get_settings().prompt_budget.top_k_reflective_actor,
             entry_kinds={REFLECTION_ENTRY_KIND},
         )
     else:
         reflective_memory = []
-    reflective_raw = character.metadata.get("reflection_notes", [])
+    reflective_raw = character.metadata.get(META.META_REFLECTION_NOTES, [])
     if isinstance(reflective_raw, str):
         reflective_memory.append(reflective_raw)
     elif isinstance(reflective_raw, list):
         reflective_memory.extend(
             str(item) for item in reflective_raw if str(item).strip()
         )
-    reflective_memory = list(dict.fromkeys(reflective_memory))[-6:]
+    reflective_memory = list(dict.fromkeys(reflective_memory))[-get_settings().prompt_budget.reflective_dedupe_window:]
 
     return MemoryRecallTrace(
         character_id=str(character.id),

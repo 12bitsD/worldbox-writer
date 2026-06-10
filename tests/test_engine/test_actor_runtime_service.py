@@ -6,6 +6,7 @@ from worldbox_writer.core.dual_loop import (
     ScenePlan,
     SceneScript,
 )
+from worldbox_writer.core import metadata_keys as META
 from worldbox_writer.core.models import Character, WorldState
 from worldbox_writer.engine.dual_loop import (
     ISOLATED_ACTOR_RUNTIME_MODE,
@@ -172,8 +173,8 @@ def test_run_actor_runtime_bridge_reviews_settles_and_persists_metadata() -> Non
         "model": "critic-test",
     }
     assert world.metadata["last_actor_runtime_mode"] == ISOLATED_ACTOR_RUNTIME_MODE
-    assert world.metadata["last_actor_intents"][0]["intent_id"] == accepted.intent_id
-    assert world.metadata["last_critic_verdicts"][1]["accepted"] is False
+    assert world.metadata[META.META_LAST_ACTOR_INTENTS][0]["intent_id"] == accepted.intent_id
+    assert world.metadata[META.META_LAST_CRITIC_VERDICTS][1]["accepted"] is False
     assert world.metadata["last_actor_accepted_intent_ids"] == [accepted.intent_id]
-    assert world.metadata["last_prompt_traces"] == []
-    assert world.metadata["last_scene_script"]["scene_id"] == "scene-runtime"
+    assert world.metadata[META.META_LAST_PROMPT_TRACES] == []
+    assert world.metadata[META.META_LAST_SCENE_SCRIPT]["scene_id"] == "scene-runtime"

@@ -334,7 +334,7 @@ def fallback_actor_intent(
             "Actor intent generation failed; runtime emitted a deterministic "
             "story-forward fallback."
         ),
-        confidence=0.35,
+        confidence=get_settings().prompt_budget.actor_fallback_confidence,
         prompt_trace_id=prompt_trace.trace_id,
         metadata={
             "synthetic": True,

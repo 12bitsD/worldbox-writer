@@ -6,6 +6,7 @@ from worldbox_writer.core.dual_loop import (
     ScenePlan,
     SceneScript,
 )
+from worldbox_writer.core import metadata_keys as META
 from worldbox_writer.core.models import Character, StoryNode, WorldState
 from worldbox_writer.engine.dual_loop import (
     build_dual_loop_snapshot,
@@ -30,7 +31,7 @@ def test_build_dual_loop_snapshot_is_branch_aware(monkeypatch) -> None:
         name="角色A",
         personality="沉着",
         goals=["守住王城"],
-        metadata={"reflection_notes": ["经历背叛后变得更谨慎"]},
+        metadata={META.META_REFLECTION_NOTES: ["经历背叛后变得更谨慎"]},
     )
     world.add_character(character)
     node = StoryNode(
@@ -93,8 +94,8 @@ def test_build_dual_loop_snapshot_reuses_persisted_scene_script() -> None:
         accepted_intent_ids=["intent-1"],
     )
     world.metadata["current_scene_plan"] = scene_plan.model_dump(mode="json")
-    world.metadata["last_scene_script"] = scene_script.model_dump(mode="json")
-    world.metadata["last_actor_intents"] = [
+    world.metadata[META.META_LAST_SCENE_SCRIPT] = scene_script.model_dump(mode="json")
+    world.metadata[META.META_LAST_ACTOR_INTENTS] = [
         ActionIntent(
             intent_id="intent-1",
             scene_id=scene_plan.scene_id,

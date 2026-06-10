@@ -41,9 +41,22 @@ _NEW_ENV_VARS = (
     "JUDGE_MAX_RESPONSE_CHARS", "JUDGE_MAX_EXCERPT_CHARS",
     "JUDGE_MAX_CONTINUITY_CHARS", "JUDGE_INTERMEDIATE_TEMPERATURE",
     "JUDGE_INTERMEDIATE_MAX_TOKENS", "JUDGE_INTERMEDIATE_RETRY_COUNT",
+    # PromptBudgetSettings (Sprint 30 Wave 4)
+    "PROMPT_ACTOR_CHAR_LIMIT", "PROMPT_ACTOR_GOAL_LIMIT",
+    "PROMPT_ACTOR_CONSTRAINT_LIMIT", "PROMPT_ACTOR_FACTION_LOC_LIMIT",
+    "PROMPT_ACTOR_SPOTLIGHT_FALLBACK",
+    "PROMPT_ACTOR_WORKING_MEMORY_WINDOW",
+    "PROMPT_ACTOR_TOP_K_EPISODIC", "PROMPT_ACTOR_TOP_K_REFLECTIVE",
+    "PROMPT_ACTOR_REFLECTIVE_DEDUPE_WINDOW",
+    "PROMPT_ACTOR_FALLBACK_CONFIDENCE",
+    "PROMPT_NARRATOR_TOP_K", "PROMPT_NARRATOR_CHAR_LIMIT",
+    "PROMPT_NARRATOR_LOCATION_LIMIT",
     # LLMRoutingSettings
     "LLM_DEFAULT_PROVIDER", "LLM_MIMO_BASE_URL", "LLM_KIMI_BASE_URL",
     "LLM_OLLAMA_BASE_URL", "LLM_USER_AGENT", "LLM_ANTHROPIC_VERSION",
+    # ApiSettings
+    "API_CORS_ALLOW_ORIGINS", "API_CORS_ALLOW_CREDENTIALS",
+    "API_CORS_ALLOW_METHODS", "API_CORS_ALLOW_HEADERS",
     # AppSettings
     "APP_VERSION",
 )
@@ -218,5 +231,84 @@ def test_llm_retry_backoff_initial_rejects_non_positive(monkeypatch) -> None:
 
 def test_llm_retry_backoff_max_rejects_non_positive(monkeypatch) -> None:
     monkeypatch.setenv("LLM_RETRY_BACKOFF_MAX_S", "-1.0")
+    with pytest.raises(ValidationError):
+        get_settings()
+
+
+# ---------------------------------------------------------------------------
+# Sprint 30: user_agent derivation from app.app_version
+# ---------------------------------------------------------------------------
+
+
+def test_user_agent_derives_from_app_version(monkeypatch) -> None:
+    """When LLM_USER_AGENT is unset, user_agent mirrors worldbox-writer/<APP_VERSION>."""
+    monkeypatch.setenv("APP_VERSION", "9.9.9-rc1")
+    s = get_settings()
+    assert s.llm_routing.user_agent == "worldbox-writer/9.9.9-rc1"
+
+
+def test_user_agent_env_override_wins(monkeypatch) -> None:
+    """An explicit LLM_USER_AGENT must beat the derived default."""
+    monkeypatch.setenv("APP_VERSION", "9.9.9-rc1")
+    monkeypatch.setenv("LLM_USER_AGENT", "custom-agent/2.0")
+    s = get_settings()
+    assert s.llm_routing.user_agent == "custom-agent/2.0"
+
+
+# ---------------------------------------------------------------------------
+# Sprint 30 Wave 3: ApiSettings (CORS lockdown)
+# ---------------------------------------------------------------------------
+
+
+def test_api_settings_defaults() -> None:
+    s = get_settings()
+    assert s.api.cors_allow_origins == ["*"]
+    assert s.api.cors_allow_credentials is True
+    assert s.api.cors_allow_methods == ["*"]
+    assert s.api.cors_allow_headers == ["*"]
+
+
+def test_api_settings_csv_parsing(monkeypatch) -> None:
+    monkeypatch.setenv("API_CORS_ALLOW_ORIGINS", "https://a.test, https://b.test")
+    s = get_settings()
+    assert s.api.cors_allow_origins == ["https://a.test", "https://b.test"]
+
+
+def test_api_settings_credentials_toggle(monkeypatch) -> None:
+    monkeypatch.setenv("API_CORS_ALLOW_CREDENTIALS", "0")
+    s = get_settings()
+    assert s.api.cors_allow_credentials is False
+
+
+# ---------------------------------------------------------------------------
+# Sprint 30 Wave 4: PromptBudgetSettings
+# ---------------------------------------------------------------------------
+
+
+def test_prompt_budget_defaults() -> None:
+    s = get_settings()
+    assert s.prompt_budget.actor_prompt_char_limit == 4
+    assert s.prompt_budget.actor_prompt_goal_limit == 2
+    assert s.prompt_budget.actor_prompt_constraint_limit == 5
+    assert s.prompt_budget.actor_prompt_faction_location_limit == 3
+    assert s.prompt_budget.actor_prompt_spotlight_fallback == 3
+    assert s.prompt_budget.working_memory_window == 3
+    assert s.prompt_budget.top_k_episodic == 6
+    assert s.prompt_budget.top_k_reflective_actor == 4
+    assert s.prompt_budget.reflective_dedupe_window == 6
+    assert s.prompt_budget.actor_fallback_confidence == 0.35
+    assert s.prompt_budget.top_k_narrator == 5
+    assert s.prompt_budget.narrator_char_limit == 3
+    assert s.prompt_budget.narrator_location_limit == 2
+
+
+def test_prompt_budget_rejects_non_positive(monkeypatch) -> None:
+    monkeypatch.setenv("PROMPT_ACTOR_CHAR_LIMIT", "0")
+    with pytest.raises(ValidationError):
+        get_settings()
+
+
+def test_prompt_budget_rejects_bad_confidence(monkeypatch) -> None:
+    monkeypatch.setenv("PROMPT_ACTOR_FALLBACK_CONFIDENCE", "1.5")
     with pytest.raises(ValidationError):
         get_settings()

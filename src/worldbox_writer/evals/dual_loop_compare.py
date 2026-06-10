@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from worldbox_writer.core.dual_loop import DUAL_LOOP_CONTRACT_VERSION
+from worldbox_writer.core import metadata_keys as META
 from worldbox_writer.core.models import StoryNode, WorldState
 from worldbox_writer.engine.dual_loop import dual_loop_enabled
 from worldbox_writer.storage.db import load_session as db_load_session
@@ -60,7 +61,7 @@ def _rendered_node_count(nodes_rendered: Sequence[Mapping[str, Any]]) -> int:
 def _reflection_note_count(world: WorldState) -> int:
     total = 0
     for character in world.characters.values():
-        notes = character.metadata.get("reflection_notes")
+        notes = character.metadata.get(META.META_REFLECTION_NOTES)
         if isinstance(notes, list):
             total += len(notes)
     return total
@@ -122,7 +123,7 @@ def build_dual_loop_compare_report(
     narrator_scene_nodes = [
         node
         for node in scene_script_nodes
-        if _metadata_dict(node, "narrator_input").get("source") == "scene_script"
+        if _metadata_dict(node, META.META_NARRATOR_INPUT).get("source") == "scene_script"
     ]
     action_intent_count = sum(
         len(_metadata_list(node, "action_intents")) for node in lineage_nodes
@@ -158,7 +159,7 @@ def build_dual_loop_compare_report(
             f"{len(scene_script_nodes)} lineage nodes include SceneScript metadata",
         ),
         _check(
-            "narrator_input",
+            META.META_NARRATOR_INPUT,
             (
                 "pass"
                 if scene_script_nodes

@@ -775,6 +775,39 @@ git add frontend/src/types/openapi.snapshot.json src/...
 
 ---
 
+## 16. 调整 prompt 的 token 预算（Sprint 30 工作流）
+
+actor / narrator prompt 的字段预算（`actor_prompt_char_limit`、`top_k_episodic`、`narrator_location_limit` 等）都在 `PromptBudgetSettings` 类里。调它们不用改 .py：
+
+```bash
+# .env 或部署环境变量
+PROMPT_ACTOR_CHAR_LIMIT=6           # 默认 4
+PROMPT_ACTOR_GOAL_LIMIT=3           # 默认 2
+PROMPT_NARRATOR_LOCATION_LIMIT=4    # 默认 2
+PROMPT_ACTOR_FALLBACK_CONFIDENCE=0.2 # 默认 0.35
+```
+
+13 个字段完整列表见 `core/constants.py` 旁的 `config/settings.py::PromptBudgetSettings` 与 `.env.example`。
+
+要点：
+- 默认值匹配 Sprint 30 之前的硬编码字面量，**零行为变化**已通过 379 passing tests 验证
+- `_positive_prompt_budget` validator 拒绝 ≤0 的 int；`_confidence_in_unit` 拒绝 [0,1] 外的 confidence
+- `character_summary_lines` / `named_context` 默认参数从 `4`/`3` 改为 `None`，调用时读 `prompt_budget.*`，保持 backward compat
+
+---
+
+## 17. 改 metadata key 名字（Sprint 30 工作流）
+
+metadata 字段名（`reflection_notes`、`narrator_input`、`last_actor_intents` 等）是 wire-protocol —— SQLite `world_state` 列里直接 JSON 序列化。**改名字是 breaking change**，需要走两步：
+
+1. **新名字先加进 `core/metadata_keys.py`**（9 个常量是单一真相源）
+2. **所有读写 site 用 `META.META_<KEY>` 替换字面量**（CI 守护：`tests/test_core/test_metadata_keys.py` 验证常量集合完整）
+3. **SQLite schema 兼容**：data migration 在 `storage/db.py` 里加 alias，而不是改字面量
+
+`director.py:170-171` 的 `world_builder_completed` 字面量**明确 out-of-scope**：它在发给 LLM 的 JSON dict 里，改了会改变 LLM 可见的契约。
+
+---
+
 ## 相关文档
 
 - [架构设计](../architecture/DESIGN.md)

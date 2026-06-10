@@ -39,6 +39,21 @@
 - `tests/conftest.py` 自动加载 `tests/.env.test`（gitignored，模板 `tests/.env.test.example` 入仓），只注入 `LLM_*` 前缀变量
 - 补齐前端 `simulationTransport.ts` 对 `narrator_end` 事件（之前后端发了前端忽略）
 
+### Added (Sprint 30)
+- 新增 `ApiSettings` 类（4 个 CORS 字段）+ `api/server.py` CORS lockdown：`allow_origins` / `allow_credentials` / `allow_methods` / `allow_headers` 全部从 env 读（之前是 hardcoded `["*"]`，生产环境不安全）
+- 新增 `PromptBudgetSettings` 类（13 个字段）：把 actor / narrator prompt 的 `[..3]` / `[:5]` / `[:80]` / `max_entries=6/4` 等魔法数字收进 settings，运维可调 token 预算
+- 新增 `core/metadata_keys.py` 模块（9 个 metadata key 常量）：把散落在 9 个文件里的 `metadata["reflection_notes"]` 等字符串集中到一处；任何 rename 是 breaking change，有单一真相源守护
+- 新增 `LLMFailedReason` / 5 个 drift 修复（settings 已存在但 call site 硬编码）：
+  - `simulation_service.py:303` `time.sleep(0.2)` → `runtime.intervention_poll_interval_s`
+  - `utils/llm.py:638,668` `httpx.Client(timeout=120.0)` → `runtime.llm_call_timeout_s`
+  - `workspace_service.py:276` `affinity clamp -100..100` → `simulation.affinity_min/max`
+  - `intermediate_judge.py:321` `score >= 5 → 4.0` → `judge.fabricated_evidence_demote_min/to`（与主判路径一致）
+  - `config/settings.py:355` `user_agent = "worldbox-writer/0.5.0"` → 派生自 `app.app_version`，env 覆盖仍生效
+- 删除 5 个 shadowed 常量（`DEFAULT_SELF_HEAL_ATTEMPTS`, `INTERVENTION_FREQUENCY_MODULUS/REMAINDER`, `DEFAULT_CHROMA_COLLECTION/DIMENSIONS`），settings 是单一真相源
+
+### Changed
+- `character_summary_lines` / `named_context` 默认参数从字面量改为 `None`，调用时读 `prompt_budget.*`
+
 ## [0.5.0] - 2026-04-17
 
 ### Added

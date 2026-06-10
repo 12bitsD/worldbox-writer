@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from worldbox_writer.core.dual_loop import ScenePlan
+from worldbox_writer.core import metadata_keys as META
 from worldbox_writer.core.models import Character, StoryNode, WorldState
 from worldbox_writer.engine.services.world_setup_service import (
     enrich_world_settings,
@@ -125,7 +126,7 @@ def test_enrich_world_settings_marks_metadata() -> None:
     )
 
     assert result.state_update["world_built"] is True
-    assert world.metadata["world_builder_completed"] is True
+    assert world.metadata[META.META_WORLD_BUILDER_COMPLETED] is True
     event = result.telemetry_events[0]
     assert event.stage == "world_enriched"
     assert event.payload == {"factions": 1, "locations": 1}

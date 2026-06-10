@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from worldbox_writer.core.models import TelemetryEvent, WorldState
+from worldbox_writer.core import metadata_keys as META
 
 
 def serialize_world(world: WorldState) -> Dict[str, Any]:
@@ -58,7 +59,7 @@ def serialize_node(node: Any, world: WorldState) -> Dict[str, Any]:
     scene_script = node.metadata.get("scene_script")
     if not isinstance(scene_script, dict):
         scene_script = {}
-    narrator_input = node.metadata.get("narrator_input")
+    narrator_input = node.metadata.get(META.META_NARRATOR_INPUT)
     if not isinstance(narrator_input, dict):
         narrator_input = {}
     tick = node.metadata.get("tick", world.tick)

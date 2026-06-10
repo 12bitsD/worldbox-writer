@@ -19,6 +19,7 @@ from worldbox_writer.core.constants import (
     DUAL_LOOP_ADAPTER_MODE,
     DUAL_LOOP_CONTRACT_VERSION,
 )
+from worldbox_writer.core import metadata_keys as META
 from worldbox_writer.core.dual_loop import (
     ActionIntent,
     DualLoopCompatibilitySnapshot,
@@ -318,7 +319,7 @@ def _load_stored_action_intents(
     return _load_stored_by_scene(
         world,
         scene_plan,
-        metadata_key="last_actor_intents",
+        metadata_key=META.META_LAST_ACTOR_INTENTS,
         model=ActionIntent,
     )
 
@@ -330,7 +331,7 @@ def _load_stored_prompt_traces(
     return _load_stored_by_scene(
         world,
         scene_plan,
-        metadata_key="last_prompt_traces",
+        metadata_key=META.META_LAST_PROMPT_TRACES,
         model=PromptTrace,
     )
 
@@ -342,7 +343,7 @@ def _load_stored_intent_critiques(
     return _load_stored_by_scene(
         world,
         scene_plan,
-        metadata_key="last_critic_verdicts",
+        metadata_key=META.META_LAST_CRITIC_VERDICTS,
         model=IntentCritique,
     )
 
@@ -356,8 +357,8 @@ def _load_stored_scene_script(
     # (latest draft, committed snapshot, current node metadata) and return
     # the *first* match, not a list.
     candidates: List[Any] = []
-    raw_latest = world.metadata.get("last_scene_script")
-    raw_committed = world.metadata.get("last_committed_scene_script")
+    raw_latest = world.metadata.get(META.META_LAST_SCENE_SCRIPT)
+    raw_committed = world.metadata.get(META.META_LAST_COMMITTED_SCENE_SCRIPT)
     candidates.extend([raw_latest, raw_committed])
 
     if world.current_node_id:

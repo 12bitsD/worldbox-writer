@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import pytest
+
 from worldbox_writer.core.dual_loop import ScenePlan
+from worldbox_writer.core import metadata_keys as META
 from worldbox_writer.core.models import Character, StoryNode, WorldState
 from worldbox_writer.engine.services.actor_prompt_context_service import (
     build_memory_recall_trace,
@@ -58,7 +61,7 @@ def test_memory_recall_trace_filters_private_layers_and_merges_reflections() -> 
         name="阿璃",
         personality="谨慎",
         goals=["调查断桥"],
-        metadata={"reflection_notes": ["阿璃意识到自己过于急躁。", "她决定放慢追问。"]},
+        metadata={META.META_REFLECTION_NOTES: ["阿璃意识到自己过于急躁。", "她决定放慢追问。"]},
     )
     bob = Character(name="白夜", personality="隐忍", goals=["守住秘密"])
     world.add_character(alice)
@@ -109,4 +112,93 @@ def test_memory_recall_trace_filters_private_layers_and_merges_reflections() -> 
         "working": 0,
         "episodic": 1,
         "reflective": 3,
+    }
+
+
+def test_memory_recall_trace_respects_prompt_budget_env_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PROMPT_ACTOR_WORKING_MEMORY_WINDOW", "2")
+    monkeypatch.setenv("PROMPT_ACTOR_TOP_K_EPISODIC", "1")
+    monkeypatch.setenv("PROMPT_ACTOR_TOP_K_REFLECTIVE", "1")
+    monkeypatch.setenv("PROMPT_ACTOR_REFLECTIVE_DEDUPE_WINDOW", "2")
+
+    world = WorldState(title="测试世界", premise="测试前提")
+    alice = Character(
+        name="阿璃",
+        personality="谨慎",
+        goals=["调查断桥"],
+        metadata={
+            META.META_REFLECTION_NOTES: [
+                "反思一",
+                "反思二",
+                "反思三",
+                "反思四",
+                "反思五",
+            ],
+        },
+    )
+    for memory_text in [
+        "线索甲",
+        "线索乙",
+        "线索丙",
+        "线索丁",
+        "线索戊",
+    ]:
+        alice.add_memory(memory_text)
+    world.add_character(alice)
+
+    memory = MemoryManager()
+    world.tick = 1
+    memory.record_event(
+        StoryNode(
+            title="事件甲",
+            description="事件甲细节。",
+            character_ids=[str(alice.id)],
+        ),
+        world,
+        importance=0.8,
+    )
+    world.tick = 2
+    memory.record_event(
+        StoryNode(
+            title="事件乙",
+            description="事件乙细节。",
+            character_ids=[str(alice.id)],
+        ),
+        world,
+        importance=0.8,
+    )
+    world.tick = 3
+    memory.record_reflection(
+        world,
+        character_id=str(alice.id),
+        content="反思甲（从记忆库）",
+    )
+    world.tick = 4
+    memory.record_reflection(
+        world,
+        character_id=str(alice.id),
+        content="反思乙（从记忆库）",
+    )
+
+    trace = build_memory_recall_trace(
+        alice,
+        world,
+        scene_plan=ScenePlan(
+            scene_id="scene-budget-overrides",
+            objective="追踪断桥线索",
+            spotlight_character_ids=[str(alice.id)],
+        ),
+        memory=memory,
+    )
+
+    assert trace.working_memory == ["线索丁", "线索戊"]
+    assert len(trace.episodic_memory_snippets) == 1
+    assert "事件乙" in trace.episodic_memory_snippets[0]
+    assert len(trace.reflective_memory) <= 2
+    assert trace.metadata["layer_counts"] == {
+        "working": 2,
+        "episodic": 1,
+        "reflective": 2,
     }

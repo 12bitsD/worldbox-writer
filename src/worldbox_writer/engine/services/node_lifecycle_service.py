@@ -28,8 +28,6 @@ from worldbox_writer.engine.services.relationship_service import (
 )
 from worldbox_writer.memory.memory_manager import MemoryManager
 
-INTERVENTION_FREQUENCY_MODULUS = 3
-INTERVENTION_FREQUENCY_REMAINDER = 1
 INTERVENTION_TRIGGER_URGENCIES = {"high", "critical"}
 
 

@@ -12,6 +12,7 @@ from worldbox_writer.core.dual_loop import (
     SceneScript,
     accepted_and_rejected_action_intents,
 )
+from worldbox_writer.core import metadata_keys as META
 from worldbox_writer.core.models import WorldState
 from worldbox_writer.engine.services.isolated_actor_service import (
     IsolatedActorRuntimeResult,
@@ -84,19 +85,19 @@ def persist_actor_runtime_metadata(
     scene_script: SceneScript,
 ) -> None:
     world.metadata["last_actor_runtime_mode"] = runtime_mode
-    world.metadata["last_actor_intents"] = [
+    world.metadata[META.META_LAST_ACTOR_INTENTS] = [
         intent.model_dump(mode="json") for intent in runtime_result.action_intents
     ]
-    world.metadata["last_critic_verdicts"] = [
+    world.metadata[META.META_LAST_CRITIC_VERDICTS] = [
         critique.model_dump(mode="json") for critique in intent_critiques
     ]
     world.metadata["last_actor_accepted_intent_ids"] = sorted(
         {intent.intent_id for intent in accepted_intents}
     )
-    world.metadata["last_prompt_traces"] = [
+    world.metadata[META.META_LAST_PROMPT_TRACES] = [
         trace.model_dump(mode="json") for trace in runtime_result.prompt_traces
     ]
-    world.metadata["last_scene_script"] = scene_script.model_dump(mode="json")
+    world.metadata[META.META_LAST_SCENE_SCRIPT] = scene_script.model_dump(mode="json")
 
 
 def run_actor_runtime_bridge(

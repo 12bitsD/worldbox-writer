@@ -9,7 +9,6 @@ from worldbox_writer.config.settings import get_settings
 from worldbox_writer.core import constants as K
 from worldbox_writer.core.models import NodeType, StoryNode, WorldState
 
-DEFAULT_SELF_HEAL_ATTEMPTS = 2
 REJECTED_CANDIDATE_PREFIX = "[已被边界层拒绝]"
 
 
